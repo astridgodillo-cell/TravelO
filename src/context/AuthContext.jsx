@@ -8,18 +8,30 @@ const AuthContext = createContext({
   refreshProfile: async () => {},
 });
 
+const PROFILE_TIMEOUT_MS = 5000;
+const AUTH_SAFETY_TIMEOUT_MS = 8000;
+
 async function loadProfile(userId) {
   if (!userId) return null;
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', userId)
-    .maybeSingle();
-  if (error) {
-    console.warn('[auth] loadProfile error', error);
+  try {
+    const result = await Promise.race([
+      supabase.from('profiles').select('*').eq('id', userId).maybeSingle(),
+      new Promise((resolve) =>
+        setTimeout(
+          () => resolve({ data: null, error: { message: 'timeout' } }),
+          PROFILE_TIMEOUT_MS
+        )
+      ),
+    ]);
+    if (result?.error) {
+      console.warn('[auth] loadProfile error', result.error);
+      return null;
+    }
+    return result?.data ?? null;
+  } catch (e) {
+    console.error('[auth] loadProfile crashed', e);
     return null;
   }
-  return data;
 }
 
 export function AuthProvider({ children }) {
@@ -38,31 +50,46 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     let mounted = true;
-    (async () => {
-      const { data } = await supabase.auth.getSession();
-      const sessUser = data.session?.user ?? null;
-      if (!mounted) return;
-      setUser(sessUser);
-      if (sessUser) {
-        const p = await loadProfile(sessUser.id);
-        if (!mounted) return;
-        setProfile(p);
+
+    // Garde-fou : on ne reste JAMAIS bloqué en loading plus de N secondes,
+    // même si une requête réseau hang silencieusement.
+    const safetyTimer = setTimeout(() => {
+      if (mounted) {
+        console.warn('[auth] safety timeout — forcing loading=false');
+        setLoading(false);
       }
-      setLoading(false);
-    })();
-    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    }, AUTH_SAFETY_TIMEOUT_MS);
+
+    async function applySession(session) {
       const u = session?.user ?? null;
-      setUser(u);
+      if (mounted) setUser(u);
       if (u) {
         const p = await loadProfile(u.id);
-        setProfile(p);
-      } else {
+        if (mounted) setProfile(p);
+      } else if (mounted) {
         setProfile(null);
       }
-      setLoading(false);
+      if (mounted) setLoading(false);
+    }
+
+    (async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        await applySession(data.session);
+      } catch (e) {
+        console.error('[auth] getSession failed', e);
+        if (mounted) setLoading(false);
+      }
+    })();
+
+    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (!mounted) return;
+      await applySession(session);
     });
+
     return () => {
       mounted = false;
+      clearTimeout(safetyTimer);
       sub.subscription.unsubscribe();
     };
   }, []);
