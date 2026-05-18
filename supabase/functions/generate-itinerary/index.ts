@@ -10,7 +10,13 @@
 
 // deno-lint-ignore-file no-explicit-any
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
+// Modèle "qualité" : utilisé pour la planification et la régénération à la demande
 const MODEL = Deno.env.get('ANTHROPIC_MODEL') || 'claude-sonnet-4-20250514';
+// Modèle "économique" : utilisé pour le détail jour par jour (95 % des appels)
+// Haiku 4.5 est ~4× moins cher que Sonnet 4 et tout à fait suffisant pour remplir
+// une journée à partir d'un plan déjà cadré.
+const EXPAND_MODEL =
+  Deno.env.get('ANTHROPIC_EXPAND_MODEL') || 'claude-haiku-4-5-20251001';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -289,7 +295,7 @@ ${instructions}
 Renvoie UNIQUEMENT le JSON de la nouvelle journée selon le même schéma. Garde label, date et weekday. Recalcule day_total_eur. Cohérence avec le départ du jour suivant.`;
 }
 
-async function callClaude(userPrompt: string, maxTokens = 12000) {
+async function callClaude(userPrompt: string, maxTokens = 12000, model = MODEL) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -298,7 +304,7 @@ async function callClaude(userPrompt: string, maxTokens = 12000) {
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: MODEL,
+      model,
       max_tokens: maxTokens,
       system: [
         {
@@ -401,9 +407,10 @@ Deno.serve(async (req) => {
         previous_plan,
         next_plan
       );
-      const { text, usage } = await callClaude(prompt, 4000);
+      // Haiku pour le détail des journées : suffisant et 4× moins cher
+      const { text, usage } = await callClaude(prompt, 4000, EXPAND_MODEL);
       const day = extractJson(text);
-      return jsonResponse({ day, usage, model: MODEL });
+      return jsonResponse({ day, usage, model: EXPAND_MODEL });
     }
 
     // Default : full single-call generation (small trips ≤ 8 days)
