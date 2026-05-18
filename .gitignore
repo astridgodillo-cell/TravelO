@@ -33,3 +33,17 @@ dist-ssr
 
 # Claude
 .claude/
+
+# Documents personnels — NE PAS versionner (peuvent contenir des données sensibles)
+*.docx
+*.doc
+*.xlsx
+*.xls
+*.pdf
+*.odt
+*.ods
+
+# Backup & temporary
+*.bak
+*.tmp
+*~
