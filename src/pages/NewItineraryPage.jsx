@@ -2,7 +2,7 @@ import { useState } from 'react';
 import PreferencesForm from '../components/PreferencesForm';
 import ItineraryView from '../components/ItineraryView';
 import GeneratingLoader from '../components/GeneratingLoader';
-import { generateItinerary, regenerateDay } from '../lib/ai';
+import { generateItinerary, regenerateDay, replanFromDay } from '../lib/ai';
 import { saveItinerary } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -45,6 +45,20 @@ export default function NewItineraryPage() {
       setItinerary(updated);
     } catch (err) {
       setError(err.message || 'Erreur lors de la régénération.');
+    } finally {
+      setRegenerating(false);
+    }
+  }
+
+  async function handleReplanFromDay(dayIndex, instructions) {
+    if (!itinerary) return;
+    setRegenerating(true);
+    setError(null);
+    try {
+      const updated = await replanFromDay(itinerary, dayIndex, instructions);
+      setItinerary(updated);
+    } catch (err) {
+      setError(err.message || 'Erreur lors de la replanification.');
     } finally {
       setRegenerating(false);
     }
@@ -124,6 +138,7 @@ export default function NewItineraryPage() {
           <ItineraryView
             itinerary={itinerary}
             onRegenerateDay={handleRegenerateDay}
+            onReplanFromDay={handleReplanFromDay}
             regenerating={regenerating}
           />
         </>

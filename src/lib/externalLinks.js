@@ -32,6 +32,16 @@ export function directFerriesSearch(from, to, date) {
   return `https://www.directferries.fr/?${params.toString()}`;
 }
 
+export function googleMapsMultiStop(stops) {
+  // Crée un itinéraire Google Maps multi-arrêts.
+  // Format: https://www.google.com/maps/dir/A/B/C/D
+  if (!stops?.length) return null;
+  const parts = stops
+    .map((s) => encodeURIComponent(s).replace(/%20/g, '+'))
+    .join('/');
+  return `https://www.google.com/maps/dir/${parts}`;
+}
+
 export function viaMichelin(from, to) {
   return `https://www.viamichelin.fr/itineraires?dep=${q(from)}&arr=${q(to)}`;
 }

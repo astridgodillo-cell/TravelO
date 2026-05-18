@@ -1,20 +1,22 @@
 import { useMemo, useState } from 'react';
 import RouteMap from './RouteMap';
 import RegenerateDayModal from './RegenerateDayModal';
+import ModifyDayModal from './ModifyDayModal';
+import DayPhotos from './DayPhotos';
 import {
   bestAccommodationLink,
   googleMapsDirections,
   googleMapsSearch,
+  googleMapsMultiStop,
   directFerriesSearch,
-  bookingSearch,
 } from '../lib/externalLinks';
 
 const TABS = [
   { id: 'planning', label: 'Planning' },
   { id: 'map', label: 'Carte' },
-  { id: 'budget', label: 'Budget global' },
-  { id: 'notes', label: 'Notes & Conseils' },
-  { id: 'activities', label: 'Fiches activités' },
+  { id: 'budget', label: 'Budget' },
+  { id: 'notes', label: 'Pratique' },
+  { id: 'activities', label: 'Activités' },
 ];
 
 const formatEur = (n) =>
@@ -24,15 +26,30 @@ const formatEur = (n) =>
 
 const formatEurOrFree = (n) => (n === 0 ? 'Gratuit' : formatEur(n));
 
-export default function ItineraryView({ itinerary, onRegenerateDay, regenerating }) {
+export default function ItineraryView({
+  itinerary,
+  onRegenerateDay,
+  onReplanFromDay,
+  regenerating,
+}) {
   const [tab, setTab] = useState('planning');
   const [regenTarget, setRegenTarget] = useState(null);
+  const [modifyTarget, setModifyTarget] = useState(null);
 
   const allActivities = useMemo(() => {
     if (!itinerary?.days) return [];
     return itinerary.days.flatMap((d) =>
       (d.activities || []).map((a) => ({ ...a, day: d.label, date: d.date }))
     );
+  }, [itinerary]);
+
+  const googleMapsUrl = useMemo(() => {
+    if (!itinerary?.days?.length) return null;
+    const stops = itinerary.days
+      .map((d) => d.location)
+      .filter(Boolean)
+      .filter((loc, i, arr) => loc !== arr[i - 1]); // dédupe consécutifs
+    return googleMapsMultiStop(stops);
   }, [itinerary]);
 
   if (!itinerary) return null;
@@ -44,6 +61,16 @@ export default function ItineraryView({ itinerary, onRegenerateDay, regenerating
     if (!regenTarget) return;
     await onRegenerateDay?.(regenTarget.index, instructions);
     setRegenTarget(null);
+  }
+
+  async function handleSubmitModify({ instructions, cascade }) {
+    if (!modifyTarget) return;
+    if (cascade && onReplanFromDay) {
+      await onReplanFromDay(modifyTarget.index, instructions);
+    } else {
+      await onRegenerateDay?.(modifyTarget.index, instructions);
+    }
+    setModifyTarget(null);
   }
 
   return (
@@ -96,6 +123,19 @@ export default function ItineraryView({ itinerary, onRegenerateDay, regenerating
             />
           )}
         </div>
+
+        {googleMapsUrl && (
+          <div className="mt-4 print:hidden">
+            <a
+              href={googleMapsUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="btn-secondary"
+            >
+              🗺️ Ouvrir tout l'itinéraire dans Google Maps
+            </a>
+          </div>
+        )}
       </header>
 
       <nav className="print:hidden">
@@ -121,10 +161,10 @@ export default function ItineraryView({ itinerary, onRegenerateDay, regenerating
         <div className={tab === 'planning' ? '' : 'hidden print:block'}>
           <Planning
             days={days}
-            summary={summary}
             adults={adults}
-            children={children}
+            childrenCount={children}
             onOpenRegen={(index, day) => setRegenTarget({ index, day })}
+            onOpenModify={(index, day) => setModifyTarget({ index, day })}
             canRegenerate={typeof onRegenerateDay === 'function'}
           />
         </div>
@@ -149,11 +189,28 @@ export default function ItineraryView({ itinerary, onRegenerateDay, regenerating
         onSubmit={handleSubmitRegen}
         loading={regenerating}
       />
+      <ModifyDayModal
+        open={!!modifyTarget}
+        day={modifyTarget?.day}
+        isLastDay={
+          modifyTarget && modifyTarget.index === (days?.length || 0) - 1
+        }
+        onClose={() => setModifyTarget(null)}
+        onSubmit={handleSubmitModify}
+        loading={regenerating}
+      />
     </div>
   );
 }
 
-function Planning({ days, summary, adults, children, onOpenRegen, canRegenerate }) {
+function Planning({
+  days,
+  adults,
+  childrenCount,
+  onOpenRegen,
+  onOpenModify,
+  canRegenerate,
+}) {
   if (!days?.length) return null;
   return (
     <section className="space-y-4">
@@ -164,10 +221,10 @@ function Planning({ days, summary, adults, children, onOpenRegen, canRegenerate 
         <DayCard
           key={`${d.label}-${i}`}
           day={d}
-          summary={summary}
           adults={adults}
-          children={children}
+          childrenCount={childrenCount}
           onOpenRegen={onOpenRegen ? () => onOpenRegen(i, d) : null}
+          onOpenModify={onOpenModify ? () => onOpenModify(i, d) : null}
           canRegenerate={canRegenerate}
         />
       ))}
@@ -175,13 +232,20 @@ function Planning({ days, summary, adults, children, onOpenRegen, canRegenerate 
   );
 }
 
-function DayCard({ day, summary, adults, children, onOpenRegen, canRegenerate }) {
+function DayCard({
+  day,
+  adults,
+  childrenCount,
+  onOpenRegen,
+  onOpenModify,
+  canRegenerate,
+}) {
   const accomLink = bestAccommodationLink(day.accommodation, {
     location: day.location,
     checkin: day.date,
     checkout: day.date,
     adults,
-    children,
+    children: childrenCount,
   });
 
   return (
@@ -195,16 +259,11 @@ function DayCard({ day, summary, adults, children, onOpenRegen, canRegenerate })
             {day.weekday} {day.date}
           </p>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3 flex-wrap">
           {day.weather && (
             <div className="text-sm text-slate-600">
               <span className="text-lg mr-1">{day.weather.emoji}</span>
               {day.weather.temperature_c}°C
-              {day.weather.description && (
-                <span className="text-slate-400 ml-1">
-                  · {day.weather.description}
-                </span>
-              )}
             </div>
           )}
           <div className="text-right">
@@ -215,14 +274,27 @@ function DayCard({ day, summary, adults, children, onOpenRegen, canRegenerate })
               {formatEur(day.day_total_eur)}
             </div>
           </div>
-          {canRegenerate && onOpenRegen && (
-            <button
-              onClick={onOpenRegen}
-              className="print:hidden text-xs text-brand-700 hover:underline"
-              title="Régénérer cette journée avec une consigne"
-            >
-              ↻ Régénérer
-            </button>
+          {canRegenerate && (
+            <div className="flex gap-2 print:hidden">
+              {onOpenModify && (
+                <button
+                  onClick={onOpenModify}
+                  className="text-xs text-brand-700 hover:underline"
+                  title="Modifier cette journée"
+                >
+                  ✏️ Modifier
+                </button>
+              )}
+              {onOpenRegen && (
+                <button
+                  onClick={onOpenRegen}
+                  className="text-xs text-slate-500 hover:underline"
+                  title="Régénérer cette journée"
+                >
+                  ↻ Régénérer
+                </button>
+              )}
+            </div>
           )}
         </div>
       </header>
@@ -347,11 +419,6 @@ function DayCard({ day, summary, adults, children, onOpenRegen, canRegenerate })
                 ))}
               </div>
             )}
-            {day.accommodation.note && (
-              <div className="text-slate-500 italic mt-1 text-xs">
-                {day.accommodation.note}
-              </div>
-            )}
             {accomLink && (
               <a
                 href={accomLink.url}
@@ -380,6 +447,8 @@ function DayCard({ day, summary, adults, children, onOpenRegen, canRegenerate })
           </Block>
         )}
       </div>
+
+      <DayPhotos location={day.location} max={5} />
     </article>
   );
 }
@@ -545,47 +614,129 @@ function BudgetGlobal({ budget }) {
 
 function NotesConseils({ notes }) {
   if (!notes) return null;
-  return (
-    <section className="card space-y-5">
-      <h2 className="text-xl font-semibold text-slate-900">Notes & Conseils</h2>
+  const phrases = notes.local_phrases;
+  const packing = notes.packing_list;
 
-      {notes.visa_and_documents && (
-        <NoteBlock title="Visa & documents">
-          {notes.visa_and_documents}
-        </NoteBlock>
+  return (
+    <div className="space-y-6">
+      {packing && (
+        <PackingList packing={packing} />
       )}
-      {notes.climate_and_packing && (
-        <NoteBlock title="Climat & bagages">
-          {notes.climate_and_packing}
-        </NoteBlock>
+      {phrases?.phrases?.length > 0 && (
+        <LocalPhrases data={phrases} />
       )}
-      {notes.useful_apps?.length > 0 && (
-        <NoteBlock title="Applications utiles">
-          <ul className="list-disc list-inside text-slate-700">
-            {notes.useful_apps.map((a, i) => (
-              <li key={i}>{a}</li>
-            ))}
-          </ul>
-        </NoteBlock>
+
+      <section className="card space-y-5">
+        <h2 className="text-xl font-semibold text-slate-900">Notes & Conseils</h2>
+
+        {notes.visa_and_documents && (
+          <NoteBlock title="Visa & documents">
+            {notes.visa_and_documents}
+          </NoteBlock>
+        )}
+        {notes.climate_and_packing && (
+          <NoteBlock title="Climat & bagages">
+            {notes.climate_and_packing}
+          </NoteBlock>
+        )}
+        {notes.useful_apps?.length > 0 && (
+          <NoteBlock title="Applications utiles">
+            <ul className="list-disc list-inside text-slate-700">
+              {notes.useful_apps.map((a, i) => (
+                <li key={i}>{a}</li>
+              ))}
+            </ul>
+          </NoteBlock>
+        )}
+        {notes.road_trip_tips?.length > 0 && (
+          <NoteBlock title="Conseils spécifiques road trip">
+            <ul className="list-disc list-inside text-slate-700">
+              {notes.road_trip_tips.map((t, i) => (
+                <li key={i}>{t}</li>
+              ))}
+            </ul>
+          </NoteBlock>
+        )}
+        {notes.practical_tips?.length > 0 && (
+          <NoteBlock title="Conseils pratiques">
+            <ul className="list-disc list-inside text-slate-700">
+              {notes.practical_tips.map((t, i) => (
+                <li key={i}>{t}</li>
+              ))}
+            </ul>
+          </NoteBlock>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function PackingList({ packing }) {
+  const categories = [
+    { key: 'essentials', label: 'Essentiels' },
+    { key: 'clothing', label: 'Vêtements' },
+    { key: 'tech_and_papers', label: 'Tech & Papiers' },
+    { key: 'vehicle_specific', label: 'Véhicule' },
+    { key: 'activities_specific', label: 'Activités' },
+  ].filter((c) => packing[c.key]?.length > 0);
+
+  if (!categories.length) return null;
+
+  return (
+    <section className="card">
+      <div className="flex items-baseline justify-between gap-2 mb-3">
+        <h2 className="text-xl font-semibold text-slate-900">
+          🎒 Liste de packing
+        </h2>
+        <button
+          onClick={() => window.print()}
+          className="text-xs text-brand-700 hover:underline print:hidden"
+        >
+          🖨️ Imprimer
+        </button>
+      </div>
+      <div className="grid md:grid-cols-2 gap-4">
+        {categories.map((c) => (
+          <div key={c.key}>
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-2">
+              {c.label}
+            </h3>
+            <ul className="space-y-1.5 text-sm">
+              {packing[c.key].map((item, i) => (
+                <li
+                  key={i}
+                  className="flex items-start gap-2 text-slate-700"
+                >
+                  <input type="checkbox" className="mt-0.5" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function LocalPhrases({ data }) {
+  return (
+    <section className="card">
+      <h2 className="text-xl font-semibold text-slate-900">
+        🗣️ Phrases utiles en {data.language}
+      </h2>
+      {data.phonetic_hint && (
+        <p className="text-xs text-slate-500 mt-1">{data.phonetic_hint}</p>
       )}
-      {notes.road_trip_tips?.length > 0 && (
-        <NoteBlock title="Conseils spécifiques road trip">
-          <ul className="list-disc list-inside text-slate-700">
-            {notes.road_trip_tips.map((t, i) => (
-              <li key={i}>{t}</li>
-            ))}
-          </ul>
-        </NoteBlock>
-      )}
-      {notes.practical_tips?.length > 0 && (
-        <NoteBlock title="Conseils pratiques">
-          <ul className="list-disc list-inside text-slate-700">
-            {notes.practical_tips.map((t, i) => (
-              <li key={i}>{t}</li>
-            ))}
-          </ul>
-        </NoteBlock>
-      )}
+      <ul className="mt-4 divide-y divide-slate-100">
+        {data.phrases.map((p, i) => (
+          <li key={i} className="py-2 grid sm:grid-cols-3 gap-2 text-sm">
+            <div className="text-slate-600">{p.fr}</div>
+            <div className="font-medium text-slate-900">{p.local}</div>
+            <div className="text-slate-500 italic">{p.pronunciation}</div>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }

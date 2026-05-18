@@ -100,6 +100,27 @@ export async function generateItinerary(preferences, onProgress) {
   };
 }
 
+export async function replanFromDay(itinerary, fromDayIndex, instructions) {
+  const data = await invoke({
+    mode: 'replan-from-day',
+    itinerary,
+    from_day_index: fromDayIndex,
+    instructions,
+  });
+  if (!Array.isArray(data?.days)) {
+    throw new Error('Réponse vide pour la replanification.');
+  }
+  const before = itinerary.days.slice(0, fromDayIndex);
+  const newDays = [...before, ...data.days];
+  const budget = computeBudget(newDays, itinerary.summary);
+  return {
+    ...itinerary,
+    days: newDays,
+    summary: { ...itinerary.summary, ...budget.summaryPatch },
+    budget_summary: { ...itinerary.budget_summary, ...budget.budget_summary },
+  };
+}
+
 export async function regenerateDay(itinerary, dayIndex, instructions) {
   const data = await invoke({
     mode: 'regenerate-day',

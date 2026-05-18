@@ -18,6 +18,8 @@ const EXPAND_MODEL =
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
 const SUPABASE_SERVICE_ROLE_KEY =
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+// À configurer manuellement dans Edge Functions → Secrets
+const PEXELS_API_KEY = Deno.env.get('PEXELS_API_KEY') || '';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -165,7 +167,19 @@ const FULL_SCHEMA = `{
   },
   "notes": {
     "visa_and_documents": string, "climate_and_packing": string,
-    "useful_apps": string[], "practical_tips": string[], "road_trip_tips": string[]
+    "useful_apps": string[], "practical_tips": string[], "road_trip_tips": string[],
+    "packing_list": {
+      "essentials": string[],
+      "clothing": string[],
+      "tech_and_papers": string[],
+      "vehicle_specific": string[],
+      "activities_specific": string[]
+    },
+    "local_phrases": {
+      "language": string,
+      "phonetic_hint": string,
+      "phrases": [ { "fr": string, "local": string, "pronunciation": string } ]
+    }
   }
 }`;
 
@@ -216,11 +230,25 @@ Schéma JSON STRICT :
   ],
   "notes": {
     "visa_and_documents": string, "climate_and_packing": string,
-    "useful_apps": string[], "practical_tips": string[], "road_trip_tips": string[]
+    "useful_apps": string[], "practical_tips": string[], "road_trip_tips": string[],
+    "packing_list": {
+      "essentials": string[],
+      "clothing": string[],
+      "tech_and_papers": string[],
+      "vehicle_specific": string[],
+      "activities_specific": string[]
+    },
+    "local_phrases": {
+      "language": string,
+      "phonetic_hint": string,
+      "phrases": [ { "fr": string, "local": string, "pronunciation": string } ]
+    }
   }
 }
 
 Contraintes :
+- packing_list adaptée au climat, aux activités, au véhicule (12-20 items par catégorie).
+- local_phrases : language = langue principale parlée à la destination ; si destination francophone, mets une liste vide pour "phrases" et indique "Français" en language. Sinon 10-15 phrases utiles.
 - day_plans contient EXACTEMENT duration_days entrées (du jour 1 au dernier jour).
 - end_location du jour N doit cohérer avec location du jour N+1.
 - Le voyage doit être réaliste : pas plus de 400 km/jour en road trip moyen, pas plus de 250 km/jour en montagne.
@@ -294,6 +322,45 @@ ${instructions}
 """
 
 Renvoie UNIQUEMENT le JSON de la nouvelle journée selon le même schéma. Garde label, date et weekday. Recalcule day_total_eur. Cohérence avec le départ du jour suivant.`;
+}
+
+function buildReplanFromDayPrompt(
+  itinerary: any,
+  fromDayIndex: number,
+  instructions: string
+): string {
+  const fromDay = itinerary.days?.[fromDayIndex];
+  if (!fromDay) throw new Error(`Jour ${fromDayIndex} introuvable`);
+  const prev = itinerary.days?.[fromDayIndex - 1];
+  const remainingDays = itinerary.days?.slice(fromDayIndex) || [];
+
+  return `Tu vas REPLANIFIER une portion d'itinéraire. L'utilisateur souhaite modifier le jour ${fromDay.label} et tu dois recalculer cohéremment TOUS les jours suivants pour tenir compte de cette modification, en gardant inchangées les dates et la destination finale.
+
+Contexte itinéraire global :
+${JSON.stringify(itinerary.summary, null, 2)}
+
+Jour précédent (point de départ) : ${prev ? `${prev.location}, fin à ${prev.accommodation?.coordinates_hint || prev.location}` : '(premier jour - point de départ : ' + itinerary.summary?.departure_location + ')'}
+
+Jours à replanifier (${remainingDays.length} jours, du ${fromDay.label} au dernier) :
+${remainingDays.map((d: any) => `  - ${d.label} ${d.date} : était à ${d.location}`).join('\n')}
+
+CONSIGNE UTILISATEUR pour le jour ${fromDay.label} :
+"""
+${instructions}
+"""
+
+Tu dois renvoyer UNIQUEMENT le JSON sous cette forme exacte (le tableau "days" remplace EXACTEMENT les ${remainingDays.length} jours de l'itinéraire à partir de l'index ${fromDayIndex}) :
+
+{
+  "days": [ ${FULL_DAY_SCHEMA} ]
+}
+
+Contraintes :
+- Garde EXACTEMENT les mêmes labels (${remainingDays.map((d: any) => d.label).join(', ')}) et dates (${remainingDays.map((d: any) => d.date).join(', ')}).
+- Le premier jour de la liste applique la consigne utilisateur.
+- Les jours suivants enchaînent de façon cohérente.
+- Le dernier jour DOIT se terminer à ${itinerary.summary?.return_location || itinerary.summary?.departure_location}.
+- coordinates obligatoire pour chaque jour.`;
 }
 
 async function callClaude(userPrompt: string, maxTokens = 16000, model = MODEL) {
@@ -384,6 +451,40 @@ Réponds UNIQUEMENT avec le JSON valide. Aucun texte autour, aucun bloc markdown
   throw new Error(
     `JSON invalide même après tentative de réparation : ${second.error}`
   );
+}
+
+async function fetchPexelsPhotos(query: string, perPage = 5): Promise<any[]> {
+  if (!PEXELS_API_KEY) {
+    return [];
+  }
+  try {
+    const url = `https://api.pexels.com/v1/search?query=${encodeURIComponent(
+      query
+    )}&per_page=${perPage}&orientation=landscape`;
+    const res = await fetch(url, {
+      headers: { Authorization: PEXELS_API_KEY },
+    });
+    if (!res.ok) {
+      console.warn('[pexels]', res.status, await res.text());
+      return [];
+    }
+    const data = await res.json();
+    return (data?.photos || []).map((p: any) => ({
+      id: p.id,
+      url: p.url,
+      photographer: p.photographer,
+      photographer_url: p.photographer_url,
+      src: {
+        small: p.src?.small,
+        medium: p.src?.medium,
+        large: p.src?.large,
+      },
+      alt: p.alt || query,
+    }));
+  } catch (e) {
+    console.error('[pexels] fetch failed', e);
+    return [];
+  }
 }
 
 function jsonResponse(body: any, status = 200) {
@@ -521,6 +622,46 @@ Deno.serve(async (req) => {
       const { text, usage } = await callClaude(prompt, 6000);
       const day = await parseOrRepair(text, MODEL);
       return jsonResponse({ day, usage, model: MODEL });
+    }
+
+    if (mode === 'replan-from-day') {
+      const { itinerary, from_day_index, instructions } = body;
+      if (
+        !itinerary ||
+        typeof from_day_index !== 'number' ||
+        !instructions
+      ) {
+        return jsonResponse(
+          { error: 'Body invalide : itinerary, from_day_index, instructions requis' },
+          400
+        );
+      }
+      const prompt = buildReplanFromDayPrompt(itinerary, from_day_index, instructions);
+      const { text, usage } = await callClaude(prompt, 16000);
+      const parsed = await parseOrRepair(text, MODEL);
+      const days = parsed?.days;
+      if (!Array.isArray(days)) {
+        return jsonResponse(
+          { error: 'Réponse mal formée : "days" attendu en tableau.' },
+          500
+        );
+      }
+      return jsonResponse({ days, usage, model: MODEL });
+    }
+
+    if (mode === 'fetch-photos') {
+      const { query, per_page } = body;
+      if (!query || typeof query !== 'string') {
+        return jsonResponse({ error: 'Paramètre "query" requis.' }, 400);
+      }
+      if (!PEXELS_API_KEY) {
+        return jsonResponse(
+          { error: 'PEXELS_API_KEY non configuré côté Edge Function.' },
+          500
+        );
+      }
+      const photos = await fetchPexelsPhotos(query, per_page || 5);
+      return jsonResponse({ photos });
     }
 
     if (mode === 'plan-trip') {

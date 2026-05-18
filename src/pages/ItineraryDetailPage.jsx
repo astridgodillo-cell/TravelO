@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getItinerary, updateItinerary } from '../lib/supabase';
-import { regenerateDay } from '../lib/ai';
+import { regenerateDay, replanFromDay } from '../lib/ai';
 import ItineraryView from '../components/ItineraryView';
 import SharePanel from '../components/SharePanel';
 
@@ -47,6 +47,28 @@ export default function ItineraryDetailPage() {
     }
   }
 
+  async function handleReplanFromDay(dayIndex, instructions) {
+    if (!trip) return;
+    setRegenerating(true);
+    setError(null);
+    try {
+      const updatedItinerary = await replanFromDay(
+        trip.itinerary,
+        dayIndex,
+        instructions
+      );
+      const { data, error: dbError } = await updateItinerary(trip.id, {
+        itinerary: updatedItinerary,
+      });
+      if (dbError) throw dbError;
+      setTrip(data);
+    } catch (err) {
+      setError(err.message || 'Erreur lors de la replanification.');
+    } finally {
+      setRegenerating(false);
+    }
+  }
+
   if (loading) return <p className="text-slate-500">Chargement…</p>;
   if (error)
     return (
@@ -80,6 +102,7 @@ export default function ItineraryDetailPage() {
       <ItineraryView
         itinerary={trip.itinerary}
         onRegenerateDay={handleRegenerateDay}
+        onReplanFromDay={handleReplanFromDay}
         regenerating={regenerating}
       />
     </div>

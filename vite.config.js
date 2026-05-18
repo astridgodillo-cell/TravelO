@@ -1,7 +1,80 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import { VitePWA } from 'vite-plugin-pwa';
 
-// https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
-})
+  plugins: [
+    react(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      includeAssets: ['logo.png'],
+      manifest: {
+        name: 'TravelO — Itinéraires de voyage sur mesure',
+        short_name: 'TravelO',
+        description:
+          'Générateur d\'itinéraires de voyage ultra-détaillés, comme un tour-opérateur.',
+        lang: 'fr',
+        theme_color: '#2573eb',
+        background_color: '#f8fafc',
+        display: 'standalone',
+        start_url: '/',
+        scope: '/',
+        icons: [
+          {
+            src: '/logo.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'any',
+          },
+          {
+            src: '/logo.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any maskable',
+          },
+        ],
+      },
+      workbox: {
+        // Limites + stratégies de cache
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+        navigateFallback: '/index.html',
+        navigateFallbackDenylist: [
+          /^\/auth\//,
+          /^\/api\//,
+          /^\/functions\//,
+        ],
+        runtimeCaching: [
+          {
+            // Tiles OpenStreetMap : cache long pour gagner du temps
+            urlPattern: /^https:\/\/[a-z]\.tile\.openstreetmap\.org\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'osm-tiles',
+              expiration: {
+                maxEntries: 500,
+                maxAgeSeconds: 30 * 24 * 60 * 60, // 30 jours
+              },
+            },
+          },
+          {
+            // Photos Pexels CDN
+            urlPattern: /^https:\/\/images\.pexels\.com\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'pexels-images',
+              expiration: {
+                maxEntries: 200,
+                maxAgeSeconds: 14 * 24 * 60 * 60,
+              },
+            },
+          },
+          {
+            // API Supabase : ne PAS mettre en cache (auth + données dynamiques)
+            urlPattern: /^https:\/\/[a-z0-9]+\.supabase\.co\/.*/i,
+            handler: 'NetworkOnly',
+          },
+        ],
+      },
+    }),
+  ],
+});
