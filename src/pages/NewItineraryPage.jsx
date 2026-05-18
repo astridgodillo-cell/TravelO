@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import PreferencesForm from '../components/PreferencesForm';
 import ItineraryView from '../components/ItineraryView';
+import GeneratingLoader from '../components/GeneratingLoader';
 import { generateItinerary } from '../lib/ai';
 import { saveItinerary } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
@@ -23,6 +24,7 @@ export default function NewItineraryPage() {
       const result = await generateItinerary(prefs);
       setPreferences(prefs);
       setItinerary(result);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {
       setError(err.message || 'Erreur lors de la génération.');
     } finally {
@@ -38,7 +40,9 @@ export default function NewItineraryPage() {
     setSaving(true);
     setError(null);
     try {
-      const title = (preferences?.destinations || 'Voyage').slice(0, 80);
+      const title =
+        (preferences?.destinations || 'Voyage').slice(0, 80) +
+        ` — ${itinerary?.summary?.duration_days || ''}j`;
       const { data, error: dbError } = await saveItinerary({
         title,
         preferences,
@@ -55,7 +59,11 @@ export default function NewItineraryPage() {
 
   return (
     <div className="space-y-6">
-      <PreferencesForm onSubmit={handleGenerate} loading={loading} />
+      {!itinerary && !loading && (
+        <PreferencesForm onSubmit={handleGenerate} loading={loading} />
+      )}
+
+      {loading && <GeneratingLoader />}
 
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
@@ -63,15 +71,18 @@ export default function NewItineraryPage() {
         </div>
       )}
 
-      {itinerary && (
+      {itinerary && !loading && (
         <>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold text-slate-900">
-              Itinéraire généré
-            </h2>
+          <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
+            <button
+              onClick={() => setItinerary(null)}
+              className="btn-secondary"
+            >
+              ← Modifier les préférences
+            </button>
             <div className="flex gap-2">
               <button onClick={() => window.print()} className="btn-secondary">
-                Exporter / Imprimer
+                Exporter en PDF
               </button>
               <button
                 onClick={handleSave}
