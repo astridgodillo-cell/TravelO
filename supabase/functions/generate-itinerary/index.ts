@@ -216,7 +216,10 @@ Contraintes :
 - grand_total_eur = somme des day_total_eur.
 - per_person_eur = grand_total / (adults + enfants).
 - Si is_round_trip, dernier jour à departure_location ; sinon à return_location.
-- culinary_specialties : 3 à 4 spécialités emblématiques par jour, propres à la région/ville du jour. category = "plat", "pâtisserie", "fromage", "vin", "boisson", "rue", etc. description = 1-2 phrases descriptives (ingrédients, contexte). photo_query = expression courte en français ou langue locale optimisée pour Pexels (ex. "pastel de nata", "porchetta italienne", "fondue savoyarde"). Évite les doublons d'un jour à l'autre quand le lieu change.`;
+- culinary_specialties : 3 à 4 spécialités emblématiques par jour, propres à la région/ville du jour. category = "plat", "pâtisserie", "fromage", "vin", "boisson", "rue", etc. description = 1-2 phrases descriptives (ingrédients, contexte). photo_query = expression COURTE (2-3 mots maximum) qui décrit le PLAT/PRODUIT lui-même, SANS nom de ville ni adjectif de provenance. Le moteur de recherche photo (Unsplash) doit retrouver une photo du plat, pas une photo du lieu.
+  ✅ "pastel de nata"      ✅ "panettone"           ✅ "risotto"          ✅ "fondue savoyarde"
+  ❌ "Panettone de Como"   ❌ "Formaggini di Tresenda"   ❌ "Missultini du lac"
+  Évite les doublons d'un jour à l'autre quand le lieu change.`;
 }
 
 function buildPlanPrompt(p: any): string {
@@ -362,7 +365,9 @@ Contraintes :
 - ${count} spécialités, vraiment emblématiques de ${location} ou sa région
 - description en français, 1-2 phrases concrètes
 - pas de doublons
-- photo_query court (2-4 mots) en français ou langue locale, choisi pour ramener une photo pertinente`;
+- photo_query : 2-3 mots décrivant LE PLAT lui-même, SANS nom de ville ni adjectif de provenance, sinon le moteur de recherche photo renvoie le lieu au lieu du plat.
+  ✅ "pastel de nata"   ✅ "panettone"   ✅ "risotto"
+  ❌ "Panettone de Como"   ❌ "Formaggini di Tresenda"`;
 }
 
 function buildRegenerateActivityPrompt(

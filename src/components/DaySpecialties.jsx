@@ -44,9 +44,29 @@ export default function DaySpecialties({
   );
 }
 
+// Mappe la catégorie vers un mot-clé qui force Unsplash/Pexels à renvoyer
+// du food/boisson plutôt qu'une vue du village ou de la région.
+const CATEGORY_TAGS = {
+  plat: 'food dish',
+  'pâtisserie': 'pastry dessert',
+  patisserie: 'pastry dessert',
+  dessert: 'dessert',
+  fromage: 'cheese',
+  vin: 'wine glass',
+  boisson: 'drink beverage',
+  rue: 'street food',
+};
+
+function buildFoodQuery(specialty) {
+  const base = specialty.photo_query || specialty.name || '';
+  const cat = (specialty.category || '').toLowerCase().trim();
+  const suffix = CATEGORY_TAGS[cat] || 'food';
+  return `${base} ${suffix}`.trim();
+}
+
 function SpecialtyCard({ specialty }) {
   const [photo, setPhoto] = useState(undefined); // undefined = loading, null = none
-  const query = specialty.photo_query || specialty.name;
+  const query = buildFoodQuery(specialty);
 
   useEffect(() => {
     let active = true;
