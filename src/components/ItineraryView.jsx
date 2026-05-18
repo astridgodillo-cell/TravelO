@@ -1,7 +1,17 @@
 import { useMemo, useState } from 'react';
+import RouteMap from './RouteMap';
+import RegenerateDayModal from './RegenerateDayModal';
+import {
+  bestAccommodationLink,
+  googleMapsDirections,
+  googleMapsSearch,
+  directFerriesSearch,
+  bookingSearch,
+} from '../lib/externalLinks';
 
 const TABS = [
   { id: 'planning', label: 'Planning' },
+  { id: 'map', label: 'Carte' },
   { id: 'budget', label: 'Budget global' },
   { id: 'notes', label: 'Notes & Conseils' },
   { id: 'activities', label: 'Fiches activités' },
@@ -12,11 +22,11 @@ const formatEur = (n) =>
     ? n.toLocaleString('fr-FR', { maximumFractionDigits: 0 }) + ' €'
     : '—';
 
-const formatEurOrFree = (n) =>
-  n === 0 ? 'Gratuit' : formatEur(n);
+const formatEurOrFree = (n) => (n === 0 ? 'Gratuit' : formatEur(n));
 
-export default function ItineraryView({ itinerary }) {
+export default function ItineraryView({ itinerary, onRegenerateDay, regenerating }) {
   const [tab, setTab] = useState('planning');
+  const [regenTarget, setRegenTarget] = useState(null);
 
   const allActivities = useMemo(() => {
     if (!itinerary?.days) return [];
@@ -27,6 +37,14 @@ export default function ItineraryView({ itinerary }) {
 
   if (!itinerary) return null;
   const { summary, days, budget_summary, notes } = itinerary;
+  const adults = summary?.travellers?.adults || 2;
+  const children = summary?.travellers?.children_ages?.length || 0;
+
+  async function handleSubmitRegen(instructions) {
+    if (!regenTarget) return;
+    await onRegenerateDay?.(regenTarget.index, instructions);
+    setRegenTarget(null);
+  }
 
   return (
     <div className="space-y-6">
@@ -59,11 +77,7 @@ export default function ItineraryView({ itinerary }) {
           <Info label="Durée" value={`${summary?.duration_days} jours`} />
           <Info
             label="Voyageurs"
-            value={`${summary?.travellers?.adults} adulte(s)${
-              summary?.travellers?.children_ages?.length
-                ? ` + ${summary.travellers.children_ages.length} enfant(s)`
-                : ''
-            }`}
+            value={`${adults} adulte(s)${children ? ` + ${children} enfant(s)` : ''}`}
           />
           <Info label="Type" value={summary?.trip_type} />
           <Info label="Niveau" value={summary?.budget_level} />
@@ -105,7 +119,17 @@ export default function ItineraryView({ itinerary }) {
 
       <div className="print:space-y-8">
         <div className={tab === 'planning' ? '' : 'hidden print:block'}>
-          <Planning days={days} />
+          <Planning
+            days={days}
+            summary={summary}
+            adults={adults}
+            children={children}
+            onOpenRegen={(index, day) => setRegenTarget({ index, day })}
+            canRegenerate={typeof onRegenerateDay === 'function'}
+          />
+        </div>
+        <div className={tab === 'map' ? '' : 'hidden'}>
+          <RouteMap itinerary={itinerary} />
         </div>
         <div className={tab === 'budget' ? '' : 'hidden print:block'}>
           <BudgetGlobal budget={budget_summary} />
@@ -117,25 +141,49 @@ export default function ItineraryView({ itinerary }) {
           <FichesActivites activities={allActivities} />
         </div>
       </div>
+
+      <RegenerateDayModal
+        open={!!regenTarget}
+        day={regenTarget?.day}
+        onClose={() => setRegenTarget(null)}
+        onSubmit={handleSubmitRegen}
+        loading={regenerating}
+      />
     </div>
   );
 }
 
-function Planning({ days }) {
+function Planning({ days, summary, adults, children, onOpenRegen, canRegenerate }) {
   if (!days?.length) return null;
   return (
     <section className="space-y-4">
       <h2 className="text-xl font-semibold text-slate-900 print:break-before-page">
         Programme jour par jour
       </h2>
-      {days.map((d) => (
-        <DayCard key={d.label} day={d} />
+      {days.map((d, i) => (
+        <DayCard
+          key={`${d.label}-${i}`}
+          day={d}
+          summary={summary}
+          adults={adults}
+          children={children}
+          onOpenRegen={onOpenRegen ? () => onOpenRegen(i, d) : null}
+          canRegenerate={canRegenerate}
+        />
       ))}
     </section>
   );
 }
 
-function DayCard({ day }) {
+function DayCard({ day, summary, adults, children, onOpenRegen, canRegenerate }) {
+  const accomLink = bestAccommodationLink(day.accommodation, {
+    location: day.location,
+    checkin: day.date,
+    checkout: day.date,
+    adults,
+    children,
+  });
+
   return (
     <article className="card print:break-inside-avoid print:shadow-none print:border-slate-300">
       <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-100 pb-3">
@@ -167,6 +215,15 @@ function DayCard({ day }) {
               {formatEur(day.day_total_eur)}
             </div>
           </div>
+          {canRegenerate && onOpenRegen && (
+            <button
+              onClick={onOpenRegen}
+              className="print:hidden text-xs text-brand-700 hover:underline"
+              title="Régénérer cette journée avec une consigne"
+            >
+              ↻ Régénérer
+            </button>
+          )}
         </div>
       </header>
 
@@ -198,6 +255,14 @@ function DayCard({ day }) {
                     {a.description && (
                       <p className="text-slate-600 mt-1">{a.description}</p>
                     )}
+                    <a
+                      href={googleMapsSearch(`${a.title} ${day.location}`)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="print:hidden inline-block text-xs text-brand-700 hover:underline mt-1"
+                    >
+                      📍 Voir sur Google Maps
+                    </a>
                   </div>
                   <div className="text-right text-xs">
                     <div className="text-slate-500">
@@ -221,7 +286,7 @@ function DayCard({ day }) {
           </h4>
           <ul className="space-y-2 text-sm">
             {day.trips.map((t, i) => (
-              <TripRow key={i} trip={t} />
+              <TripRow key={i} trip={t} dayDate={day.date} />
             ))}
           </ul>
         </div>
@@ -287,6 +352,16 @@ function DayCard({ day }) {
                 {day.accommodation.note}
               </div>
             )}
+            {accomLink && (
+              <a
+                href={accomLink.url}
+                target="_blank"
+                rel="noreferrer"
+                className="print:hidden inline-block text-xs text-brand-700 hover:underline mt-2"
+              >
+                🔗 Chercher sur {accomLink.provider}
+              </a>
+            )}
           </Block>
         )}
         {day.meals && (
@@ -309,11 +384,12 @@ function DayCard({ day }) {
   );
 }
 
-function TripRow({ trip }) {
+function TripRow({ trip, dayDate }) {
   const hasBreakdown =
     trip.fuel_cost_eur != null ||
     trip.toll_cost_eur != null ||
     trip.ferry_cost_eur != null;
+  const isFerry = (trip.mode || '').toLowerCase().includes('ferry');
 
   return (
     <li className="rounded-lg border border-slate-100 bg-white p-3">
@@ -348,6 +424,26 @@ function TripRow({ trip }) {
           )}
         </div>
       )}
+      <div className="print:hidden mt-2 flex flex-wrap gap-3 text-xs">
+        <a
+          href={googleMapsDirections(trip.from, trip.to)}
+          target="_blank"
+          rel="noreferrer"
+          className="text-brand-700 hover:underline"
+        >
+          🗺️ Itinéraire Google Maps
+        </a>
+        {isFerry && (
+          <a
+            href={directFerriesSearch(trip.from, trip.to, dayDate)}
+            target="_blank"
+            rel="noreferrer"
+            className="text-brand-700 hover:underline"
+          >
+            ⛴️ Comparer ferries
+          </a>
+        )}
+      </div>
       {trip.road_warning && (
         <div className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
           ⚠️ {trip.road_warning}

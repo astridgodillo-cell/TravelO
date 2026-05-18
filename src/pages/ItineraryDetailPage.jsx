@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { getItinerary } from '../lib/supabase';
+import { getItinerary, updateItinerary } from '../lib/supabase';
+import { regenerateDay } from '../lib/ai';
 import ItineraryView from '../components/ItineraryView';
+import SharePanel from '../components/SharePanel';
 
 export default function ItineraryDetailPage() {
   const { id } = useParams();
   const [trip, setTrip] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [regenerating, setRegenerating] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -22,6 +25,28 @@ export default function ItineraryDetailPage() {
     };
   }, [id]);
 
+  async function handleRegenerateDay(dayIndex, instructions) {
+    if (!trip) return;
+    setRegenerating(true);
+    setError(null);
+    try {
+      const updatedItinerary = await regenerateDay(
+        trip.itinerary,
+        dayIndex,
+        instructions
+      );
+      const { data, error: dbError } = await updateItinerary(trip.id, {
+        itinerary: updatedItinerary,
+      });
+      if (dbError) throw dbError;
+      setTrip(data);
+    } catch (err) {
+      setError(err.message || 'Erreur lors de la régénération.');
+    } finally {
+      setRegenerating(false);
+    }
+  }
+
   if (loading) return <p className="text-slate-500">Chargement…</p>;
   if (error)
     return (
@@ -33,18 +58,30 @@ export default function ItineraryDetailPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div>
-          <Link to="/mes-voyages" className="text-sm text-brand-700 hover:underline">
+          <Link
+            to="/mes-voyages"
+            className="text-sm text-brand-700 hover:underline"
+          >
             ← Mes voyages
           </Link>
-          <h1 className="text-2xl font-semibold text-slate-900">{trip.title}</h1>
+          <h1 className="text-2xl font-semibold text-slate-900">
+            {trip.title}
+          </h1>
         </div>
         <button onClick={() => window.print()} className="btn-secondary">
-          Exporter / Imprimer
+          Exporter en PDF
         </button>
       </div>
-      <ItineraryView itinerary={trip.itinerary} />
+
+      <SharePanel itinerary={trip} onUpdate={(updated) => setTrip(updated)} />
+
+      <ItineraryView
+        itinerary={trip.itinerary}
+        onRegenerateDay={handleRegenerateDay}
+        regenerating={regenerating}
+      />
     </div>
   );
 }

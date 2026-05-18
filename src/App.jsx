@@ -6,6 +6,7 @@ import HomePage from './pages/HomePage';
 import NewItineraryPage from './pages/NewItineraryPage';
 import MyTripsPage from './pages/MyTripsPage';
 import ItineraryDetailPage from './pages/ItineraryDetailPage';
+import PublicItineraryPage from './pages/PublicItineraryPage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
 
@@ -19,6 +20,7 @@ export default function App() {
           <Route path="/nouveau" element={<NewItineraryPage />} />
           <Route path="/connexion" element={<LoginPage />} />
           <Route path="/inscription" element={<SignupPage />} />
+          <Route path="/partage/:slug" element={<PublicItineraryPage />} />
           <Route
             path="/mes-voyages"
             element={

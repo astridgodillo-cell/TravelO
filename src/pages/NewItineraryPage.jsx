@@ -2,7 +2,7 @@ import { useState } from 'react';
 import PreferencesForm from '../components/PreferencesForm';
 import ItineraryView from '../components/ItineraryView';
 import GeneratingLoader from '../components/GeneratingLoader';
-import { generateItinerary } from '../lib/ai';
+import { generateItinerary, regenerateDay } from '../lib/ai';
 import { saveItinerary } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -11,6 +11,7 @@ export default function NewItineraryPage() {
   const [itinerary, setItinerary] = useState(null);
   const [preferences, setPreferences] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const { user } = useAuth();
@@ -29,6 +30,20 @@ export default function NewItineraryPage() {
       setError(err.message || 'Erreur lors de la génération.');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleRegenerateDay(dayIndex, instructions) {
+    if (!itinerary) return;
+    setRegenerating(true);
+    setError(null);
+    try {
+      const updated = await regenerateDay(itinerary, dayIndex, instructions);
+      setItinerary(updated);
+    } catch (err) {
+      setError(err.message || 'Erreur lors de la régénération.');
+    } finally {
+      setRegenerating(false);
     }
   }
 
@@ -97,7 +112,11 @@ export default function NewItineraryPage() {
               </button>
             </div>
           </div>
-          <ItineraryView itinerary={itinerary} />
+          <ItineraryView
+            itinerary={itinerary}
+            onRegenerateDay={handleRegenerateDay}
+            regenerating={regenerating}
+          />
         </>
       )}
     </div>

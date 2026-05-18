@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
+import TemplatePicker from './TemplatePicker';
 
 const TRIP_TYPES = [
   { id: 'itinerant', label: 'Itinérant' },
@@ -170,6 +171,11 @@ export default function PreferencesForm({ onSubmit, loading }) {
     onSubmit(payload);
   }
 
+  function loadTemplate(prefs) {
+    if (!prefs) return;
+    setValues({ ...DEFAULTS, ...prefs });
+  }
+
   return (
     <form onSubmit={handleSubmit} className="card space-y-8">
       <div>
@@ -181,6 +187,8 @@ export default function PreferencesForm({ onSubmit, loading }) {
           itinéraire jour-par-jour comme un tour-opérateur.
         </p>
       </div>
+
+      <TemplatePicker currentPreferences={values} onLoad={loadTemplate} />
 
       <Section title="Destination & itinéraire">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

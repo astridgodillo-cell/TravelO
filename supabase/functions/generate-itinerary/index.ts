@@ -1,14 +1,10 @@
 // Supabase Edge Function — generate-itinerary
-// Appelle l'API Claude (Anthropic) côté serveur et renvoie un itinéraire JSON
-// strictement structuré. La clé ANTHROPIC_API_KEY n'est jamais exposée au client.
+// 2 modes :
+//   1) { preferences } → génère un itinéraire complet
+//   2) { mode: "regenerate-day", itinerary, day_index, instructions } → régénère uniquement la journée demandée
 //
 // Secret requis :
-//   supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
-// (ou via le dashboard Supabase → Project Settings → Edge Functions → Secrets)
-//
-// Déploiement :
-//   supabase functions deploy generate-itinerary --no-verify-jwt
-// (mettre --no-verify-jwt si vous voulez autoriser la génération sans login)
+//   ANTHROPIC_API_KEY (via dashboard Supabase → Edge Functions → Secrets)
 
 // deno-lint-ignore-file no-explicit-any
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
@@ -38,6 +34,7 @@ Règles strictes :
 - N'invente pas d'établissements de luxe absurdement célèbres ; privilégie des adresses crédibles.
 - Pour chaque jour, structure en Matin / Midi / Après-midi / Soir.
 - Décris les excursions de façon immersive et commerciale ("vous emprunterez le sentier...", "votre guide local vous racontera...").
+- Pour chaque journée, fournis des coordonnées GPS approximatives (latitude, longitude) du lieu principal — niveau ville ou village, pas besoin de précision GPS exacte. Utilise tes connaissances géographiques.
 
 MODE ROAD TRIP (van, camping-car, voiture) — règles supplémentaires :
 - Construis un VRAI itinéraire bout-en-bout, en boucle si départ = retour, sinon en ligne.
@@ -133,9 +130,9 @@ Tu dois renvoyer un JSON STRICT avec exactement cette structure :
     "trip_type": string,
     "interests": string[],
     "budget_level": string,
-    "vehicle_summary": string | null,  // ex. "Van aménagé (2.1×5.4m), diesel, 8.5 L/100" ou null si pas de véhicule
-    "total_distance_km": number | null,  // total des trajets en km, null si voyage non motorisé
-    "headline": string  // accroche d'agence en 1 phrase
+    "vehicle_summary": string | null,
+    "total_distance_km": number | null,
+    "headline": string
   },
   "days": [
     {
@@ -143,6 +140,7 @@ Tu dois renvoyer un JSON STRICT avec exactement cette structure :
       "date": "YYYY-MM-DD",
       "weekday": "lundi",
       "location": "Ville / région du jour",
+      "coordinates": { "lat": number, "lng": number },
       "weather": { "temperature_c": number, "emoji": string, "description": string },
       "morning":   { "title": string, "description": string },
       "noon":      { "title": string, "description": string },
@@ -150,11 +148,11 @@ Tu dois renvoyer un JSON STRICT avec exactement cette structure :
       "evening":   { "title": string, "description": string },
       "accommodation": {
         "name": string,
-        "type": string,              // "Hôtel", "Aire de camping-car", "Bivouac", "France Passion", "Camping", etc.
-        "price_eur": number,         // 0 pour bivouac/parking gratuit/France Passion
-        "services": string[],        // ex. ["eau", "électricité", "vidange", "douches"]
+        "type": string,
+        "price_eur": number,
+        "services": string[],
         "note": string,
-        "coordinates_hint": string   // ex. "vers Calvi, à 5 min de la plage" — pas obligatoire d'être précis GPS
+        "coordinates_hint": string
       },
       "trips": [
         {
@@ -162,18 +160,18 @@ Tu dois renvoyer un JSON STRICT avec exactement cette structure :
           "to": string,
           "distance_km": number,
           "duration": string,
-          "mode": string,            // "voiture", "van", "camping-car", "ferry", "train", etc.
+          "mode": string,
           "estimated_cost_eur": number,
-          "fuel_cost_eur": number | null,    // null si pas applicable (ferry, train)
+          "fuel_cost_eur": number | null,
           "toll_cost_eur": number | null,
           "ferry_cost_eur": number | null,
-          "cost_note": string,                // ex. "carburant 38 € + péages 12 €"
-          "road_warning": string | null       // ex. "Route étroite, attention si gabarit > 2.5 m"
+          "cost_note": string,
+          "road_warning": string | null
         }
       ],
-      "service_stops": [               // aires de service / courses / vidange — peut être vide
+      "service_stops": [
         {
-          "type": string,              // "vidange", "eau", "électricité", "courses", "carburant"
+          "type": string,
           "name": string,
           "location": string,
           "estimated_cost_eur": number
@@ -192,7 +190,7 @@ Tu dois renvoyer un JSON STRICT avec exactement cette structure :
       ],
       "meals": {
         "daily_family_budget_eur": number,
-        "style": string,             // "restaurants", "cuisine van", "mix"
+        "style": string,
         "note": string
       },
       "day_total_eur": number
@@ -200,13 +198,13 @@ Tu dois renvoyer un JSON STRICT avec exactement cette structure :
   ],
   "budget_summary": {
     "trips_eur": number,
-    "fuel_eur": number,              // sous-poste des trajets
-    "tolls_eur": number,             // sous-poste des trajets
-    "ferries_eur": number,           // sous-poste des trajets
+    "fuel_eur": number,
+    "tolls_eur": number,
+    "ferries_eur": number,
     "accommodation_eur": number,
     "meals_eur": number,
     "activities_eur": number,
-    "service_stops_eur": number,     // 0 si voyage non motorisé
+    "service_stops_eur": number,
     "grand_total_eur": number,
     "per_person_eur": number,
     "currency": "EUR"
@@ -214,25 +212,60 @@ Tu dois renvoyer un JSON STRICT avec exactement cette structure :
   "notes": {
     "visa_and_documents": string,
     "climate_and_packing": string,
-    "useful_apps": string[],         // ex. ["Park4Night", "ACSI", "Waze", "Météo France"]
+    "useful_apps": string[],
     "practical_tips": string[],
-    "road_trip_tips": string[]       // [] si voyage non motorisé — sinon hauteur limite, conduite à gauche, vignettes, etc.
+    "road_trip_tips": string[]
   }
 }
 
 Contraintes :
-- duration_days doit correspondre au nombre exact de jours entre start_date et end_date inclus.
-- days doit contenir EXACTEMENT duration_days entrées.
+- duration_days = nombre exact de jours entre start_date et end_date inclus.
+- days contient EXACTEMENT duration_days entrées.
 - Si is_round_trip est true, le dernier jour DOIT revenir à departure_location.
 - Sinon le dernier jour se termine à return_location.
-- Tous les nombres en euros doivent être réalistes (pas de 0 sauf bivouac/gratuit, pas de 9999).
+- emoji météo cohérent : ☀️ 🌤️ ⛅ 🌧️ ❄️ 🌫️ 🌩️
+- coordinates.lat et coordinates.lng sont OBLIGATOIRES pour chaque jour (approximations city-level acceptées).
 - day_total_eur = somme des trips.estimated_cost_eur + accommodation.price_eur + activities.family_total_eur + meals.daily_family_budget_eur + service_stops.estimated_cost_eur du jour.
 - grand_total_eur = somme des day_total_eur.
-- per_person_eur = grand_total_eur / (adults + nombre d'enfants).
-- emoji météo cohérent : ☀️ 🌤️ ⛅ 🌧️ ❄️ 🌫️ 🌩️
-- Si une journée n'a pas de trajet (étape posée), trips peut être [].
-- service_stops peut être [].
-- Pour le mode road trip, total_distance_km doit refléter la somme des distance_km de tous les trips.`;
+- per_person_eur = grand_total_eur / (adults + nombre d'enfants).`;
+}
+
+function buildRegenerateDayPrompt(
+  itinerary: any,
+  dayIndex: number,
+  instructions: string
+): string {
+  const day = itinerary.days?.[dayIndex];
+  if (!day) throw new Error(`Jour ${dayIndex} introuvable`);
+
+  const previousDay = itinerary.days?.[dayIndex - 1];
+  const nextDay = itinerary.days?.[dayIndex + 1];
+
+  return `Tu dois régénérer UNE SEULE journée d'un itinéraire existant en tenant compte d'une consigne utilisateur.
+
+Contexte de l'itinéraire complet :
+${JSON.stringify(itinerary.summary, null, 2)}
+
+Journée à régénérer : ${day.label} (${day.date} — ${day.weekday})
+Journée précédente (J${dayIndex} doit en suivre logiquement la fin) :
+${previousDay ? `Lieu : ${previousDay.location}, hébergement : ${previousDay.accommodation?.name}` : '(premier jour de l\'itinéraire)'}
+
+Journée suivante (la journée régénérée doit pouvoir enchaîner sur celle-ci) :
+${nextDay ? `Lieu : ${nextDay.location}` : '(dernier jour de l\'itinéraire)'}
+
+Journée actuelle (à remplacer) :
+${JSON.stringify(day, null, 2)}
+
+CONSIGNE UTILISATEUR :
+"""
+${instructions}
+"""
+
+Renvoie UNIQUEMENT le JSON de la nouvelle journée, avec EXACTEMENT le même schéma que celui de days[i] (toutes les clés présentes : label, date, weekday, location, coordinates, weather, morning, noon, afternoon, evening, accommodation, trips, service_stops, activities, meals, day_total_eur). Pas de texte autour, pas de bloc markdown.
+
+- Garde le même label, la même date et le même weekday que la journée originale.
+- Recalcule day_total_eur en fonction des nouveaux coûts.
+- Assure-toi que le lieu d'arrivée colle bien avec le départ de la journée suivante.`;
 }
 
 async function callClaude(userPrompt: string) {
@@ -293,7 +326,6 @@ Deno.serve(async (req) => {
       headers: { ...CORS_HEADERS, 'content-type': 'application/json' },
     });
   }
-
   if (!ANTHROPIC_API_KEY) {
     return new Response(
       JSON.stringify({
@@ -309,6 +341,35 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json();
+    const mode = body?.mode || 'generate';
+
+    if (mode === 'regenerate-day') {
+      const { itinerary, day_index, instructions } = body;
+      if (
+        !itinerary ||
+        typeof day_index !== 'number' ||
+        !instructions
+      ) {
+        return new Response(
+          JSON.stringify({
+            error: 'Body invalide : itinerary, day_index, instructions requis',
+          }),
+          {
+            status: 400,
+            headers: { ...CORS_HEADERS, 'content-type': 'application/json' },
+          }
+        );
+      }
+      const prompt = buildRegenerateDayPrompt(itinerary, day_index, instructions);
+      const { text, usage } = await callClaude(prompt);
+      const day = extractJson(text);
+      return new Response(JSON.stringify({ day, usage, model: MODEL }), {
+        status: 200,
+        headers: { ...CORS_HEADERS, 'content-type': 'application/json' },
+      });
+    }
+
+    // Default : full generation
     const preferences = body?.preferences;
     if (!preferences || !preferences.destinations || !preferences.startDate) {
       return new Response(JSON.stringify({ error: 'preferences invalides' }), {

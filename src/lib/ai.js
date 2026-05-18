@@ -14,10 +14,95 @@ export async function generateItinerary(preferences) {
       "L'Edge Function generate-itinerary a renvoyé une erreur.";
     throw new Error(message);
   }
-
   if (data?.error) throw new Error(data.error);
   if (!data?.itinerary) {
     throw new Error('Réponse vide reçue de l\'Edge Function.');
   }
   return data.itinerary;
+}
+
+export async function regenerateDay(itinerary, dayIndex, instructions) {
+  const { data, error } = await supabase.functions.invoke(FN_NAME, {
+    body: {
+      mode: 'regenerate-day',
+      itinerary,
+      day_index: dayIndex,
+      instructions,
+    },
+  });
+
+  if (error) {
+    const message =
+      error?.context?.error ||
+      error?.message ||
+      'Erreur lors de la régénération de la journée.';
+    throw new Error(message);
+  }
+  if (data?.error) throw new Error(data.error);
+  if (!data?.day) throw new Error('Réponse vide pour la journée régénérée.');
+
+  // Recompute budget summary on the client
+  const newDays = itinerary.days.map((d, i) =>
+    i === dayIndex ? data.day : d
+  );
+  const newSummary = recomputeBudget({ ...itinerary, days: newDays });
+  return { ...itinerary, days: newDays, ...newSummary };
+}
+
+function recomputeBudget(it) {
+  const days = it.days || [];
+  let trips = 0,
+    fuel = 0,
+    tolls = 0,
+    ferries = 0,
+    accommodation = 0,
+    meals = 0,
+    activities = 0,
+    service = 0,
+    distance = 0;
+
+  for (const d of days) {
+    for (const t of d.trips || []) {
+      trips += t.estimated_cost_eur || 0;
+      fuel += t.fuel_cost_eur || 0;
+      tolls += t.toll_cost_eur || 0;
+      ferries += t.ferry_cost_eur || 0;
+      distance += t.distance_km || 0;
+    }
+    accommodation += d.accommodation?.price_eur || 0;
+    meals += d.meals?.daily_family_budget_eur || 0;
+    for (const a of d.activities || []) {
+      activities += a.family_total_eur || 0;
+    }
+    for (const s of d.service_stops || []) {
+      service += s.estimated_cost_eur || 0;
+    }
+  }
+
+  const grand = trips + accommodation + meals + activities + service;
+  const heads =
+    (it.summary?.travellers?.adults || 1) +
+    (it.summary?.travellers?.children_ages?.length || 0);
+
+  return {
+    summary: {
+      ...it.summary,
+      total_distance_km:
+        it.summary?.total_distance_km != null ? distance : it.summary?.total_distance_km,
+    },
+    budget_summary: {
+      ...it.budget_summary,
+      trips_eur: trips,
+      fuel_eur: fuel,
+      tolls_eur: tolls,
+      ferries_eur: ferries,
+      accommodation_eur: accommodation,
+      meals_eur: meals,
+      activities_eur: activities,
+      service_stops_eur: service,
+      grand_total_eur: grand,
+      per_person_eur: Math.round(grand / heads),
+      currency: 'EUR',
+    },
+  };
 }
