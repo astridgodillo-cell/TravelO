@@ -32,9 +32,11 @@ export default function Navbar() {
           <NavLink to="/" end className={navLink}>
             Accueil
           </NavLink>
-          <NavLink to="/nouveau" className={navLink}>
-            Nouvel itinéraire
-          </NavLink>
+          {user && (
+            <NavLink to="/nouveau" className={navLink}>
+              Nouvel itinéraire
+            </NavLink>
+          )}
           {user && (
             <NavLink to="/mes-voyages" className={navLink}>
               Mes voyages

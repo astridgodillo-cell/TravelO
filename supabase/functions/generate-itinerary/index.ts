@@ -10,13 +10,14 @@
 
 // deno-lint-ignore-file no-explicit-any
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
-// Modèle "qualité" : utilisé pour la planification et la régénération à la demande
 const MODEL = Deno.env.get('ANTHROPIC_MODEL') || 'claude-sonnet-4-20250514';
-// Modèle "économique" : utilisé pour le détail jour par jour (95 % des appels)
-// Haiku 4.5 est ~4× moins cher que Sonnet 4 et tout à fait suffisant pour remplir
-// une journée à partir d'un plan déjà cadré.
 const EXPAND_MODEL =
   Deno.env.get('ANTHROPIC_EXPAND_MODEL') || 'claude-haiku-4-5-20251001';
+
+// Secrets injectés automatiquement par Supabase dans toute Edge Function.
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
+const SUPABASE_SERVICE_ROLE_KEY =
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -350,6 +351,98 @@ function jsonResponse(body: any, status = 200) {
   });
 }
 
+// Décode le JWT (3 parties base64url) sans vérifier la signature.
+// La signature est vérifiée en amont par Supabase si verify_jwt=true ;
+// ici on utilise juste le payload pour identifier l'utilisateur.
+function decodeJwtPayload(jwt: string): any | null {
+  try {
+    const parts = jwt.split('.');
+    if (parts.length !== 3) return null;
+    const padded = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const json = atob(padded + '='.repeat((4 - padded.length % 4) % 4));
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
+// Récupère l'utilisateur courant depuis l'Authorization header, vérifie
+// que c'est un user authentifié (pas l'anon key) et qu'il est approuvé.
+async function getApprovedUser(req: Request): Promise<
+  { ok: true; userId: string; tier: string }
+  | { ok: false; status: number; error: string }
+> {
+  const authHeader = req.headers.get('authorization') || '';
+  const m = authHeader.match(/^Bearer\s+(.+)$/i);
+  if (!m) {
+    return { ok: false, status: 401, error: 'Authentification requise.' };
+  }
+  const jwt = m[1];
+  const payload = decodeJwtPayload(jwt);
+  if (!payload) {
+    return { ok: false, status: 401, error: 'Token invalide.' };
+  }
+  // Refuse l'anon key (role='anon'). On exige un user authentifié.
+  if (payload.role !== 'authenticated' || !payload.sub) {
+    return {
+      ok: false,
+      status: 401,
+      error: 'Vous devez être connecté pour utiliser TravelO.',
+    };
+  }
+
+  // Lecture du profil via le service-role pour contourner la RLS sans
+  // dépendre du contexte JWT (sûr car on a déjà identifié l'utilisateur).
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    // Si les secrets ne sont pas dispo, on laisse passer pour ne pas casser
+    // le service — la gate frontale ProtectedRoute reste en place.
+    return { ok: true, userId: payload.sub, tier: 'free' };
+  }
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/profiles?id=eq.${payload.sub}&select=status,subscription_tier`,
+      {
+        headers: {
+          apikey: SUPABASE_SERVICE_ROLE_KEY,
+          authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        },
+      }
+    );
+    if (!res.ok) {
+      return {
+        ok: false,
+        status: 500,
+        error: 'Impossible de vérifier votre profil.',
+      };
+    }
+    const rows = await res.json();
+    const profile = Array.isArray(rows) ? rows[0] : null;
+    if (!profile) {
+      return {
+        ok: false,
+        status: 403,
+        error: 'Profil introuvable. Veuillez vous reconnecter.',
+      };
+    }
+    if (profile.status !== 'approved') {
+      return {
+        ok: false,
+        status: 403,
+        error:
+          'Votre compte est en attente d\'approbation par un administrateur.',
+      };
+    }
+    return {
+      ok: true,
+      userId: payload.sub,
+      tier: profile.subscription_tier || 'free',
+    };
+  } catch (err) {
+    console.error('[auth] profile fetch failed', err);
+    return { ok: false, status: 500, error: 'Erreur de vérification du profil.' };
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: CORS_HEADERS });
@@ -362,6 +455,12 @@ Deno.serve(async (req) => {
       { error: 'ANTHROPIC_API_KEY non configuré côté Edge Function.' },
       500
     );
+  }
+
+  // Gate auth : utilisateur connecté + statut 'approved' obligatoires
+  const auth = await getApprovedUser(req);
+  if (!auth.ok) {
+    return jsonResponse({ error: auth.error }, auth.status);
   }
 
   try {

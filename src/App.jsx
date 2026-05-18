@@ -20,7 +20,14 @@ export default function App() {
       <main className="flex-1 mx-auto w-full max-w-6xl px-4 py-8">
         <Routes>
           <Route path="/" element={<HomePage />} />
-          <Route path="/nouveau" element={<NewItineraryPage />} />
+          <Route
+            path="/nouveau"
+            element={
+              <ProtectedRoute>
+                <NewItineraryPage />
+              </ProtectedRoute>
+            }
+          />
           <Route path="/connexion" element={<LoginPage />} />
           <Route path="/inscription" element={<SignupPage />} />
           <Route path="/compte-en-attente" element={<PendingAccountPage />} />
