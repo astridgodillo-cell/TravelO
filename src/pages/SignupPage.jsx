@@ -1,0 +1,74 @@
+import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { signUpWithEmail } from '../lib/supabase';
+
+export default function SignupPage() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState(null);
+  const [info, setInfo] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    setInfo(null);
+    const { data, error } = await signUpWithEmail(email, password);
+    setLoading(false);
+    if (error) {
+      setError(error.message);
+      return;
+    }
+    if (data?.session) {
+      navigate('/mes-voyages', { replace: true });
+    } else {
+      setInfo(
+        "Compte créé. Vérifiez votre email pour confirmer l'inscription, puis connectez-vous."
+      );
+    }
+  }
+
+  return (
+    <div className="mx-auto max-w-md">
+      <div className="card">
+        <h1 className="text-xl font-semibold text-slate-900">Créer un compte</h1>
+        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+          <div>
+            <label className="label">Email</label>
+            <input
+              required
+              type="email"
+              className="input"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="label">Mot de passe</label>
+            <input
+              required
+              type="password"
+              minLength="6"
+              className="input"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          {info && <p className="text-sm text-emerald-700">{info}</p>}
+          <button disabled={loading} type="submit" className="btn-primary w-full">
+            {loading ? 'Création…' : "S'inscrire"}
+          </button>
+        </form>
+        <p className="mt-4 text-sm text-slate-500">
+          Déjà inscrit ?{' '}
+          <Link to="/connexion" className="text-brand-700 hover:underline">
+            Se connecter
+          </Link>
+        </p>
+      </div>
+    </div>
+  );
+}
