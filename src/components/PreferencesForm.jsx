@@ -27,6 +27,45 @@ const INTERESTS = [
   'hors des sentiers battus',
 ];
 
+const SPECIFIC_ACTIVITIES = [
+  // Outdoor / nautique
+  { id: 'velo-route', label: '🚴 Vélo / VTT' },
+  { id: 'kayak', label: '🛶 Kayak / canoë' },
+  { id: 'paddle', label: '🏄 Paddle (SUP)' },
+  { id: 'surf', label: '🏄‍♂️ Surf' },
+  { id: 'plongee', label: '🤿 Plongée sous-marine' },
+  { id: 'snorkeling', label: '🐠 Snorkeling' },
+  { id: 'voile', label: '⛵ Voile / bateau' },
+  { id: 'peche', label: '🎣 Pêche' },
+  // Montagne / nature
+  { id: 'randonnee', label: '🥾 Randonnée' },
+  { id: 'escalade', label: '🧗 Escalade / via ferrata' },
+  { id: 'canyoning', label: '💦 Canyoning' },
+  { id: 'parapente', label: '🪂 Parapente' },
+  { id: 'observation-faune', label: '🦌 Observation faune' },
+  { id: 'astronomie', label: '🌌 Astronomie' },
+  // Culture / patrimoine
+  { id: 'musees', label: '🏛️ Musées' },
+  { id: 'monuments', label: '🏰 Châteaux / monuments' },
+  { id: 'grottes', label: '🕳️ Grottes / spéléo' },
+  { id: 'parcs-nationaux', label: '🌲 Parcs nationaux' },
+  { id: 'sites-archeo', label: '⛏️ Sites archéologiques' },
+  { id: 'street-art', label: '🎨 Street art' },
+  // Gastro & local
+  { id: 'marches', label: '🛍️ Marchés locaux' },
+  { id: 'degustation', label: '🍷 Œnologie / dégustation' },
+  { id: 'cours-cuisine', label: '👨‍🍳 Cours de cuisine' },
+  { id: 'restaurants-etoiles', label: '⭐ Restaurants étoilés' },
+  // Bien-être / loisirs
+  { id: 'thermes', label: '♨️ Thermes / spa' },
+  { id: 'yoga', label: '🧘 Yoga / méditation' },
+  { id: 'vie-nocturne', label: '🌃 Vie nocturne' },
+  { id: 'shopping', label: '🛒 Shopping' },
+  // Avec enfants
+  { id: 'parcs-attractions', label: '🎢 Parcs d\'attractions' },
+  { id: 'zoos-aquariums', label: '🦓 Zoos / aquariums' },
+];
+
 const BUDGET_LEVELS = [
   { id: 'economique', label: 'Économique' },
   { id: 'moyen', label: 'Moyen' },
@@ -73,6 +112,7 @@ const DEFAULTS = {
   childrenAges: [],
   tripType: 'itinerant',
   interests: ['culture', 'gastronomie'],
+  specificActivities: [],
   budget: 'moyen',
   mustInclude: '',
   toAvoid: '',
@@ -426,6 +466,32 @@ export default function PreferencesForm({ onSubmit, loading }) {
                 }`}
               >
                 {i}
+              </button>
+            );
+          })}
+        </div>
+      </Section>
+
+      <Section title="Activités spécifiques">
+        <p className="text-xs text-slate-500 -mt-2">
+          Cochez tout ce qui vous tente. Claude essaiera d'intégrer ces activités
+          quand le lieu et la saison s'y prêtent.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {SPECIFIC_ACTIVITIES.map((a) => {
+            const active = values.specificActivities.includes(a.id);
+            return (
+              <button
+                key={a.id}
+                type="button"
+                onClick={() => toggle('specificActivities', a.id)}
+                className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
+                  active
+                    ? 'border-brand-600 bg-brand-600 text-white'
+                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                {a.label}
               </button>
             );
           })}

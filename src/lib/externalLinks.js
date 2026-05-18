@@ -5,7 +5,12 @@ export function googleMapsSearch(query) {
 }
 
 export function googleMapsDirections(from, to) {
-  return `https://www.google.com/maps/dir/?api=1&origin=${q(from)}&destination=${q(to)}`;
+  // Format path : /maps/dir/<from>/<to> — plus fiable que ?api=1 pour
+  // imposer les deux points (le format api=1 est parfois interprété comme
+  // "directions vers X depuis ma position" par l'app mobile Google Maps).
+  const safeFrom = q(from).replace(/%20/g, '+');
+  const safeTo = q(to).replace(/%20/g, '+');
+  return `https://www.google.com/maps/dir/${safeFrom}/${safeTo}/`;
 }
 
 export function park4nightSearch(location) {

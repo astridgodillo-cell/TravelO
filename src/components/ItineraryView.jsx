@@ -3,21 +3,29 @@ import RouteMap from './RouteMap';
 import RegenerateDayModal from './RegenerateDayModal';
 import ModifyDayModal from './ModifyDayModal';
 import DayPhotos from './DayPhotos';
+import ItineraryTable from './ItineraryTable';
 import {
   bestAccommodationLink,
   googleMapsDirections,
   googleMapsSearch,
   googleMapsMultiStop,
   directFerriesSearch,
+  park4nightSearch,
 } from '../lib/externalLinks';
 
 const TABS = [
   { id: 'planning', label: 'Planning' },
+  { id: 'table', label: 'Tableau' },
   { id: 'map', label: 'Carte' },
   { id: 'budget', label: 'Budget' },
   { id: 'notes', label: 'Pratique' },
   { id: 'activities', label: 'Activités' },
 ];
+
+const VAN_TRIP_TYPES = new Set([
+  'roadtrip-van',
+  'roadtrip-camping-car',
+]);
 
 const formatEur = (n) =>
   typeof n === 'number'
@@ -56,6 +64,7 @@ export default function ItineraryView({
   const { summary, days, budget_summary, notes } = itinerary;
   const adults = summary?.travellers?.adults || 2;
   const children = summary?.travellers?.children_ages?.length || 0;
+  const isVanTrip = VAN_TRIP_TYPES.has(summary?.trip_type);
 
   async function handleSubmitRegen(instructions) {
     if (!regenTarget) return;
@@ -163,10 +172,14 @@ export default function ItineraryView({
             days={days}
             adults={adults}
             childrenCount={children}
+            isVanTrip={isVanTrip}
             onOpenRegen={(index, day) => setRegenTarget({ index, day })}
             onOpenModify={(index, day) => setModifyTarget({ index, day })}
             canRegenerate={typeof onRegenerateDay === 'function'}
           />
+        </div>
+        <div className={tab === 'table' ? '' : 'hidden'}>
+          <ItineraryTable days={days} />
         </div>
         <div className={tab === 'map' ? '' : 'hidden'}>
           <RouteMap itinerary={itinerary} />
@@ -207,6 +220,7 @@ function Planning({
   days,
   adults,
   childrenCount,
+  isVanTrip,
   onOpenRegen,
   onOpenModify,
   canRegenerate,
@@ -223,6 +237,7 @@ function Planning({
           day={d}
           adults={adults}
           childrenCount={childrenCount}
+          isVanTrip={isVanTrip}
           onOpenRegen={onOpenRegen ? () => onOpenRegen(i, d) : null}
           onOpenModify={onOpenModify ? () => onOpenModify(i, d) : null}
           canRegenerate={canRegenerate}
@@ -236,6 +251,7 @@ function DayCard({
   day,
   adults,
   childrenCount,
+  isVanTrip,
   onOpenRegen,
   onOpenModify,
   canRegenerate,
@@ -419,16 +435,28 @@ function DayCard({
                 ))}
               </div>
             )}
-            {accomLink && (
-              <a
-                href={accomLink.url}
-                target="_blank"
-                rel="noreferrer"
-                className="print:hidden inline-block text-xs text-brand-700 hover:underline mt-2"
-              >
-                🔗 Chercher sur {accomLink.provider}
-              </a>
-            )}
+            <div className="print:hidden mt-2 flex flex-wrap gap-3 text-xs">
+              {accomLink && (
+                <a
+                  href={accomLink.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-brand-700 hover:underline"
+                >
+                  🔗 Chercher sur {accomLink.provider}
+                </a>
+              )}
+              {isVanTrip && accomLink?.provider !== 'Park4Night' && (
+                <a
+                  href={park4nightSearch(day.location)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-emerald-700 hover:underline"
+                >
+                  🚐 Park4Night ({day.location})
+                </a>
+              )}
+            </div>
           </Block>
         )}
         {day.meals && (

@@ -46,6 +46,7 @@ Règles strictes :
 - Pour chaque jour, structure en Matin / Midi / Après-midi / Soir.
 - Décris les excursions de façon immersive et commerciale.
 - Pour chaque journée, fournis coordinates GPS approximatives (lat, lng) niveau ville.
+- Si "Activités spécifiques souhaitées" est renseigné : intègre-les en priorité dans le programme quand le lieu et la saison s'y prêtent (ex. kayak demandé en Bretagne en juin → cale au moins 1 sortie kayak ; musées demandés à Lisbonne → cale 1-2 musées). Ne force pas une activité inadaptée (ex. ski en juillet).
 
 MODE ROAD TRIP — règles supplémentaires :
 - Construis un VRAI itinéraire bout-en-bout, en boucle si départ = retour, sinon en ligne.
@@ -99,6 +100,10 @@ Aires de service : ${p.needsServicePoints ? 'OUI, tous les 2-3 jours' : 'au beso
 Ferries acceptés : ${p.okWithFerry === false ? 'NON' : 'OUI si nécessaire'}`
     : `\nHébergement nocturne souhaité : ${stayPrefs}`;
 
+  const specificActivities = (p.specificActivities || []).length
+    ? `\nActivités spécifiques souhaitées : ${p.specificActivities.join(', ')}`
+    : '';
+
   return `Destination(s) : ${p.destinations}
 Période : du ${p.startDate} au ${p.endDate}
 Départ : ${p.departureLocation}
@@ -109,7 +114,7 @@ Arrivée finale : ${p.returnLocation || p.departureLocation}${
   }
 Participants : ${p.adults} adulte(s), ${children}
 Type de voyage : ${p.tripType}${vehicleBlock}
-Centres d'intérêt : ${(p.interests || []).join(', ')}
+Centres d'intérêt : ${(p.interests || []).join(', ')}${specificActivities}
 Niveau de budget : ${p.budget}${practicalBlock}
 Étapes IMPÉRATIVES : ${p.mustInclude || '(aucune)'}
 À éviter : ${p.toAvoid || '(aucun)'}`;
