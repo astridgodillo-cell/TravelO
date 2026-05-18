@@ -54,7 +54,9 @@ function SpecialtyCard({ specialty }) {
       setPhoto(null);
       return;
     }
-    fetchPhotosFor(query, 1).then((list) => {
+    // Préférence : Unsplash pour les photos de plats (meilleure qualité
+    // que Google Places pour la nourriture), fallback Pexels si pas de clé.
+    fetchPhotosFor(query, 1, 'unsplash').then((list) => {
       if (active) setPhoto(list?.[0] || null);
     });
     return () => {

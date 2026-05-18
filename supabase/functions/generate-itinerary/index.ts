@@ -20,6 +20,8 @@ const SUPABASE_SERVICE_ROLE_KEY =
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 // À configurer manuellement dans Edge Functions → Secrets
 const PEXELS_API_KEY = Deno.env.get('PEXELS_API_KEY') || '';
+const UNSPLASH_ACCESS_KEY = Deno.env.get('UNSPLASH_ACCESS_KEY') || '';
+const GOOGLE_PLACES_API_KEY = Deno.env.get('GOOGLE_PLACES_API_KEY') || '';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -543,6 +545,109 @@ Réponds UNIQUEMENT avec le JSON valide. Aucun texte autour, aucun bloc markdown
   );
 }
 
+async function fetchUnsplashPhotos(query: string, perPage = 5): Promise<any[]> {
+  if (!UNSPLASH_ACCESS_KEY) return [];
+  try {
+    const url = `https://api.unsplash.com/search/photos?query=${encodeURIComponent(
+      query
+    )}&per_page=${perPage}&orientation=landscape`;
+    const res = await fetch(url, {
+      headers: { Authorization: `Client-ID ${UNSPLASH_ACCESS_KEY}` },
+    });
+    if (!res.ok) {
+      console.warn('[unsplash]', res.status, await res.text());
+      return [];
+    }
+    const data = await res.json();
+    return (data?.results || []).map((p: any) => ({
+      id: p.id,
+      url: p.links?.html,
+      photographer: p.user?.name || 'Unsplash',
+      photographer_url: p.user?.links?.html,
+      src: {
+        small: p.urls?.small,
+        medium: p.urls?.regular,
+        large: p.urls?.full,
+      },
+      alt: p.alt_description || query,
+      source: 'unsplash',
+    }));
+  } catch (e) {
+    console.error('[unsplash] fetch failed', e);
+    return [];
+  }
+}
+
+async function fetchGooglePlacesPhotos(
+  query: string,
+  maxPhotos = 5
+): Promise<any[]> {
+  if (!GOOGLE_PLACES_API_KEY) return [];
+  try {
+    // 1. Cherche le lieu correspondant à la requête
+    const searchRes = await fetch(
+      'https://places.googleapis.com/v1/places:searchText',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'X-Goog-Api-Key': GOOGLE_PLACES_API_KEY,
+          'X-Goog-FieldMask': 'places.id,places.displayName,places.photos',
+        },
+        body: JSON.stringify({
+          textQuery: query,
+          languageCode: 'fr',
+          maxResultCount: 1,
+        }),
+      }
+    );
+    if (!searchRes.ok) {
+      console.warn('[places] search failed', searchRes.status, await searchRes.text());
+      return [];
+    }
+    const data = await searchRes.json();
+    const place = data?.places?.[0];
+    if (!place?.photos?.length) return [];
+
+    const placeName = place.displayName?.text || query;
+    const photoEntries = place.photos.slice(0, maxPhotos);
+
+    // 2. Pour chaque photo, suit le 302 pour récupérer l'URL CDN googleusercontent
+    //    (qui est publique et n'expose pas notre API key).
+    const resolved = await Promise.all(
+      photoEntries.map(async (p: any, idx: number) => {
+        const photoUrl = `https://places.googleapis.com/v1/${p.name}/media?maxHeightPx=600&maxWidthPx=800&key=${GOOGLE_PLACES_API_KEY}&skipHttpRedirect=true`;
+        try {
+          // skipHttpRedirect=true retourne du JSON contenant photoUri (pas de 302)
+          const r = await fetch(photoUrl);
+          if (!r.ok) return null;
+          const body = await r.json();
+          const cdnUrl = body?.photoUri;
+          if (!cdnUrl) return null;
+          const attribution = p.authorAttributions?.[0];
+          return {
+            id: `${place.id}-${idx}`,
+            url: attribution?.uri || cdnUrl,
+            photographer: attribution?.displayName || placeName,
+            photographer_url: attribution?.uri || '',
+            src: { small: cdnUrl, medium: cdnUrl, large: cdnUrl },
+            alt: placeName,
+            source: 'google-places',
+          };
+        } catch (e) {
+          console.warn('[places] photo resolve failed', e);
+          return null;
+        }
+      })
+    );
+
+    return resolved.filter(Boolean) as any[];
+  } catch (e) {
+    console.error('[places] failed', e);
+    return [];
+  }
+}
+
 async function fetchPexelsPhotos(query: string, perPage = 5): Promise<any[]> {
   if (!PEXELS_API_KEY) {
     return [];
@@ -570,11 +675,36 @@ async function fetchPexelsPhotos(query: string, perPage = 5): Promise<any[]> {
         large: p.src?.large,
       },
       alt: p.alt || query,
+      source: 'pexels',
     }));
   } catch (e) {
     console.error('[pexels] fetch failed', e);
     return [];
   }
+}
+
+// Dispatcher : route vers la bonne source avec fallback gracieux
+async function fetchPhotos(
+  query: string,
+  perPage: number,
+  preferredSource: string
+): Promise<any[]> {
+  // Ordre de tentative selon la préférence
+  const order: Record<string, string[]> = {
+    'google-places': ['google-places', 'unsplash', 'pexels'],
+    unsplash: ['unsplash', 'google-places', 'pexels'],
+    pexels: ['pexels', 'unsplash', 'google-places'],
+    auto: ['google-places', 'unsplash', 'pexels'],
+  };
+  const sources = order[preferredSource] || order.auto;
+  for (const src of sources) {
+    let photos: any[] = [];
+    if (src === 'google-places') photos = await fetchGooglePlacesPhotos(query, perPage);
+    else if (src === 'unsplash') photos = await fetchUnsplashPhotos(query, perPage);
+    else if (src === 'pexels') photos = await fetchPexelsPhotos(query, perPage);
+    if (photos.length) return photos;
+  }
+  return [];
 }
 
 function jsonResponse(body: any, status = 200) {
@@ -783,17 +913,12 @@ Deno.serve(async (req) => {
     }
 
     if (mode === 'fetch-photos') {
-      const { query, per_page } = body;
+      const { query, per_page, source } = body;
       if (!query || typeof query !== 'string') {
         return jsonResponse({ error: 'Paramètre "query" requis.' }, 400);
       }
-      if (!PEXELS_API_KEY) {
-        return jsonResponse(
-          { error: 'PEXELS_API_KEY non configuré côté Edge Function.' },
-          500
-        );
-      }
-      const photos = await fetchPexelsPhotos(query, per_page || 5);
+      const preferred = source || 'auto';
+      const photos = await fetchPhotos(query, per_page || 5, preferred);
       return jsonResponse({ photos });
     }
 

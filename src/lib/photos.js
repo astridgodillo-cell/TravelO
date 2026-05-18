@@ -22,14 +22,14 @@ export async function fetchSpecialties(location, count = 4) {
   }
 }
 
-export async function fetchPhotosFor(query, perPage = 5) {
+export async function fetchPhotosFor(query, perPage = 5, source = 'auto') {
   if (!query) return [];
-  const key = `${query}|${perPage}`;
+  const key = `${source}|${query}|${perPage}`;
   if (cache.has(key)) return cache.get(key);
 
   try {
     const { data, error } = await supabase.functions.invoke(FN_NAME, {
-      body: { mode: 'fetch-photos', query, per_page: perPage },
+      body: { mode: 'fetch-photos', query, per_page: perPage, source },
     });
     if (error || data?.error) {
       console.warn('[photos] fetch failed', error || data.error);

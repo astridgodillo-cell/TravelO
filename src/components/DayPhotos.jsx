@@ -9,7 +9,9 @@ export default function DayPhotos({ location, max = 5 }) {
     let active = true;
     if (!location) return;
     setError(null);
-    fetchPhotosFor(location, max).then((list) => {
+    // Préférence : Google Places pour les vraies photos du lieu visité,
+    // fallback automatique sur Unsplash puis Pexels si la clé Places manque.
+    fetchPhotosFor(location, max, 'google-places').then((list) => {
       if (active) {
         setPhotos(list);
         if (!list.length) setError('Aucune photo trouvée');
