@@ -22,9 +22,11 @@ export default function Navbar() {
     <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur">
       <nav className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
         <Link to="/" className="flex items-center gap-2">
-          <div className="h-8 w-8 rounded-lg bg-brand-600 grid place-items-center text-white font-bold">
-            T
-          </div>
+          <img
+            src="/logo.png"
+            alt="TravelO"
+            className="h-9 w-9 object-contain"
+          />
           <span className="text-lg font-semibold text-slate-900">TravelO</span>
         </Link>
 
