@@ -149,6 +149,40 @@ export async function deleteTemplate(id) {
   return supabase.from('preference_templates').delete().eq('id', id);
 }
 
+// ----- PERSONAL PACKING LISTS -----
+export async function listPackingLists() {
+  const user = await getCurrentUser();
+  if (!user) return { data: [], error: null };
+  return supabase
+    .from('user_packing_lists')
+    .select('*')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false });
+}
+
+export async function savePackingList(name, items) {
+  const user = await getCurrentUser();
+  if (!user) throw new Error('Utilisateur non connecté');
+  return supabase
+    .from('user_packing_lists')
+    .insert({ user_id: user.id, name, items })
+    .select()
+    .single();
+}
+
+export async function updatePackingList(id, patch) {
+  return supabase
+    .from('user_packing_lists')
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single();
+}
+
+export async function deletePackingList(id) {
+  return supabase.from('user_packing_lists').delete().eq('id', id);
+}
+
 // ----- ADMIN -----
 export async function adminListUsers({ status } = {}) {
   let q = supabase

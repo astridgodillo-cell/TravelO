@@ -121,6 +121,78 @@ export async function replanFromDay(itinerary, fromDayIndex, instructions) {
   };
 }
 
+export async function regenerateActivity(
+  itinerary,
+  dayIndex,
+  activityIndex,
+  instructions
+) {
+  const data = await invoke({
+    mode: 'regenerate-activity',
+    itinerary,
+    day_index: dayIndex,
+    activity_index: activityIndex,
+    instructions,
+  });
+  if (!data?.activity) {
+    throw new Error('Réponse vide pour l\'activité.');
+  }
+  const newDays = itinerary.days.map((d, di) => {
+    if (di !== dayIndex) return d;
+    const newActivities = d.activities.map((a, ai) =>
+      ai === activityIndex ? data.activity : a
+    );
+    return { ...d, activities: newActivities };
+  });
+  // Recalcul du jour + budget global
+  const budget = computeBudget(newDays, itinerary.summary);
+  // Patch day_total_eur du jour modifié
+  const dayActivitiesTotal = (newDays[dayIndex].activities || []).reduce(
+    (s, a) => s + (a.family_total_eur || 0),
+    0
+  );
+  const oldActivitiesTotal = (itinerary.days[dayIndex].activities || []).reduce(
+    (s, a) => s + (a.family_total_eur || 0),
+    0
+  );
+  newDays[dayIndex] = {
+    ...newDays[dayIndex],
+    day_total_eur:
+      (newDays[dayIndex].day_total_eur || 0) +
+      dayActivitiesTotal -
+      oldActivitiesTotal,
+  };
+  return {
+    ...itinerary,
+    days: newDays,
+    summary: { ...itinerary.summary, ...budget.summaryPatch },
+    budget_summary: { ...itinerary.budget_summary, ...budget.budget_summary },
+  };
+}
+
+export function removeActivity(itinerary, dayIndex, activityIndex) {
+  const newDays = itinerary.days.map((d, di) => {
+    if (di !== dayIndex) return d;
+    const removed = d.activities?.[activityIndex];
+    const removedCost = removed?.family_total_eur || 0;
+    const newActivities = (d.activities || []).filter(
+      (_, ai) => ai !== activityIndex
+    );
+    return {
+      ...d,
+      activities: newActivities,
+      day_total_eur: (d.day_total_eur || 0) - removedCost,
+    };
+  });
+  const budget = computeBudget(newDays, itinerary.summary);
+  return {
+    ...itinerary,
+    days: newDays,
+    summary: { ...itinerary.summary, ...budget.summaryPatch },
+    budget_summary: { ...itinerary.budget_summary, ...budget.budget_summary },
+  };
+}
+
 export async function regenerateDay(itinerary, dayIndex, instructions) {
   const data = await invoke({
     mode: 'regenerate-day',

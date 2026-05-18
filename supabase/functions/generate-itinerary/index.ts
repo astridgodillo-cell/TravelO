@@ -333,6 +333,57 @@ ${instructions}
 Renvoie UNIQUEMENT le JSON de la nouvelle journée selon le même schéma. Garde label, date et weekday. Recalcule day_total_eur. Cohérence avec le départ du jour suivant.`;
 }
 
+function buildRegenerateActivityPrompt(
+  itinerary: any,
+  dayIndex: number,
+  activityIndex: number,
+  instructions: string
+): string {
+  const day = itinerary.days?.[dayIndex];
+  if (!day) throw new Error(`Jour ${dayIndex} introuvable`);
+  const activity = day.activities?.[activityIndex];
+  if (!activity) throw new Error(`Activité ${activityIndex} introuvable`);
+
+  return `Tu vas REMPLACER une seule activité d'un itinéraire existant, en tenant compte d'une consigne utilisateur.
+
+Contexte du voyage :
+${JSON.stringify(itinerary.summary, null, 2)}
+
+Journée concernée : ${day.label} — ${day.location} (${day.date})
+Météo du jour : ${day.weather?.temperature_c || '?'}°C ${day.weather?.emoji || ''}
+
+Activité actuelle à remplacer :
+${JSON.stringify(activity, null, 2)}
+
+Autres activités du jour (à éviter de dupliquer) :
+${(day.activities || [])
+  .filter((_: any, i: number) => i !== activityIndex)
+  .map((a: any) => `  - ${a.title}`)
+  .join('\n') || '  (aucune)'}
+
+CONSIGNE :
+"""
+${instructions}
+"""
+
+Renvoie UNIQUEMENT le JSON d'UNE activité selon ce schéma EXACT (pas d'enveloppe, pas de tableau) :
+
+{
+  "title": string,
+  "schedule": string,
+  "duration": string,
+  "description": string,
+  "immersive_description": string,
+  "price_per_person_eur": number,
+  "family_total_eur": number
+}
+
+Contraintes :
+- Cohérence avec le lieu du jour (${day.location}) et la saison.
+- Pas de doublon avec les autres activités du jour.
+- Prix réalistes en euros.`;
+}
+
 function buildReplanFromDayPrompt(
   itinerary: any,
   fromDayIndex: number,
@@ -631,6 +682,34 @@ Deno.serve(async (req) => {
       const { text, usage } = await callClaude(prompt, 6000);
       const day = await parseOrRepair(text, MODEL);
       return jsonResponse({ day, usage, model: MODEL });
+    }
+
+    if (mode === 'regenerate-activity') {
+      const { itinerary, day_index, activity_index, instructions } = body;
+      if (
+        !itinerary ||
+        typeof day_index !== 'number' ||
+        typeof activity_index !== 'number' ||
+        !instructions
+      ) {
+        return jsonResponse(
+          {
+            error:
+              'Body invalide : itinerary, day_index, activity_index, instructions requis',
+          },
+          400
+        );
+      }
+      const prompt = buildRegenerateActivityPrompt(
+        itinerary,
+        day_index,
+        activity_index,
+        instructions
+      );
+      // Haiku : modification ciblée, pas besoin de Sonnet
+      const { text, usage } = await callClaude(prompt, 2000, EXPAND_MODEL);
+      const activity = await parseOrRepair(text, EXPAND_MODEL);
+      return jsonResponse({ activity, usage, model: EXPAND_MODEL });
     }
 
     if (mode === 'replan-from-day') {

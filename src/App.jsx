@@ -6,6 +6,7 @@ import AdminRoute from './components/AdminRoute';
 import HomePage from './pages/HomePage';
 import NewItineraryPage from './pages/NewItineraryPage';
 import MyTripsPage from './pages/MyTripsPage';
+import MyListsPage from './pages/MyListsPage';
 import ItineraryDetailPage from './pages/ItineraryDetailPage';
 import PublicItineraryPage from './pages/PublicItineraryPage';
 import LoginPage from './pages/LoginPage';
@@ -37,6 +38,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <MyTripsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/mes-listes"
+            element={
+              <ProtectedRoute>
+                <MyListsPage />
               </ProtectedRoute>
             }
           />

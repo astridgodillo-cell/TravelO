@@ -63,6 +63,11 @@ export default function Navbar() {
             Mes voyages
           </NavLink>
         )}
+        {user && (
+          <NavLink to="/mes-listes" className={cls}>
+            Mes listes
+          </NavLink>
+        )}
         {isAdmin && (
           <NavLink to="/admin" className={cls}>
             Admin

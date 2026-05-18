@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getItinerary, updateItinerary } from '../lib/supabase';
-import { regenerateDay, replanFromDay } from '../lib/ai';
+import {
+  regenerateDay,
+  replanFromDay,
+  regenerateActivity,
+  removeActivity,
+} from '../lib/ai';
 import ItineraryView from '../components/ItineraryView';
 import SharePanel from '../components/SharePanel';
 
@@ -45,6 +50,44 @@ export default function ItineraryDetailPage() {
     } finally {
       setRegenerating(false);
     }
+  }
+
+  async function handleRegenerateActivity(dayIndex, activityIndex, instructions) {
+    if (!trip) return;
+    setRegenerating(true);
+    setError(null);
+    try {
+      const updatedItinerary = await regenerateActivity(
+        trip.itinerary,
+        dayIndex,
+        activityIndex,
+        instructions
+      );
+      const { data, error: dbError } = await updateItinerary(trip.id, {
+        itinerary: updatedItinerary,
+      });
+      if (dbError) throw dbError;
+      setTrip(data);
+    } catch (err) {
+      setError(err.message || 'Erreur lors du remplacement de l\'activité.');
+    } finally {
+      setRegenerating(false);
+    }
+  }
+
+  async function handleRemoveActivity(dayIndex, activityIndex) {
+    if (!trip) return;
+    setError(null);
+    const updatedItinerary = removeActivity(
+      trip.itinerary,
+      dayIndex,
+      activityIndex
+    );
+    const { data, error: dbError } = await updateItinerary(trip.id, {
+      itinerary: updatedItinerary,
+    });
+    if (dbError) setError(dbError.message);
+    else setTrip(data);
   }
 
   async function handleReplanFromDay(dayIndex, instructions) {
@@ -103,6 +146,8 @@ export default function ItineraryDetailPage() {
         itinerary={trip.itinerary}
         onRegenerateDay={handleRegenerateDay}
         onReplanFromDay={handleReplanFromDay}
+        onRegenerateActivity={handleRegenerateActivity}
+        onRemoveActivity={handleRemoveActivity}
         regenerating={regenerating}
       />
     </div>

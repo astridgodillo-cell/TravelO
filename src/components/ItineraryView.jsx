@@ -1,7 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { listPackingLists } from '../lib/supabase';
 import RouteMap from './RouteMap';
 import RegenerateDayModal from './RegenerateDayModal';
 import ModifyDayModal from './ModifyDayModal';
+import EditActivityModal from './EditActivityModal';
 import DayPhotos from './DayPhotos';
 import ItineraryTable from './ItineraryTable';
 import {
@@ -38,11 +40,14 @@ export default function ItineraryView({
   itinerary,
   onRegenerateDay,
   onReplanFromDay,
+  onRegenerateActivity,
+  onRemoveActivity,
   regenerating,
 }) {
   const [tab, setTab] = useState('planning');
   const [regenTarget, setRegenTarget] = useState(null);
   const [modifyTarget, setModifyTarget] = useState(null);
+  const [activityTarget, setActivityTarget] = useState(null);
 
   const allActivities = useMemo(() => {
     if (!itinerary?.days) return [];
@@ -80,6 +85,22 @@ export default function ItineraryView({
       await onRegenerateDay?.(modifyTarget.index, instructions);
     }
     setModifyTarget(null);
+  }
+
+  async function handleSubmitActivityEdit(instructions) {
+    if (!activityTarget || !onRegenerateActivity) return;
+    await onRegenerateActivity(
+      activityTarget.dayIndex,
+      activityTarget.activityIndex,
+      instructions
+    );
+    setActivityTarget(null);
+  }
+
+  async function handleRemoveActivity(dayIndex, activityIndex) {
+    if (!onRemoveActivity) return;
+    if (!confirm('Supprimer cette activité ?')) return;
+    await onRemoveActivity(dayIndex, activityIndex);
   }
 
   return (
@@ -175,7 +196,17 @@ export default function ItineraryView({
             isVanTrip={isVanTrip}
             onOpenRegen={(index, day) => setRegenTarget({ index, day })}
             onOpenModify={(index, day) => setModifyTarget({ index, day })}
+            onEditActivity={(dayIndex, activityIndex, activity, dayLocation) =>
+              setActivityTarget({
+                dayIndex,
+                activityIndex,
+                activity,
+                dayLocation,
+              })
+            }
+            onRemoveActivity={handleRemoveActivity}
             canRegenerate={typeof onRegenerateDay === 'function'}
+            canEditActivities={typeof onRegenerateActivity === 'function'}
           />
         </div>
         <div className={tab === 'table' ? '' : 'hidden'}>
@@ -212,6 +243,14 @@ export default function ItineraryView({
         onSubmit={handleSubmitModify}
         loading={regenerating}
       />
+      <EditActivityModal
+        open={!!activityTarget}
+        activity={activityTarget?.activity}
+        dayLocation={activityTarget?.dayLocation}
+        onClose={() => setActivityTarget(null)}
+        onSubmit={handleSubmitActivityEdit}
+        loading={regenerating}
+      />
     </div>
   );
 }
@@ -223,7 +262,10 @@ function Planning({
   isVanTrip,
   onOpenRegen,
   onOpenModify,
+  onEditActivity,
+  onRemoveActivity,
   canRegenerate,
+  canEditActivities,
 }) {
   if (!days?.length) return null;
   return (
@@ -235,12 +277,16 @@ function Planning({
         <DayCard
           key={`${d.label}-${i}`}
           day={d}
+          dayIndex={i}
           adults={adults}
           childrenCount={childrenCount}
           isVanTrip={isVanTrip}
           onOpenRegen={onOpenRegen ? () => onOpenRegen(i, d) : null}
           onOpenModify={onOpenModify ? () => onOpenModify(i, d) : null}
+          onEditActivity={onEditActivity}
+          onRemoveActivity={onRemoveActivity}
           canRegenerate={canRegenerate}
+          canEditActivities={canEditActivities}
         />
       ))}
     </section>
@@ -249,12 +295,16 @@ function Planning({
 
 function DayCard({
   day,
+  dayIndex,
   adults,
   childrenCount,
   isVanTrip,
   onOpenRegen,
   onOpenModify,
+  onEditActivity,
+  onRemoveActivity,
   canRegenerate,
+  canEditActivities,
 }) {
   const accomLink = bestAccommodationLink(day.accommodation, {
     location: day.location,
@@ -334,7 +384,7 @@ function DayCard({
                 className="rounded-lg border border-slate-100 bg-slate-50 p-3 text-sm"
               >
                 <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
+                  <div className="flex-1 min-w-0">
                     <div className="font-medium text-slate-800">{a.title}</div>
                     <div className="text-xs text-slate-500">
                       {a.schedule}
@@ -343,16 +393,36 @@ function DayCard({
                     {a.description && (
                       <p className="text-slate-600 mt-1">{a.description}</p>
                     )}
-                    <a
-                      href={googleMapsSearch(`${a.title} ${day.location}`)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="print:hidden inline-block text-xs text-brand-700 hover:underline mt-1"
-                    >
-                      📍 Voir sur Google Maps
-                    </a>
+                    <div className="print:hidden mt-1 flex flex-wrap gap-3 text-xs">
+                      <a
+                        href={googleMapsSearch(`${a.title} ${day.location}`)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-brand-700 hover:underline"
+                      >
+                        📍 Voir sur Google Maps
+                      </a>
+                      {canEditActivities && (
+                        <>
+                          <button
+                            onClick={() =>
+                              onEditActivity?.(dayIndex, i, a, day.location)
+                            }
+                            className="text-slate-500 hover:text-brand-700 hover:underline"
+                          >
+                            ✏️ Modifier
+                          </button>
+                          <button
+                            onClick={() => onRemoveActivity?.(dayIndex, i)}
+                            className="text-slate-400 hover:text-red-600 hover:underline"
+                          >
+                            🗑️ Supprimer
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
-                  <div className="text-right text-xs">
+                  <div className="text-right text-xs shrink-0">
                     <div className="text-slate-500">
                       {formatEur(a.price_per_person_eur)} / pers.
                     </div>
@@ -647,9 +717,7 @@ function NotesConseils({ notes }) {
 
   return (
     <div className="space-y-6">
-      {packing && (
-        <PackingList packing={packing} />
-      )}
+      <PackingList packing={packing || {}} />
       {phrases?.phrases?.length > 0 && (
         <LocalPhrases data={phrases} />
       )}
@@ -700,6 +768,28 @@ function NotesConseils({ notes }) {
 }
 
 function PackingList({ packing }) {
+  const [personalLists, setPersonalLists] = useState([]);
+  const [attachedIds, setAttachedIds] = useState(new Set());
+
+  useEffect(() => {
+    let active = true;
+    listPackingLists().then(({ data }) => {
+      if (active) setPersonalLists(data || []);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  function toggleAttach(id) {
+    setAttachedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   const categories = [
     { key: 'essentials', label: 'Essentiels' },
     { key: 'clothing', label: 'Vêtements' },
@@ -708,7 +798,9 @@ function PackingList({ packing }) {
     { key: 'activities_specific', label: 'Activités' },
   ].filter((c) => packing[c.key]?.length > 0);
 
-  if (!categories.length) return null;
+  if (!categories.length && personalLists.length === 0) return null;
+
+  const attachedLists = personalLists.filter((l) => attachedIds.has(l.id));
 
   return (
     <section className="card">
@@ -723,6 +815,42 @@ function PackingList({ packing }) {
           🖨️ Imprimer
         </button>
       </div>
+
+      {personalLists.length > 0 && (
+        <div className="print:hidden mb-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <div className="text-sm font-medium text-slate-700 mb-2">
+            Ajouter une de mes listes perso :
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {personalLists.map((l) => {
+              const active = attachedIds.has(l.id);
+              return (
+                <button
+                  key={l.id}
+                  type="button"
+                  onClick={() => toggleAttach(l.id)}
+                  className={`rounded-full border px-3 py-1.5 text-xs transition-colors ${
+                    active
+                      ? 'border-brand-600 bg-brand-600 text-white'
+                      : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  {active ? '✓ ' : '+ '}
+                  {l.name}
+                  <span className="ml-1 opacity-60">({l.items.length})</span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="mt-2 text-[11px] text-slate-500">
+            Gérer mes listes dans{' '}
+            <a href="/mes-listes" className="text-brand-700 hover:underline">
+              Mes listes
+            </a>
+          </div>
+        </div>
+      )}
+
       <div className="grid md:grid-cols-2 gap-4">
         {categories.map((c) => (
           <div key={c.key}>
@@ -731,6 +859,25 @@ function PackingList({ packing }) {
             </h3>
             <ul className="space-y-1.5 text-sm">
               {packing[c.key].map((item, i) => (
+                <li
+                  key={i}
+                  className="flex items-start gap-2 text-slate-700"
+                >
+                  <input type="checkbox" className="mt-0.5" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+
+        {attachedLists.map((l) => (
+          <div key={l.id} className="md:col-span-2">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-emerald-700 mb-2">
+              👤 {l.name}
+            </h3>
+            <ul className="space-y-1.5 text-sm grid sm:grid-cols-2 gap-x-4">
+              {l.items.map((item, i) => (
                 <li
                   key={i}
                   className="flex items-start gap-2 text-slate-700"
