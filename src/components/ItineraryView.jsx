@@ -12,6 +12,9 @@ const formatEur = (n) =>
     ? n.toLocaleString('fr-FR', { maximumFractionDigits: 0 }) + ' €'
     : '—';
 
+const formatEurOrFree = (n) =>
+  n === 0 ? 'Gratuit' : formatEur(n);
+
 export default function ItineraryView({ itinerary }) {
   const [tab, setTab] = useState('planning');
 
@@ -65,7 +68,19 @@ export default function ItineraryView({ itinerary }) {
           <Info label="Type" value={summary?.trip_type} />
           <Info label="Niveau" value={summary?.budget_level} />
           <Info label="Départ" value={summary?.departure_location} />
-          <Info label="Retour" value={summary?.return_location} />
+          <Info
+            label={summary?.is_round_trip ? 'Retour' : 'Arrivée'}
+            value={summary?.return_location}
+          />
+          {summary?.vehicle_summary && (
+            <Info label="Véhicule" value={summary.vehicle_summary} />
+          )}
+          {summary?.total_distance_km != null && (
+            <Info
+              label="Distance totale"
+              value={`${summary.total_distance_km.toLocaleString('fr-FR')} km`}
+            />
+          )}
         </div>
       </header>
 
@@ -89,26 +104,18 @@ export default function ItineraryView({ itinerary }) {
       </nav>
 
       <div className="print:space-y-8">
-        {(tab === 'planning' || true) && (
-          <div className={tab === 'planning' ? '' : 'hidden print:block'}>
-            <Planning days={days} />
-          </div>
-        )}
-        {(tab === 'budget' || true) && (
-          <div className={tab === 'budget' ? '' : 'hidden print:block'}>
-            <BudgetGlobal budget={budget_summary} />
-          </div>
-        )}
-        {(tab === 'notes' || true) && (
-          <div className={tab === 'notes' ? '' : 'hidden print:block'}>
-            <NotesConseils notes={notes} />
-          </div>
-        )}
-        {(tab === 'activities' || true) && (
-          <div className={tab === 'activities' ? '' : 'hidden print:block'}>
-            <FichesActivites activities={allActivities} />
-          </div>
-        )}
+        <div className={tab === 'planning' ? '' : 'hidden print:block'}>
+          <Planning days={days} />
+        </div>
+        <div className={tab === 'budget' ? '' : 'hidden print:block'}>
+          <BudgetGlobal budget={budget_summary} />
+        </div>
+        <div className={tab === 'notes' ? '' : 'hidden print:block'}>
+          <NotesConseils notes={notes} />
+        </div>
+        <div className={tab === 'activities' ? '' : 'hidden print:block'}>
+          <FichesActivites activities={allActivities} />
+        </div>
       </div>
     </div>
   );
@@ -214,25 +221,32 @@ function DayCard({ day }) {
           </h4>
           <ul className="space-y-2 text-sm">
             {day.trips.map((t, i) => (
+              <TripRow key={i} trip={t} />
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {day.service_stops?.length > 0 && (
+        <div className="mt-4">
+          <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-2">
+            Aires de service & courses
+          </h4>
+          <ul className="space-y-2 text-sm">
+            {day.service_stops.map((s, i) => (
               <li
                 key={i}
-                className="flex flex-wrap items-baseline justify-between gap-2 rounded-lg border border-slate-100 bg-white p-3"
+                className="flex flex-wrap items-baseline justify-between gap-2 rounded-lg border border-emerald-100 bg-emerald-50 p-3"
               >
                 <div>
-                  <span className="font-medium">
-                    {t.from} → {t.to}
-                  </span>
-                  <span className="text-slate-500 ml-2">
-                    {t.distance_km} km · {t.duration} · {t.mode}
-                  </span>
-                </div>
-                <div className="text-right">
-                  <div className="font-semibold">
-                    {formatEur(t.estimated_cost_eur)}
-                  </div>
-                  {t.cost_note && (
-                    <div className="text-xs text-slate-400">{t.cost_note}</div>
+                  <span className="font-medium capitalize">{s.type}</span>
+                  <span className="text-slate-700 ml-2">{s.name}</span>
+                  {s.location && (
+                    <span className="text-slate-500 ml-1">— {s.location}</span>
                   )}
+                </div>
+                <div className="font-semibold">
+                  {formatEurOrFree(s.estimated_cost_eur)}
                 </div>
               </li>
             ))}
@@ -242,16 +256,34 @@ function DayCard({ day }) {
 
       <div className="mt-4 grid md:grid-cols-2 gap-3">
         {day.accommodation && (
-          <Block title="Hébergement du soir">
+          <Block title="Hébergement / nuit">
             <div className="font-medium text-slate-800">
               {day.accommodation.name}
             </div>
             <div className="text-slate-500">
               {day.accommodation.type} —{' '}
-              {formatEur(day.accommodation.price_eur)} / nuit
+              {formatEurOrFree(day.accommodation.price_eur)}
+              {day.accommodation.price_eur > 0 ? ' / nuit' : ''}
             </div>
-            {day.accommodation.note && (
+            {day.accommodation.coordinates_hint && (
               <div className="text-slate-400 italic mt-1">
+                📍 {day.accommodation.coordinates_hint}
+              </div>
+            )}
+            {day.accommodation.services?.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {day.accommodation.services.map((s, i) => (
+                  <span
+                    key={i}
+                    className="inline-block rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600"
+                  >
+                    {s}
+                  </span>
+                ))}
+              </div>
+            )}
+            {day.accommodation.note && (
+              <div className="text-slate-500 italic mt-1 text-xs">
                 {day.accommodation.note}
               </div>
             )}
@@ -262,6 +294,11 @@ function DayCard({ day }) {
             <div className="font-medium text-slate-800">
               {formatEur(day.meals.daily_family_budget_eur)} / jour
             </div>
+            {day.meals.style && (
+              <div className="text-xs text-slate-500 capitalize">
+                {day.meals.style}
+              </div>
+            )}
             {day.meals.note && (
               <div className="text-slate-500 mt-1">{day.meals.note}</div>
             )}
@@ -269,6 +306,54 @@ function DayCard({ day }) {
         )}
       </div>
     </article>
+  );
+}
+
+function TripRow({ trip }) {
+  const hasBreakdown =
+    trip.fuel_cost_eur != null ||
+    trip.toll_cost_eur != null ||
+    trip.ferry_cost_eur != null;
+
+  return (
+    <li className="rounded-lg border border-slate-100 bg-white p-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div>
+          <span className="font-medium">
+            {trip.from} → {trip.to}
+          </span>
+          <span className="text-slate-500 ml-2">
+            {trip.distance_km} km · {trip.duration} · {trip.mode}
+          </span>
+        </div>
+        <div className="text-right">
+          <div className="font-semibold">
+            {formatEur(trip.estimated_cost_eur)}
+          </div>
+          {trip.cost_note && (
+            <div className="text-xs text-slate-400">{trip.cost_note}</div>
+          )}
+        </div>
+      </div>
+      {hasBreakdown && (
+        <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500 border-t border-slate-100 pt-2">
+          {trip.fuel_cost_eur != null && trip.fuel_cost_eur > 0 && (
+            <span>⛽ Carburant : {formatEur(trip.fuel_cost_eur)}</span>
+          )}
+          {trip.toll_cost_eur != null && trip.toll_cost_eur > 0 && (
+            <span>🛣️ Péages : {formatEur(trip.toll_cost_eur)}</span>
+          )}
+          {trip.ferry_cost_eur != null && trip.ferry_cost_eur > 0 && (
+            <span>⛴️ Ferry : {formatEur(trip.ferry_cost_eur)}</span>
+          )}
+        </div>
+      )}
+      {trip.road_warning && (
+        <div className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+          ⚠️ {trip.road_warning}
+        </div>
+      )}
+    </li>
   );
 }
 
@@ -289,12 +374,23 @@ function Moment({ label, m }) {
 
 function BudgetGlobal({ budget }) {
   if (!budget) return null;
+  const tripsBreakdown = [
+    budget.fuel_eur && ['Carburant', budget.fuel_eur],
+    budget.tolls_eur && ['Péages', budget.tolls_eur],
+    budget.ferries_eur && ['Ferries', budget.ferries_eur],
+  ].filter(Boolean);
+
   const rows = [
-    ['Trajets', budget.trips_eur],
+    ['Trajets (total)', budget.trips_eur],
     ['Hébergements', budget.accommodation_eur],
     ['Repas', budget.meals_eur],
     ['Excursions & activités', budget.activities_eur],
-  ];
+    budget.service_stops_eur > 0 && [
+      'Aires de service & courses',
+      budget.service_stops_eur,
+    ],
+  ].filter(Boolean);
+
   return (
     <section className="card">
       <h2 className="text-xl font-semibold text-slate-900">
@@ -303,7 +399,10 @@ function BudgetGlobal({ budget }) {
       <table className="mt-4 w-full text-sm">
         <tbody>
           {rows.map(([label, value]) => (
-            <tr key={label} className="border-b border-slate-100 last:border-0">
+            <tr
+              key={label}
+              className="border-b border-slate-100 last:border-0"
+            >
               <td className="py-2 text-slate-600">{label}</td>
               <td className="py-2 text-right font-medium">
                 {formatEur(value)}
@@ -324,6 +423,26 @@ function BudgetGlobal({ budget }) {
           </tr>
         </tbody>
       </table>
+
+      {tripsBreakdown.length > 0 && (
+        <div className="mt-6">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-2">
+            Détail des trajets
+          </h3>
+          <table className="w-full text-sm">
+            <tbody>
+              {tripsBreakdown.map(([label, value]) => (
+                <tr key={label} className="border-b border-slate-100 last:border-0">
+                  <td className="py-2 text-slate-600">{label}</td>
+                  <td className="py-2 text-right font-medium">
+                    {formatEur(value)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </section>
   );
 }
@@ -349,6 +468,15 @@ function NotesConseils({ notes }) {
           <ul className="list-disc list-inside text-slate-700">
             {notes.useful_apps.map((a, i) => (
               <li key={i}>{a}</li>
+            ))}
+          </ul>
+        </NoteBlock>
+      )}
+      {notes.road_trip_tips?.length > 0 && (
+        <NoteBlock title="Conseils spécifiques road trip">
+          <ul className="list-disc list-inside text-slate-700">
+            {notes.road_trip_tips.map((t, i) => (
+              <li key={i}>{t}</li>
             ))}
           </ul>
         </NoteBlock>
