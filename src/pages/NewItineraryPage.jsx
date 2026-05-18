@@ -11,6 +11,7 @@ export default function NewItineraryPage() {
   const [itinerary, setItinerary] = useState(null);
   const [preferences, setPreferences] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState(null);
   const [regenerating, setRegenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -21,8 +22,9 @@ export default function NewItineraryPage() {
     setLoading(true);
     setError(null);
     setItinerary(null);
+    setProgress(null);
     try {
-      const result = await generateItinerary(prefs);
+      const result = await generateItinerary(prefs, (p) => setProgress(p));
       setPreferences(prefs);
       setItinerary(result);
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -30,6 +32,7 @@ export default function NewItineraryPage() {
       setError(err.message || 'Erreur lors de la génération.');
     } finally {
       setLoading(false);
+      setProgress(null);
     }
   }
 
@@ -78,7 +81,7 @@ export default function NewItineraryPage() {
         <PreferencesForm onSubmit={handleGenerate} loading={loading} />
       )}
 
-      {loading && <GeneratingLoader />}
+      {loading && <GeneratingLoader progress={progress} />}
 
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">

@@ -1,10 +1,12 @@
 // Supabase Edge Function — generate-itinerary
-// 2 modes :
-//   1) { preferences } → génère un itinéraire complet
-//   2) { mode: "regenerate-day", itinerary, day_index, instructions } → régénère uniquement la journée demandée
 //
-// Secret requis :
-//   ANTHROPIC_API_KEY (via dashboard Supabase → Edge Functions → Secrets)
+// Modes :
+//   1) { preferences }                                     → génère un itinéraire complet (≤ 8 jours)
+//   2) { mode: "plan-trip", preferences }                  → renvoie SEULEMENT summary + day_plans + notes (long voyages)
+//   3) { mode: "expand-day", preferences, day_plan, previous_plan, next_plan } → détaille UNE journée
+//   4) { mode: "regenerate-day", itinerary, day_index, instructions } → régénère une journée existante
+//
+// Secret requis : ANTHROPIC_API_KEY
 
 // deno-lint-ignore-file no-explicit-any
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
@@ -27,63 +29,54 @@ const SYSTEM_PROMPT = `Tu es l'expert voyage TravelO, un agent de tour-opérateu
 
 Règles strictes :
 - Rédige TOUJOURS en français, ton chaleureux et professionnel.
-- Tiens compte des dates fournies pour calibrer la météo (saison réaliste pour la destination).
+- Tiens compte des dates pour calibrer la météo (saison réaliste pour la destination).
 - Adapte le rythme au type de voyage : un séjour fixe a peu de trajets, un road trip en a beaucoup.
 - Adapte les hébergements et les repas au niveau de budget choisi.
 - Prix toujours en euros (€), réalistes pour le pays et la saison.
 - N'invente pas d'établissements de luxe absurdement célèbres ; privilégie des adresses crédibles.
 - Pour chaque jour, structure en Matin / Midi / Après-midi / Soir.
-- Décris les excursions de façon immersive et commerciale ("vous emprunterez le sentier...", "votre guide local vous racontera...").
-- Pour chaque journée, fournis des coordonnées GPS approximatives (latitude, longitude) du lieu principal — niveau ville ou village, pas besoin de précision GPS exacte. Utilise tes connaissances géographiques.
+- Décris les excursions de façon immersive et commerciale.
+- Pour chaque journée, fournis coordinates GPS approximatives (lat, lng) niveau ville.
 
-MODE ROAD TRIP (van, camping-car, voiture) — règles supplémentaires :
+MODE ROAD TRIP — règles supplémentaires :
 - Construis un VRAI itinéraire bout-en-bout, en boucle si départ = retour, sinon en ligne.
-- Chaque journée comporte un ou plusieurs trajets entre étapes, AVEC :
-  * distance_km et duration réalistes (vitesse moyenne 70-80 km/h sur route, 90 km/h sur autoroute, 60 km/h en montagne)
-  * coût carburant calculé : (distance_km × consommation_L_par_100 / 100) × prix_carburant_local_par_litre
-  * coût péages selon hauteur du véhicule (classe 1 si ≤ 2 m, classe 2 si 2-3 m, classe 3 si > 3 m en France)
-  * coût ferry si traversée maritime nécessaire (Corse, Sardaigne, îles grecques, GB, Norvège, etc.) — chiffre estimé pour véhicule + passagers
-- Adapte les hébergements nocturnes aux préférences cochées : aire de camping-car (5-15 €), aire privée (10-25 €), camping (15-35 €), camping municipal (10-20 €), France Passion (gratuit avec consommation locale), bivouac (gratuit, à signaler "où autorisé"), parking gratuit (à signaler).
-- Si "Prévoir aires de service" coché : insère une étape vidange/eau/électricité tous les 2-3 jours, idéalement combinée à une halte courses.
-- Si "cuisine dans le véhicule" ou "mix" : suggère des marchés / supermarchés en cours de route, et baisse le budget repas (10-15 €/jour/personne pour cuisine maison, 25-40 € pour mix).
-- Indique les particularités routières : routes étroites en montagne, hauteur sous tunnel/pont, sections difficiles avec un grand gabarit.
+- Trajets : distance_km, duration, coût carburant ((distance × conso / 100) × prix local), péages selon hauteur (classe 1 ≤ 2 m, 2 si 2-3 m, 3 si > 3 m en France), ferry si traversée maritime.
+- Hébergements adaptés aux préférences : aire CC (5-15 €), aire privée (10-25 €), camping (15-35 €), camping municipal (10-20 €), France Passion (gratuit), bivouac (gratuit, "où autorisé"), parking gratuit.
+- Si "Prévoir aires de service" : insère vidange/eau/électricité tous les 2-3 jours.
+- Si cuisine van/mix : suggère marchés/supermarchés, budget repas réduit (10-15 €/jour/personne maison, 25-40 € mix).
+- Indique particularités routières : routes étroites, hauteur sous tunnel, sections difficiles grand gabarit.
 
 NIVEAU DE BUDGET :
 - économique : auberges/campings, repas simples, activités gratuites/peu chères
-- moyen : hôtels 3*/aires CC, brasseries, mix activités gratuites + payantes
+- moyen : hôtels 3*/aires CC, brasseries, mix gratuites + payantes
 - confort : hôtels 4*/campings premium, restaurants régionaux, plusieurs excursions guidées
 - haut de gamme : boutique-hôtels/resorts, restaurants gastronomiques, expériences exclusives
 
-Réponds UNIQUEMENT avec un JSON valide qui respecte EXACTEMENT le schéma demandé. Pas de texte avant ni après. Pas de bloc markdown \`\`\`json.`;
+Réponds UNIQUEMENT avec un JSON valide. Pas de texte autour. Pas de markdown.`;
 
-function buildUserPrompt(p: any): string {
-  const childrenDesc =
-    Array.isArray(p.childrenAges) && p.childrenAges.length
-      ? `${p.childrenAges.length} enfant(s) (âges : ${p.childrenAges.join(', ')} ans)`
-      : '0 enfant';
+function buildPreferencesContext(p: any): string {
+  const children = Array.isArray(p.childrenAges) && p.childrenAges.length
+    ? `${p.childrenAges.length} enfant(s) (âges : ${p.childrenAges.join(', ')} ans)`
+    : '0 enfant';
 
   const isRoadTrip = ROAD_TRIP_TYPES.has(p.tripType);
   const v = p.vehicle;
   const vehicleBlock =
     isRoadTrip && v && v.type
       ? `
-Véhicule : ${v.type}
-  - Dimensions : ${v.height || '?'} m × ${v.length || '?'} m
-  - Carburant : ${v.fuel || '?'}
-  - Consommation : ${v.consumption || '?'} L/100 km
-  - Classe péage estimée : ${
-    !v.height ? 'inconnue' : v.height <= 2 ? '1 (légère)' : v.height <= 3 ? '2 (intermédiaire)' : '3 (lourde)'
-  }`
+Véhicule : ${v.type} (${v.height || '?'} m × ${v.length || '?'} m)
+  - Carburant : ${v.fuel || '?'} — ${v.consumption || '?'} L/100 km
+  - Classe péage : ${!v.height ? '?' : v.height <= 2 ? '1' : v.height <= 3 ? '2' : '3'}`
       : isRoadTrip
-        ? '\nVéhicule : non précisé — utilise une voiture standard (essence, 6.5 L/100 km).'
+        ? '\nVéhicule : non précisé — voiture standard essence 6.5 L/100.'
         : '';
 
   const stayPrefs = (p.nightStayPreferences || []).length
     ? p.nightStayPreferences.join(', ')
-    : 'à adapter selon le voyage';
+    : 'à adapter';
 
   const cookingMap: Record<string, string> = {
-    vehicle: 'cuisine dans le véhicule (prévoir courses, budget repas réduit)',
+    vehicle: 'cuisine dans le véhicule',
     restaurants: 'restaurants uniquement',
     mix: 'mix cuisine maison + restos',
   };
@@ -93,141 +86,177 @@ Véhicule : ${v.type}
     ? `
 Hébergement nocturne souhaité : ${stayPrefs}
 Repas : ${cookingDesc}
-Aires de service (vidange/eau) : ${p.needsServicePoints ? 'OUI, tous les 2-3 jours' : 'au besoin uniquement'}
-Ferries acceptés : ${p.okWithFerry === false ? 'NON — éviter toute traversée maritime' : 'OUI si nécessaire'}`
-    : `
-Hébergement nocturne souhaité : ${stayPrefs}`;
+Aires de service : ${p.needsServicePoints ? 'OUI, tous les 2-3 jours' : 'au besoin'}
+Ferries acceptés : ${p.okWithFerry === false ? 'NON' : 'OUI si nécessaire'}`
+    : `\nHébergement nocturne souhaité : ${stayPrefs}`;
 
-  return `Voici les préférences du voyageur. Génère l'itinéraire complet.
-
-Destination(s) / région : ${p.destinations}
+  return `Destination(s) : ${p.destinations}
 Période : du ${p.startDate} au ${p.endDate}
-Lieu de départ : ${p.departureLocation}
-Lieu d'arrivée final : ${p.returnLocation || p.departureLocation}${
+Départ : ${p.departureLocation}
+Arrivée finale : ${p.returnLocation || p.departureLocation}${
     p.returnLocation && p.returnLocation !== p.departureLocation
-      ? ' (trajet ALLER-SIMPLE, pas de retour au départ)'
-      : ' (aller-retour, on revient au point de départ)'
+      ? ' (aller-simple)'
+      : ' (aller-retour)'
   }
-Participants : ${p.adults} adulte(s), ${childrenDesc}
+Participants : ${p.adults} adulte(s), ${children}
 Type de voyage : ${p.tripType}${vehicleBlock}
 Centres d'intérêt : ${(p.interests || []).join(', ')}
 Niveau de budget : ${p.budget}${practicalBlock}
-Lieux ou étapes IMPÉRATIFS à inclure : ${p.mustInclude || '(aucun)'}
-Lieux ou choses à éviter : ${p.toAvoid || '(aucun)'}
+Étapes IMPÉRATIVES : ${p.mustInclude || '(aucune)'}
+À éviter : ${p.toAvoid || '(aucun)'}`;
+}
 
-Tu dois renvoyer un JSON STRICT avec exactement cette structure :
+const FULL_DAY_SCHEMA = `{
+  "label": "Jx",
+  "date": "YYYY-MM-DD",
+  "weekday": "lundi",
+  "location": "Ville / région",
+  "coordinates": { "lat": number, "lng": number },
+  "weather": { "temperature_c": number, "emoji": string, "description": string },
+  "morning":   { "title": string, "description": string },
+  "noon":      { "title": string, "description": string },
+  "afternoon": { "title": string, "description": string },
+  "evening":   { "title": string, "description": string },
+  "accommodation": {
+    "name": string, "type": string, "price_eur": number,
+    "services": string[], "note": string, "coordinates_hint": string
+  },
+  "trips": [ {
+    "from": string, "to": string, "distance_km": number, "duration": string,
+    "mode": string, "estimated_cost_eur": number,
+    "fuel_cost_eur": number|null, "toll_cost_eur": number|null, "ferry_cost_eur": number|null,
+    "cost_note": string, "road_warning": string|null
+  } ],
+  "service_stops": [ {
+    "type": string, "name": string, "location": string, "estimated_cost_eur": number
+  } ],
+  "activities": [ {
+    "title": string, "schedule": string, "duration": string,
+    "description": string, "immersive_description": string,
+    "price_per_person_eur": number, "family_total_eur": number
+  } ],
+  "meals": { "daily_family_budget_eur": number, "style": string, "note": string },
+  "day_total_eur": number
+}`;
 
-{
+const FULL_SCHEMA = `{
   "summary": {
-    "destinations": string,
-    "start_date": "YYYY-MM-DD",
-    "end_date": "YYYY-MM-DD",
-    "duration_days": number,
-    "departure_location": string,
-    "return_location": string,
+    "destinations": string, "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD",
+    "duration_days": number, "departure_location": string, "return_location": string,
     "is_round_trip": boolean,
     "travellers": { "adults": number, "children_ages": number[] },
-    "trip_type": string,
-    "interests": string[],
-    "budget_level": string,
-    "vehicle_summary": string | null,
-    "total_distance_km": number | null,
+    "trip_type": string, "interests": string[], "budget_level": string,
+    "vehicle_summary": string|null, "total_distance_km": number|null,
     "headline": string
   },
-  "days": [
+  "days": [ ${FULL_DAY_SCHEMA} ],
+  "budget_summary": {
+    "trips_eur": number, "fuel_eur": number, "tolls_eur": number, "ferries_eur": number,
+    "accommodation_eur": number, "meals_eur": number, "activities_eur": number,
+    "service_stops_eur": number, "grand_total_eur": number, "per_person_eur": number,
+    "currency": "EUR"
+  },
+  "notes": {
+    "visa_and_documents": string, "climate_and_packing": string,
+    "useful_apps": string[], "practical_tips": string[], "road_trip_tips": string[]
+  }
+}`;
+
+function buildFullPrompt(p: any): string {
+  return `Voici les préférences. Génère l'itinéraire COMPLET.
+
+${buildPreferencesContext(p)}
+
+Schéma JSON STRICT à respecter :
+${FULL_SCHEMA}
+
+Contraintes :
+- days contient EXACTEMENT duration_days entrées.
+- coordinates obligatoire chaque jour.
+- emoji météo : ☀️ 🌤️ ⛅ 🌧️ ❄️ 🌫️ 🌩️
+- day_total_eur = trips + accommodation + activities + meals + service_stops du jour.
+- grand_total_eur = somme des day_total_eur.
+- per_person_eur = grand_total / (adults + enfants).
+- Si is_round_trip, dernier jour à departure_location ; sinon à return_location.`;
+}
+
+function buildPlanPrompt(p: any): string {
+  return `Voici les préférences. Tu produis UNIQUEMENT le PLAN GLOBAL du voyage (squelette), pas les détails de chaque jour.
+
+${buildPreferencesContext(p)}
+
+Schéma JSON STRICT :
+{
+  "summary": {
+    "destinations": string, "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD",
+    "duration_days": number, "departure_location": string, "return_location": string,
+    "is_round_trip": boolean,
+    "travellers": { "adults": number, "children_ages": number[] },
+    "trip_type": string, "interests": string[], "budget_level": string,
+    "vehicle_summary": string|null, "total_distance_km": number|null,
+    "headline": string
+  },
+  "day_plans": [
     {
       "label": "J1",
       "date": "YYYY-MM-DD",
       "weekday": "lundi",
       "location": "Ville / région du jour",
-      "coordinates": { "lat": number, "lng": number },
-      "weather": { "temperature_c": number, "emoji": string, "description": string },
-      "morning":   { "title": string, "description": string },
-      "noon":      { "title": string, "description": string },
-      "afternoon": { "title": string, "description": string },
-      "evening":   { "title": string, "description": string },
-      "accommodation": {
-        "name": string,
-        "type": string,
-        "price_eur": number,
-        "services": string[],
-        "note": string,
-        "coordinates_hint": string
-      },
-      "trips": [
-        {
-          "from": string,
-          "to": string,
-          "distance_km": number,
-          "duration": string,
-          "mode": string,
-          "estimated_cost_eur": number,
-          "fuel_cost_eur": number | null,
-          "toll_cost_eur": number | null,
-          "ferry_cost_eur": number | null,
-          "cost_note": string,
-          "road_warning": string | null
-        }
-      ],
-      "service_stops": [
-        {
-          "type": string,
-          "name": string,
-          "location": string,
-          "estimated_cost_eur": number
-        }
-      ],
-      "activities": [
-        {
-          "title": string,
-          "schedule": string,
-          "duration": string,
-          "description": string,
-          "immersive_description": string,
-          "price_per_person_eur": number,
-          "family_total_eur": number
-        }
-      ],
-      "meals": {
-        "daily_family_budget_eur": number,
-        "style": string,
-        "note": string
-      },
-      "day_total_eur": number
+      "anchor_theme": "1 phrase qui résume la journée",
+      "end_location": "lieu d'arrivée en fin de journée (pour cohérence avec j+1)",
+      "coordinates": { "lat": number, "lng": number }
     }
   ],
-  "budget_summary": {
-    "trips_eur": number,
-    "fuel_eur": number,
-    "tolls_eur": number,
-    "ferries_eur": number,
-    "accommodation_eur": number,
-    "meals_eur": number,
-    "activities_eur": number,
-    "service_stops_eur": number,
-    "grand_total_eur": number,
-    "per_person_eur": number,
-    "currency": "EUR"
-  },
   "notes": {
-    "visa_and_documents": string,
-    "climate_and_packing": string,
-    "useful_apps": string[],
-    "practical_tips": string[],
-    "road_trip_tips": string[]
+    "visa_and_documents": string, "climate_and_packing": string,
+    "useful_apps": string[], "practical_tips": string[], "road_trip_tips": string[]
   }
 }
 
 Contraintes :
-- duration_days = nombre exact de jours entre start_date et end_date inclus.
-- days contient EXACTEMENT duration_days entrées.
-- Si is_round_trip est true, le dernier jour DOIT revenir à departure_location.
-- Sinon le dernier jour se termine à return_location.
-- emoji météo cohérent : ☀️ 🌤️ ⛅ 🌧️ ❄️ 🌫️ 🌩️
-- coordinates.lat et coordinates.lng sont OBLIGATOIRES pour chaque jour (approximations city-level acceptées).
-- day_total_eur = somme des trips.estimated_cost_eur + accommodation.price_eur + activities.family_total_eur + meals.daily_family_budget_eur + service_stops.estimated_cost_eur du jour.
-- grand_total_eur = somme des day_total_eur.
-- per_person_eur = grand_total_eur / (adults + nombre d'enfants).`;
+- day_plans contient EXACTEMENT duration_days entrées (du jour 1 au dernier jour).
+- end_location du jour N doit cohérer avec location du jour N+1.
+- Le voyage doit être réaliste : pas plus de 400 km/jour en road trip moyen, pas plus de 250 km/jour en montagne.
+- Pas de détails de matin/midi/après-midi, pas d'hébergement, pas de trips, pas de budget. JUSTE le plan.`;
+}
+
+function buildExpandPrompt(
+  p: any,
+  dayPlan: any,
+  previousPlan: any,
+  nextPlan: any
+): string {
+  return `Voici les préférences globales du voyage :
+
+${buildPreferencesContext(p)}
+
+Tu dois maintenant DÉTAILLER une seule journée, à partir du plan suivant :
+
+Journée à détailler : ${dayPlan.label} — ${dayPlan.date} (${dayPlan.weekday}) — ${dayPlan.location}
+Thème : ${dayPlan.anchor_theme}
+Lieu d'arrivée du jour : ${dayPlan.end_location}
+Coordonnées indicatives : ${JSON.stringify(dayPlan.coordinates)}
+
+${
+    previousPlan
+      ? `Jour précédent : ${previousPlan.label} (${previousPlan.location}) — terminé à ${previousPlan.end_location}. Ta journée DOIT commencer là.`
+      : '(c\'est le premier jour : tu commences depuis le lieu de départ du voyage)'
+  }
+
+${
+    nextPlan
+      ? `Jour suivant : ${nextPlan.label} (${nextPlan.location}). Ta journée doit finir à ${dayPlan.end_location} pour permettre l'enchaînement.`
+      : '(c\'est le dernier jour : tu finis au lieu d\'arrivée final du voyage)'
+  }
+
+Renvoie UNIQUEMENT le JSON d'UNE journée selon ce schéma EXACT (pas d'enveloppe \`day\`, pas de tableau) :
+
+${FULL_DAY_SCHEMA}
+
+Contraintes :
+- Garde EXACTEMENT le label, la date, le weekday et le location indiqués.
+- coordinates obligatoire (utilise les coordonnées du plan ou affine).
+- day_total_eur = somme trips + accommodation + activities + meals + service_stops.`;
 }
 
 function buildRegenerateDayPrompt(
@@ -237,38 +266,30 @@ function buildRegenerateDayPrompt(
 ): string {
   const day = itinerary.days?.[dayIndex];
   if (!day) throw new Error(`Jour ${dayIndex} introuvable`);
+  const prev = itinerary.days?.[dayIndex - 1];
+  const next = itinerary.days?.[dayIndex + 1];
 
-  const previousDay = itinerary.days?.[dayIndex - 1];
-  const nextDay = itinerary.days?.[dayIndex + 1];
+  return `Régénère UNE SEULE journée d'un itinéraire existant en tenant compte d'une consigne utilisateur.
 
-  return `Tu dois régénérer UNE SEULE journée d'un itinéraire existant en tenant compte d'une consigne utilisateur.
-
-Contexte de l'itinéraire complet :
+Contexte itinéraire :
 ${JSON.stringify(itinerary.summary, null, 2)}
 
 Journée à régénérer : ${day.label} (${day.date} — ${day.weekday})
-Journée précédente (J${dayIndex} doit en suivre logiquement la fin) :
-${previousDay ? `Lieu : ${previousDay.location}, hébergement : ${previousDay.accommodation?.name}` : '(premier jour de l\'itinéraire)'}
+Jour précédent : ${prev ? `${prev.location}, hébergement ${prev.accommodation?.name}` : '(premier jour)'}
+Jour suivant : ${next ? next.location : '(dernier jour)'}
 
-Journée suivante (la journée régénérée doit pouvoir enchaîner sur celle-ci) :
-${nextDay ? `Lieu : ${nextDay.location}` : '(dernier jour de l\'itinéraire)'}
-
-Journée actuelle (à remplacer) :
+Journée actuelle :
 ${JSON.stringify(day, null, 2)}
 
-CONSIGNE UTILISATEUR :
+CONSIGNE :
 """
 ${instructions}
 """
 
-Renvoie UNIQUEMENT le JSON de la nouvelle journée, avec EXACTEMENT le même schéma que celui de days[i] (toutes les clés présentes : label, date, weekday, location, coordinates, weather, morning, noon, afternoon, evening, accommodation, trips, service_stops, activities, meals, day_total_eur). Pas de texte autour, pas de bloc markdown.
-
-- Garde le même label, la même date et le même weekday que la journée originale.
-- Recalcule day_total_eur en fonction des nouveaux coûts.
-- Assure-toi que le lieu d'arrivée colle bien avec le départ de la journée suivante.`;
+Renvoie UNIQUEMENT le JSON de la nouvelle journée selon le même schéma. Garde label, date et weekday. Recalcule day_total_eur. Cohérence avec le départ du jour suivant.`;
 }
 
-async function callClaude(userPrompt: string) {
+async function callClaude(userPrompt: string, maxTokens = 12000) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -278,7 +299,7 @@ async function callClaude(userPrompt: string) {
     },
     body: JSON.stringify({
       model: MODEL,
-      max_tokens: 16000,
+      max_tokens: maxTokens,
       system: [
         {
           type: 'text',
@@ -316,26 +337,24 @@ function extractJson(text: string): any {
   }
 }
 
+function jsonResponse(body: any, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...CORS_HEADERS, 'content-type': 'application/json' },
+  });
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: CORS_HEADERS });
   }
   if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-      status: 405,
-      headers: { ...CORS_HEADERS, 'content-type': 'application/json' },
-    });
+    return jsonResponse({ error: 'Method not allowed' }, 405);
   }
   if (!ANTHROPIC_API_KEY) {
-    return new Response(
-      JSON.stringify({
-        error:
-          'Le secret ANTHROPIC_API_KEY n\'est pas configuré dans la fonction.',
-      }),
-      {
-        status: 500,
-        headers: { ...CORS_HEADERS, 'content-type': 'application/json' },
-      }
+    return jsonResponse(
+      { error: 'ANTHROPIC_API_KEY non configuré côté Edge Function.' },
+      500
     );
   }
 
@@ -345,57 +364,61 @@ Deno.serve(async (req) => {
 
     if (mode === 'regenerate-day') {
       const { itinerary, day_index, instructions } = body;
-      if (
-        !itinerary ||
-        typeof day_index !== 'number' ||
-        !instructions
-      ) {
-        return new Response(
-          JSON.stringify({
-            error: 'Body invalide : itinerary, day_index, instructions requis',
-          }),
-          {
-            status: 400,
-            headers: { ...CORS_HEADERS, 'content-type': 'application/json' },
-          }
+      if (!itinerary || typeof day_index !== 'number' || !instructions) {
+        return jsonResponse(
+          { error: 'Body invalide : itinerary, day_index, instructions requis' },
+          400
         );
       }
       const prompt = buildRegenerateDayPrompt(itinerary, day_index, instructions);
-      const { text, usage } = await callClaude(prompt);
+      const { text, usage } = await callClaude(prompt, 4000);
       const day = extractJson(text);
-      return new Response(JSON.stringify({ day, usage, model: MODEL }), {
-        status: 200,
-        headers: { ...CORS_HEADERS, 'content-type': 'application/json' },
-      });
+      return jsonResponse({ day, usage, model: MODEL });
     }
 
-    // Default : full generation
+    if (mode === 'plan-trip') {
+      const preferences = body?.preferences;
+      if (!preferences?.destinations || !preferences?.startDate) {
+        return jsonResponse({ error: 'preferences invalides' }, 400);
+      }
+      const prompt = buildPlanPrompt(preferences);
+      const { text, usage } = await callClaude(prompt, 6000);
+      const plan = extractJson(text);
+      return jsonResponse({ plan, usage, model: MODEL });
+    }
+
+    if (mode === 'expand-day') {
+      const { preferences, day_plan, previous_plan, next_plan } = body;
+      if (!preferences || !day_plan) {
+        return jsonResponse(
+          { error: 'preferences et day_plan requis' },
+          400
+        );
+      }
+      const prompt = buildExpandPrompt(
+        preferences,
+        day_plan,
+        previous_plan,
+        next_plan
+      );
+      const { text, usage } = await callClaude(prompt, 4000);
+      const day = extractJson(text);
+      return jsonResponse({ day, usage, model: MODEL });
+    }
+
+    // Default : full single-call generation (small trips ≤ 8 days)
     const preferences = body?.preferences;
-    if (!preferences || !preferences.destinations || !preferences.startDate) {
-      return new Response(JSON.stringify({ error: 'preferences invalides' }), {
-        status: 400,
-        headers: { ...CORS_HEADERS, 'content-type': 'application/json' },
-      });
+    if (!preferences?.destinations || !preferences?.startDate) {
+      return jsonResponse({ error: 'preferences invalides' }, 400);
     }
-
-    const userPrompt = buildUserPrompt(preferences);
-    const { text, usage } = await callClaude(userPrompt);
+    const userPrompt = buildFullPrompt(preferences);
+    const { text, usage } = await callClaude(userPrompt, 12000);
     const itinerary = extractJson(text);
-
-    return new Response(
-      JSON.stringify({ itinerary, usage, model: MODEL }),
-      {
-        status: 200,
-        headers: { ...CORS_HEADERS, 'content-type': 'application/json' },
-      }
-    );
+    return jsonResponse({ itinerary, usage, model: MODEL });
   } catch (err) {
-    return new Response(
-      JSON.stringify({ error: (err as Error).message || String(err) }),
-      {
-        status: 500,
-        headers: { ...CORS_HEADERS, 'content-type': 'application/json' },
-      }
+    return jsonResponse(
+      { error: (err as Error).message || String(err) },
+      500
     );
   }
 });
