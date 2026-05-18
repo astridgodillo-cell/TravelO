@@ -9,19 +9,22 @@ const EXPAND_CONCURRENCY = 3;
 
 async function readErrorDetail(error) {
   try {
-    if (error?.context?.response) {
-      const body = await error.context.response.text();
+    // En supabase-js v2, error.context EST la Response (pour FunctionsHttpError)
+    const ctx = error?.context;
+    if (ctx && typeof ctx.text === 'function') {
+      const body = await ctx.text();
       try {
         const parsed = JSON.parse(body);
         if (parsed?.error) return parsed.error;
+        return body.slice(0, 500);
       } catch {
         if (body) return body.slice(0, 500);
       }
     }
-  } catch {
-    // ignore
+  } catch (e) {
+    console.error('[ai] readErrorDetail failed:', e);
   }
-  return error?.context?.error || error?.message || null;
+  return error?.message || null;
 }
 
 function computeDurationDays(startDate, endDate) {
@@ -34,6 +37,7 @@ function computeDurationDays(startDate, endDate) {
 async function invoke(body) {
   const { data, error } = await supabase.functions.invoke(FN_NAME, { body });
   if (error) {
+    console.error('[ai] Edge Function error:', error, 'body sent:', body?.mode || 'generate');
     const detail = await readErrorDetail(error);
     throw new Error(detail || 'Erreur Edge Function');
   }
