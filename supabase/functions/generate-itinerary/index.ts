@@ -296,7 +296,7 @@ ${instructions}
 Renvoie UNIQUEMENT le JSON de la nouvelle journée selon le même schéma. Garde label, date et weekday. Recalcule day_total_eur. Cohérence avec le départ du jour suivant.`;
 }
 
-async function callClaude(userPrompt: string, maxTokens = 12000, model = MODEL) {
+async function callClaude(userPrompt: string, maxTokens = 16000, model = MODEL) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -328,20 +328,62 @@ async function callClaude(userPrompt: string, maxTokens = 12000, model = MODEL) 
   return { text, usage: data?.usage };
 }
 
-function extractJson(text: string): any {
+function extractJsonString(text: string): string {
   const trimmed = text.trim();
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
   const candidate = fenced ? fenced[1] : trimmed;
-  try {
-    return JSON.parse(candidate);
-  } catch (_) {
-    const first = candidate.indexOf('{');
-    const last = candidate.lastIndexOf('}');
-    if (first !== -1 && last > first) {
-      return JSON.parse(candidate.slice(first, last + 1));
-    }
-    throw new Error('Impossible de parser le JSON renvoyé par Claude.');
+  const first = candidate.indexOf('{');
+  const last = candidate.lastIndexOf('}');
+  if (first !== -1 && last > first) {
+    return candidate.slice(first, last + 1);
   }
+  return candidate;
+}
+
+function tryParseJson(text: string): { ok: true; value: any } | { ok: false; error: string } {
+  const candidate = extractJsonString(text);
+  try {
+    return { ok: true, value: JSON.parse(candidate) };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+// Si Claude renvoie du JSON cassé, on fait un seul aller-retour pour qu'il le corrige.
+// Bien moins cher qu'une nouvelle génération complète.
+async function parseOrRepair(rawText: string, model: string): Promise<any> {
+  const first = tryParseJson(rawText);
+  if (first.ok) return first.value;
+
+  console.warn('[json] première tentative échouée :', first.error);
+
+  const broken = extractJsonString(rawText);
+  const repairPrompt = `Le JSON que tu viens de produire est invalide. Voici l'erreur du parseur JavaScript :
+
+"${first.error}"
+
+Voici le JSON brut que tu as renvoyé :
+<<<RAW
+${broken}
+RAW>>>
+
+Tâche : renvoie EXACTEMENT le même contenu mais avec la syntaxe JSON corrigée. Vérifie :
+- chaque élément d'un tableau est suivi d'une virgule (sauf le dernier)
+- chaque accolade / crochet ouvrant a son fermant
+- les guillemets sont des guillemets droits "
+- pas de virgule en trop avant un } ou un ]
+
+Réponds UNIQUEMENT avec le JSON valide. Aucun texte autour, aucun bloc markdown, aucun commentaire.`;
+
+  const { text: repaired } = await callClaude(repairPrompt, 16000, model);
+  const second = tryParseJson(repaired);
+  if (second.ok) {
+    console.log('[json] réparé avec succès');
+    return second.value;
+  }
+  throw new Error(
+    `JSON invalide même après tentative de réparation : ${second.error}`
+  );
 }
 
 function jsonResponse(body: any, status = 200) {
@@ -476,8 +518,8 @@ Deno.serve(async (req) => {
         );
       }
       const prompt = buildRegenerateDayPrompt(itinerary, day_index, instructions);
-      const { text, usage } = await callClaude(prompt, 4000);
-      const day = extractJson(text);
+      const { text, usage } = await callClaude(prompt, 6000);
+      const day = await parseOrRepair(text, MODEL);
       return jsonResponse({ day, usage, model: MODEL });
     }
 
@@ -487,8 +529,8 @@ Deno.serve(async (req) => {
         return jsonResponse({ error: 'preferences invalides' }, 400);
       }
       const prompt = buildPlanPrompt(preferences);
-      const { text, usage } = await callClaude(prompt, 6000);
-      const plan = extractJson(text);
+      const { text, usage } = await callClaude(prompt, 8000);
+      const plan = await parseOrRepair(text, MODEL);
       return jsonResponse({ plan, usage, model: MODEL });
     }
 
@@ -507,8 +549,8 @@ Deno.serve(async (req) => {
         next_plan
       );
       // Haiku pour le détail des journées : suffisant et 4× moins cher
-      const { text, usage } = await callClaude(prompt, 4000, EXPAND_MODEL);
-      const day = extractJson(text);
+      const { text, usage } = await callClaude(prompt, 6000, EXPAND_MODEL);
+      const day = await parseOrRepair(text, EXPAND_MODEL);
       return jsonResponse({ day, usage, model: EXPAND_MODEL });
     }
 
@@ -518,8 +560,8 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: 'preferences invalides' }, 400);
     }
     const userPrompt = buildFullPrompt(preferences);
-    const { text, usage } = await callClaude(userPrompt, 12000);
-    const itinerary = extractJson(text);
+    const { text, usage } = await callClaude(userPrompt, 16000);
+    const itinerary = await parseOrRepair(text, MODEL);
     return jsonResponse({ itinerary, usage, model: MODEL });
   } catch (err) {
     return jsonResponse(
