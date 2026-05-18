@@ -2,6 +2,7 @@ import { Routes, Route } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import ProtectedRoute from './components/ProtectedRoute';
+import AdminRoute from './components/AdminRoute';
 import HomePage from './pages/HomePage';
 import NewItineraryPage from './pages/NewItineraryPage';
 import MyTripsPage from './pages/MyTripsPage';
@@ -9,6 +10,8 @@ import ItineraryDetailPage from './pages/ItineraryDetailPage';
 import PublicItineraryPage from './pages/PublicItineraryPage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
+import PendingAccountPage from './pages/PendingAccountPage';
+import AdminPage from './pages/AdminPage';
 
 export default function App() {
   return (
@@ -20,6 +23,7 @@ export default function App() {
           <Route path="/nouveau" element={<NewItineraryPage />} />
           <Route path="/connexion" element={<LoginPage />} />
           <Route path="/inscription" element={<SignupPage />} />
+          <Route path="/compte-en-attente" element={<PendingAccountPage />} />
           <Route path="/partage/:slug" element={<PublicItineraryPage />} />
           <Route
             path="/mes-voyages"
@@ -35,6 +39,14 @@ export default function App() {
               <ProtectedRoute>
                 <ItineraryDetailPage />
               </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin"
+            element={
+              <AdminRoute>
+                <AdminPage />
+              </AdminRoute>
             }
           />
           <Route path="*" element={<NotFound />} />

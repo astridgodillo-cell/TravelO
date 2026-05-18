@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { signInWithEmail } from '../lib/supabase';
+import GoogleAuthButton from '../components/GoogleAuthButton';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -23,9 +24,18 @@ export default function LoginPage() {
 
   return (
     <div className="mx-auto max-w-md">
-      <div className="card">
+      <div className="card space-y-4">
         <h1 className="text-xl font-semibold text-slate-900">Connexion</h1>
-        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+
+        <GoogleAuthButton redirectPath={from} />
+
+        <div className="relative my-2 flex items-center gap-3 text-xs text-slate-400">
+          <div className="flex-1 border-t border-slate-200" />
+          ou avec votre email
+          <div className="flex-1 border-t border-slate-200" />
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-3">
           <div>
             <label className="label">Email</label>
             <input
@@ -46,14 +56,17 @@ export default function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
             />
           </div>
-          {error && (
-            <p className="text-sm text-red-600">{error}</p>
-          )}
-          <button disabled={loading} type="submit" className="btn-primary w-full">
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <button
+            disabled={loading}
+            type="submit"
+            className="btn-primary w-full"
+          >
             {loading ? 'Connexion…' : 'Se connecter'}
           </button>
         </form>
-        <p className="mt-4 text-sm text-slate-500">
+
+        <p className="text-sm text-slate-500">
           Pas encore de compte ?{' '}
           <Link to="/inscription" className="text-brand-700 hover:underline">
             Créer un compte

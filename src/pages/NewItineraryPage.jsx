@@ -15,7 +15,7 @@ export default function NewItineraryPage() {
   const [regenerating, setRegenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  const { user } = useAuth();
+  const { user, isApproved } = useAuth();
   const navigate = useNavigate();
 
   async function handleGenerate(prefs) {
@@ -53,6 +53,10 @@ export default function NewItineraryPage() {
   async function handleSave() {
     if (!user) {
       navigate('/connexion');
+      return;
+    }
+    if (!isApproved) {
+      navigate('/compte-en-attente');
       return;
     }
     setSaving(true);
@@ -109,9 +113,11 @@ export default function NewItineraryPage() {
               >
                 {saving
                   ? 'Sauvegarde…'
-                  : user
-                    ? 'Sauvegarder dans mes voyages'
-                    : 'Se connecter pour sauvegarder'}
+                  : !user
+                    ? 'Se connecter pour sauvegarder'
+                    : !isApproved
+                      ? 'En attente d\'approbation'
+                      : 'Sauvegarder dans mes voyages'}
               </button>
             </div>
           </div>

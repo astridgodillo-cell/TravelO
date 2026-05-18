@@ -37,8 +37,23 @@ export async function signInWithEmail(email, password) {
   return supabase.auth.signInWithPassword({ email, password });
 }
 
+export async function signInWithGoogle(redirectPath = '/') {
+  const redirectTo = `${window.location.origin}${redirectPath}`;
+  return supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo },
+  });
+}
+
 export async function signOut() {
   return supabase.auth.signOut();
+}
+
+// ----- PROFILE (du user courant) -----
+export async function getMyProfile() {
+  const user = await getCurrentUser();
+  if (!user) return { data: null, error: null };
+  return supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
 }
 
 // ----- ITINERARIES -----
@@ -132,4 +147,29 @@ export async function saveTemplate(name, preferences) {
 
 export async function deleteTemplate(id) {
   return supabase.from('preference_templates').delete().eq('id', id);
+}
+
+// ----- ADMIN -----
+export async function adminListUsers({ status } = {}) {
+  let q = supabase
+    .from('admin_users_overview')
+    .select('*')
+    .order('signed_up_at', { ascending: false });
+  if (status) q = q.eq('status', status);
+  return q;
+}
+
+export async function adminUpdateUser(userId, patch) {
+  const user = await getCurrentUser();
+  const update = { ...patch };
+  if (patch.status === 'approved' && !update.approved_at) {
+    update.approved_at = new Date().toISOString();
+    update.approved_by = user?.id || null;
+  }
+  return supabase
+    .from('profiles')
+    .update(update)
+    .eq('id', userId)
+    .select()
+    .single();
 }

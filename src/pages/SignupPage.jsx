@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { signUpWithEmail } from '../lib/supabase';
+import GoogleAuthButton from '../components/GoogleAuthButton';
 
 export default function SignupPage() {
   const [email, setEmail] = useState('');
@@ -21,20 +22,36 @@ export default function SignupPage() {
       setError(error.message);
       return;
     }
+    // Inscription OK : on dirige vers la page d'attente
+    // (le profil est créé en pending par le trigger Postgres).
     if (data?.session) {
-      navigate('/mes-voyages', { replace: true });
+      navigate('/compte-en-attente', { replace: true });
     } else {
       setInfo(
-        "Compte créé. Vérifiez votre email pour confirmer l'inscription, puis connectez-vous."
+        "Compte créé. Vérifiez votre email si la confirmation est requise, puis connectez-vous — un administrateur devra valider votre accès."
       );
     }
   }
 
   return (
     <div className="mx-auto max-w-md">
-      <div className="card">
-        <h1 className="text-xl font-semibold text-slate-900">Créer un compte</h1>
-        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+      <div className="card space-y-4">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-900">Créer un compte</h1>
+          <p className="text-sm text-slate-500 mt-1">
+            Votre demande sera soumise à un administrateur pour validation.
+          </p>
+        </div>
+
+        <GoogleAuthButton redirectPath="/compte-en-attente" />
+
+        <div className="relative my-2 flex items-center gap-3 text-xs text-slate-400">
+          <div className="flex-1 border-t border-slate-200" />
+          ou avec votre email
+          <div className="flex-1 border-t border-slate-200" />
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-3">
           <div>
             <label className="label">Email</label>
             <input
@@ -58,11 +75,16 @@ export default function SignupPage() {
           </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
           {info && <p className="text-sm text-emerald-700">{info}</p>}
-          <button disabled={loading} type="submit" className="btn-primary w-full">
-            {loading ? 'Création…' : "S'inscrire"}
+          <button
+            disabled={loading}
+            type="submit"
+            className="btn-primary w-full"
+          >
+            {loading ? 'Création…' : 'S\'inscrire'}
           </button>
         </form>
-        <p className="mt-4 text-sm text-slate-500">
+
+        <p className="text-sm text-slate-500">
           Déjà inscrit ?{' '}
           <Link to="/connexion" className="text-brand-700 hover:underline">
             Se connecter

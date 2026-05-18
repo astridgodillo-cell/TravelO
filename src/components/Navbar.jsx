@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { signOut } from '../lib/supabase';
 
 export default function Navbar() {
-  const { user } = useAuth();
+  const { user, profile, isAdmin } = useAuth();
   const navigate = useNavigate();
 
   async function handleSignOut() {
@@ -40,13 +40,24 @@ export default function Navbar() {
               Mes voyages
             </NavLink>
           )}
+          {isAdmin && (
+            <NavLink to="/admin" className={navLink}>
+              Admin
+            </NavLink>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
           {user ? (
             <>
-              <span className="hidden sm:inline text-sm text-slate-500">
-                {user.email}
+              <span className="hidden sm:flex flex-col items-end text-xs leading-tight">
+                <span className="text-slate-600">{user.email}</span>
+                {profile && (
+                  <span className="text-slate-400 capitalize">
+                    {profile.subscription_tier}
+                    {profile.status !== 'approved' && ` · ${profile.status}`}
+                  </span>
+                )}
               </span>
               <button onClick={handleSignOut} className="btn-secondary">
                 Se déconnecter
