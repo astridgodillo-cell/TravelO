@@ -1,13 +1,18 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const rawUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-if (!supabaseUrl || !supabaseAnonKey) {
+if (!rawUrl || !supabaseAnonKey) {
   throw new Error(
     'VITE_SUPABASE_URL et VITE_SUPABASE_ANON_KEY doivent être définis dans .env'
   );
 }
+
+// Tolère un /rest/v1, /auth/v1, /functions/v1 ou un slash final dans l'URL.
+const supabaseUrl = rawUrl
+  .replace(/\/(rest|auth|functions|storage|realtime)\/v\d+\/?$/, '')
+  .replace(/\/+$/, '');
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
