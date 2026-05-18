@@ -118,67 +118,81 @@ export default function ItineraryView({
 
   return (
     <div className="space-y-6">
-      <header className="card">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">
-              {summary?.destinations}
-            </h1>
-            {summary?.headline && (
-              <p className="text-slate-600 mt-1 italic">"{summary.headline}"</p>
+      <header className="relative overflow-hidden rounded-3xl bg-hero-gradient text-white p-6 sm:p-10 shadow-glow animate-fade-up print:bg-white print:text-slate-900 print:shadow-none">
+        {/* Bulles décoratives */}
+        <div className="absolute -top-16 -right-16 w-64 h-64 rounded-full bg-white/10 blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-20 -left-10 w-72 h-72 rounded-full bg-sunset-400/30 blur-3xl pointer-events-none" />
+
+        <div className="relative">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="max-w-2xl">
+              <span className="inline-block text-xs uppercase tracking-widest text-white/80 mb-2 print:text-slate-500">
+                ✨ Itinéraire sur mesure
+              </span>
+              <h1 className="text-3xl sm:text-4xl font-bold leading-tight">
+                {summary?.destinations}
+              </h1>
+              {summary?.headline && (
+                <p className="text-white/90 mt-3 italic text-base sm:text-lg print:text-slate-600">
+                  "{summary.headline}"
+                </p>
+              )}
+            </div>
+            <div className="text-right bg-white/15 backdrop-blur rounded-2xl px-4 py-3 print:bg-slate-100">
+              <div className="text-[10px] uppercase tracking-widest text-white/80 print:text-slate-500">
+                Budget total
+              </div>
+              <div className="text-3xl font-bold tabular-nums">
+                {formatEur(budget_summary?.grand_total_eur)}
+              </div>
+              <div className="text-xs text-white/80 print:text-slate-500">
+                {formatEur(budget_summary?.per_person_eur)} / pers.
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6 flex flex-wrap gap-2">
+            <HeroChip icon="📅" label={`${summary?.duration_days} jours`} />
+            <HeroChip
+              icon="👥"
+              label={`${adults} adulte(s)${children ? ` + ${children} enfant(s)` : ''}`}
+            />
+            <HeroChip icon="🎯" label={summary?.trip_type} />
+            <HeroChip icon="💎" label={summary?.budget_level} />
+            {summary?.total_distance_km != null && (
+              <HeroChip
+                icon="🛣️"
+                label={`${summary.total_distance_km.toLocaleString('fr-FR')} km`}
+              />
+            )}
+            {summary?.vehicle_summary && (
+              <HeroChip icon="🚐" label={summary.vehicle_summary} />
             )}
           </div>
-          <div className="text-right">
-            <div className="text-xs uppercase tracking-wide text-slate-400">
-              Budget total estimé
-            </div>
-            <div className="text-2xl font-bold text-brand-700">
-              {formatEur(budget_summary?.grand_total_eur)}
-            </div>
-            <div className="text-xs text-slate-500">
-              soit {formatEur(budget_summary?.per_person_eur)} / personne
-            </div>
-          </div>
-        </div>
 
-        <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-          <Info label="Du" value={summary?.start_date} />
-          <Info label="Au" value={summary?.end_date} />
-          <Info label="Durée" value={`${summary?.duration_days} jours`} />
-          <Info
-            label="Voyageurs"
-            value={`${adults} adulte(s)${children ? ` + ${children} enfant(s)` : ''}`}
-          />
-          <Info label="Type" value={summary?.trip_type} />
-          <Info label="Niveau" value={summary?.budget_level} />
-          <Info label="Départ" value={summary?.departure_location} />
-          <Info
-            label={summary?.is_round_trip ? 'Retour' : 'Arrivée'}
-            value={summary?.return_location}
-          />
-          {summary?.vehicle_summary && (
-            <Info label="Véhicule" value={summary.vehicle_summary} />
-          )}
-          {summary?.total_distance_km != null && (
-            <Info
-              label="Distance totale"
-              value={`${summary.total_distance_km.toLocaleString('fr-FR')} km`}
-            />
+          <div className="mt-4 text-sm text-white/90 print:text-slate-500">
+            <span>{summary?.start_date}</span>
+            <span className="mx-2">→</span>
+            <span>{summary?.end_date}</span>
+            <span className="mx-3 opacity-50">·</span>
+            <span>{summary?.departure_location}</span>
+            <span className="mx-1">→</span>
+            <span>{summary?.return_location}</span>
+          </div>
+
+          {googleMapsUrl && (
+            <div className="mt-5 print:hidden">
+              <a
+                href={googleMapsUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 rounded-full bg-white text-slate-900 px-4 py-2 text-sm font-semibold shadow hover:bg-slate-100 transition"
+              >
+                🗺️ Ouvrir tout l'itinéraire dans Google Maps
+              </a>
+            </div>
           )}
         </div>
-
-        {googleMapsUrl && (
-          <div className="mt-4 print:hidden">
-            <a
-              href={googleMapsUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="btn-secondary"
-            >
-              🗺️ Ouvrir tout l'itinéraire dans Google Maps
-            </a>
-          </div>
-        )}
       </header>
 
       <nav className="print:hidden">
@@ -340,37 +354,47 @@ function DayCard({
   });
 
   return (
-    <article className="card print:break-inside-avoid print:shadow-none print:border-slate-300">
-      <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-100 pb-3">
-        <div>
-          <h3 className="text-lg font-bold text-slate-900">
-            {day.label} — {day.location}
-          </h3>
-          <p className="text-sm text-slate-500 capitalize">
-            {day.weekday} {day.date}
-          </p>
+    <article className="card print:break-inside-avoid print:shadow-none print:border-slate-300 animate-fade-up">
+      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 pb-4">
+        <div className="flex items-start gap-3 sm:gap-4 min-w-0">
+          <div className="shrink-0 grid place-items-center h-14 w-14 rounded-2xl bg-day-gradient text-white font-bold text-lg shadow-pop print:bg-slate-900">
+            {day.label}
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-lg sm:text-xl font-bold text-slate-900 leading-tight">
+              {day.location}
+            </h3>
+            <p className="text-xs sm:text-sm text-slate-500 capitalize mt-0.5">
+              {day.weekday} {day.date}
+            </p>
+            {day.weather && (
+              <div className="text-xs text-slate-600 mt-1.5">
+                <span className="text-base mr-1">{day.weather.emoji}</span>
+                {day.weather.temperature_c}°C
+                {day.weather.description && (
+                  <span className="text-slate-400 ml-1">
+                    · {day.weather.description}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          {day.weather && (
-            <div className="text-sm text-slate-600">
-              <span className="text-lg mr-1">{day.weather.emoji}</span>
-              {day.weather.temperature_c}°C
-            </div>
-          )}
           <div className="text-right">
-            <div className="text-xs uppercase tracking-wide text-slate-400">
+            <div className="text-[10px] uppercase tracking-widest text-slate-400">
               Total jour
             </div>
-            <div className="font-bold text-slate-900">
+            <div className="text-xl font-bold text-slate-900 tabular-nums">
               {formatEur(day.day_total_eur)}
             </div>
           </div>
           {canRegenerate && (
-            <div className="flex gap-2 print:hidden">
+            <div className="flex gap-1.5 print:hidden">
               {onOpenModify && (
                 <button
                   onClick={onOpenModify}
-                  className="text-xs text-brand-700 hover:underline"
+                  className="chip bg-brand-50 text-brand-700 hover:bg-brand-100"
                   title="Modifier cette journée"
                 >
                   ✏️ Modifier
@@ -379,7 +403,7 @@ function DayCard({
               {onOpenRegen && (
                 <button
                   onClick={onOpenRegen}
-                  className="text-xs text-slate-500 hover:underline"
+                  className="chip bg-slate-100 text-slate-600 hover:bg-slate-200"
                   title="Régénérer cette journée"
                 >
                   ↻ Régénérer
@@ -997,6 +1021,16 @@ function NoteBlock({ title, children }) {
       </h3>
       <div className="mt-1 text-slate-700 leading-relaxed">{children}</div>
     </div>
+  );
+}
+
+function HeroChip({ icon, label }) {
+  if (!label) return null;
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 backdrop-blur px-3 py-1.5 text-sm font-medium text-white print:bg-slate-100 print:text-slate-700 capitalize">
+      <span aria-hidden>{icon}</span>
+      <span>{label}</span>
+    </span>
   );
 }
 
