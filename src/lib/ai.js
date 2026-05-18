@@ -2,17 +2,31 @@ import { supabase } from './supabase';
 
 const FN_NAME = 'generate-itinerary';
 
+async function readErrorDetail(error) {
+  try {
+    if (error?.context?.response) {
+      const body = await error.context.response.text();
+      try {
+        const parsed = JSON.parse(body);
+        if (parsed?.error) return parsed.error;
+      } catch {
+        if (body) return body.slice(0, 500);
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return error?.context?.error || error?.message || null;
+}
+
 export async function generateItinerary(preferences) {
   const { data, error } = await supabase.functions.invoke(FN_NAME, {
     body: { preferences },
   });
 
   if (error) {
-    const message =
-      error?.context?.error ||
-      error?.message ||
-      "L'Edge Function generate-itinerary a renvoyé une erreur.";
-    throw new Error(message);
+    const detail = await readErrorDetail(error);
+    throw new Error(detail || 'Erreur Edge Function');
   }
   if (data?.error) throw new Error(data.error);
   if (!data?.itinerary) {
@@ -32,16 +46,12 @@ export async function regenerateDay(itinerary, dayIndex, instructions) {
   });
 
   if (error) {
-    const message =
-      error?.context?.error ||
-      error?.message ||
-      'Erreur lors de la régénération de la journée.';
-    throw new Error(message);
+    const detail = await readErrorDetail(error);
+    throw new Error(detail || 'Erreur Edge Function (régénération)');
   }
   if (data?.error) throw new Error(data.error);
   if (!data?.day) throw new Error('Réponse vide pour la journée régénérée.');
 
-  // Recompute budget summary on the client
   const newDays = itinerary.days.map((d, i) =>
     i === dayIndex ? data.day : d
   );
