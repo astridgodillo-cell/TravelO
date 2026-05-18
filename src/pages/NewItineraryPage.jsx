@@ -1,70 +1,19 @@
 import { useState } from 'react';
 import PreferencesForm from '../components/PreferencesForm';
-import ItineraryView from '../components/ItineraryView';
 import GeneratingLoader from '../components/GeneratingLoader';
-import { generateItinerary, regenerateDay, replanFromDay } from '../lib/ai';
+import { generateItinerary } from '../lib/ai';
 import { saveItinerary } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
 export default function NewItineraryPage() {
-  const [itinerary, setItinerary] = useState(null);
-  const [preferences, setPreferences] = useState(null);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(null);
-  const [regenerating, setRegenerating] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const { user, isApproved } = useAuth();
   const navigate = useNavigate();
 
   async function handleGenerate(prefs) {
-    setLoading(true);
-    setError(null);
-    setItinerary(null);
-    setProgress(null);
-    try {
-      const result = await generateItinerary(prefs, (p) => setProgress(p));
-      setPreferences(prefs);
-      setItinerary(result);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    } catch (err) {
-      setError(err.message || 'Erreur lors de la génération.');
-    } finally {
-      setLoading(false);
-      setProgress(null);
-    }
-  }
-
-  async function handleRegenerateDay(dayIndex, instructions) {
-    if (!itinerary) return;
-    setRegenerating(true);
-    setError(null);
-    try {
-      const updated = await regenerateDay(itinerary, dayIndex, instructions);
-      setItinerary(updated);
-    } catch (err) {
-      setError(err.message || 'Erreur lors de la régénération.');
-    } finally {
-      setRegenerating(false);
-    }
-  }
-
-  async function handleReplanFromDay(dayIndex, instructions) {
-    if (!itinerary) return;
-    setRegenerating(true);
-    setError(null);
-    try {
-      const updated = await replanFromDay(itinerary, dayIndex, instructions);
-      setItinerary(updated);
-    } catch (err) {
-      setError(err.message || 'Erreur lors de la replanification.');
-    } finally {
-      setRegenerating(false);
-    }
-  }
-
-  async function handleSave() {
     if (!user) {
       navigate('/connexion');
       return;
@@ -73,29 +22,47 @@ export default function NewItineraryPage() {
       navigate('/compte-en-attente');
       return;
     }
-    setSaving(true);
+
+    setLoading(true);
     setError(null);
+    setProgress(null);
     try {
+      const itinerary = await generateItinerary(prefs, (p) => setProgress(p));
+
+      // Auto-save : tous les itinéraires générés sont automatiquement
+      // sauvegardés dans "Mes voyages". L'utilisateur peut ensuite les
+      // modifier ou les supprimer.
       const title =
-        (preferences?.destinations || 'Voyage').slice(0, 80) +
+        (prefs?.destinations || 'Voyage').slice(0, 80) +
         ` — ${itinerary?.summary?.duration_days || ''}j`;
+
       const { data, error: dbError } = await saveItinerary({
         title,
-        preferences,
+        preferences: prefs,
         itinerary,
       });
-      if (dbError) throw dbError;
-      if (data?.id) navigate(`/itineraire/${data.id}`);
+
+      if (dbError) {
+        throw new Error(
+          `Itinéraire généré mais sauvegarde échouée : ${dbError.message}`
+        );
+      }
+
+      if (data?.id) {
+        navigate(`/itineraire/${data.id}`);
+      } else {
+        navigate('/mes-voyages');
+      }
     } catch (err) {
-      setError(err.message || 'Impossible de sauvegarder.');
-    } finally {
-      setSaving(false);
+      setError(err.message || 'Erreur lors de la génération.');
+      setLoading(false);
+      setProgress(null);
     }
   }
 
   return (
     <div className="space-y-6">
-      {!itinerary && !loading && (
+      {!loading && (
         <PreferencesForm onSubmit={handleGenerate} loading={loading} />
       )}
 
@@ -105,43 +72,6 @@ export default function NewItineraryPage() {
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           {error}
         </div>
-      )}
-
-      {itinerary && !loading && (
-        <>
-          <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
-            <button
-              onClick={() => setItinerary(null)}
-              className="btn-secondary"
-            >
-              ← Modifier les préférences
-            </button>
-            <div className="flex gap-2">
-              <button onClick={() => window.print()} className="btn-secondary">
-                Exporter en PDF
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                className="btn-primary"
-              >
-                {saving
-                  ? 'Sauvegarde…'
-                  : !user
-                    ? 'Se connecter pour sauvegarder'
-                    : !isApproved
-                      ? 'En attente d\'approbation'
-                      : 'Sauvegarder dans mes voyages'}
-              </button>
-            </div>
-          </div>
-          <ItineraryView
-            itinerary={itinerary}
-            onRegenerateDay={handleRegenerateDay}
-            onReplanFromDay={handleReplanFromDay}
-            regenerating={regenerating}
-          />
-        </>
       )}
     </div>
   );
