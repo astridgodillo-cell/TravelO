@@ -1,20 +1,39 @@
 const q = (s) => encodeURIComponent(s || '');
 
+// Nettoie une "location" potentiellement bavarde générée par Claude :
+//   "Vérone - puis route vers Bologne" → "Vérone"
+//   "Route vers Florence via Apennins"  → "Florence"
+//   "Calvi (matin) + Saint-Florent"     → "Calvi"
+//   "Bastia → Macinaggio"               → "Bastia"
+// Garde uniquement la première portion exploitable par Google Maps.
+function cleanLocation(loc) {
+  if (!loc) return '';
+  let s = String(loc).trim();
+  // Retire un préfixe descriptif (route vers, trajet vers, etc.)
+  s = s.replace(
+    /^(route|trajet|direction)\s+(vers|de|à)\s+/i,
+    ''
+  );
+  // Coupe à la première séparation : tirets, flèches, parenthèses, "puis", "via"
+  const cut = s.search(/(\s+[-—–→»]\s+|\s+(puis|via|vers|et|\+)\s+|\s*\(|,\s*\d)/i);
+  if (cut > 0) s = s.slice(0, cut);
+  return s.trim();
+}
+
+export { cleanLocation };
+
 export function googleMapsSearch(query) {
-  return `https://www.google.com/maps/search/?api=1&query=${q(query)}`;
+  return `https://www.google.com/maps/search/?api=1&query=${q(cleanLocation(query) || query)}`;
 }
 
 export function googleMapsDirections(from, to) {
-  // Format path : /maps/dir/<from>/<to> — plus fiable que ?api=1 pour
-  // imposer les deux points (le format api=1 est parfois interprété comme
-  // "directions vers X depuis ma position" par l'app mobile Google Maps).
-  const safeFrom = q(from).replace(/%20/g, '+');
-  const safeTo = q(to).replace(/%20/g, '+');
+  const safeFrom = q(cleanLocation(from)).replace(/%20/g, '+');
+  const safeTo = q(cleanLocation(to)).replace(/%20/g, '+');
   return `https://www.google.com/maps/dir/${safeFrom}/${safeTo}/`;
 }
 
 export function park4nightSearch(location) {
-  return `https://park4night.com/fr/search?text=${q(location)}`;
+  return `https://park4night.com/fr/search?text=${q(cleanLocation(location) || location)}`;
 }
 
 export function bookingSearch(location, checkin, checkout, adults = 2, children = 0) {
@@ -38,10 +57,13 @@ export function directFerriesSearch(from, to, date) {
 }
 
 export function googleMapsMultiStop(stops) {
-  // Crée un itinéraire Google Maps multi-arrêts.
-  // Format: https://www.google.com/maps/dir/A/B/C/D
   if (!stops?.length) return null;
-  const parts = stops
+  const cleaned = stops
+    .map(cleanLocation)
+    .filter(Boolean)
+    .filter((loc, i, arr) => loc !== arr[i - 1]); // dédoublonne arrêts consécutifs
+  if (!cleaned.length) return null;
+  const parts = cleaned
     .map((s) => encodeURIComponent(s).replace(/%20/g, '+'))
     .join('/');
   return `https://www.google.com/maps/dir/${parts}`;

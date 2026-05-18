@@ -47,6 +47,10 @@ Règles strictes :
 - Décris les excursions de façon immersive et commerciale.
 - Pour chaque journée, fournis coordinates GPS approximatives (lat, lng) niveau ville.
 - Si "Activités spécifiques souhaitées" est renseigné : intègre-les en priorité dans le programme quand le lieu et la saison s'y prêtent (ex. kayak demandé en Bretagne en juin → cale au moins 1 sortie kayak ; musées demandés à Lisbonne → cale 1-2 musées). Ne force pas une activité inadaptée (ex. ski en juillet).
+- FORMAT DES NOMS DE LIEUX : le champ "location" des jours et les champs "from"/"to" des trips doivent contenir UNIQUEMENT un nom de ville ou village exploitable par Google Maps. PAS de description, PAS de "X - puis route vers Y", PAS de "Route vers X via Z", PAS de "X (matin) + Y". Mets l'éventuel détail dans le thème ou la description, pas dans le nom du lieu.
+  ✅ "location": "Vérone"          ✅ "from": "Bastia"
+  ❌ "location": "Vérone - puis route vers Bologne"
+  ❌ "from": "Route vers Florence via Apennins"
 
 MODE ROAD TRIP — règles supplémentaires :
 - Construis un VRAI itinéraire bout-en-bout, en boucle si départ = retour, sinon en ligne.
