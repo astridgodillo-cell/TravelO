@@ -154,6 +154,12 @@ const FULL_DAY_SCHEMA = `{
     "price_per_person_eur": number, "family_total_eur": number
   } ],
   "meals": { "daily_family_budget_eur": number, "style": string, "note": string },
+  "culinary_specialties": [ {
+    "name": string,
+    "category": string,
+    "description": string,
+    "photo_query": string
+  } ],
   "day_total_eur": number
 }`;
 
@@ -207,7 +213,8 @@ Contraintes :
 - day_total_eur = trips + accommodation + activities + meals + service_stops du jour.
 - grand_total_eur = somme des day_total_eur.
 - per_person_eur = grand_total / (adults + enfants).
-- Si is_round_trip, dernier jour à departure_location ; sinon à return_location.`;
+- Si is_round_trip, dernier jour à departure_location ; sinon à return_location.
+- culinary_specialties : 3 à 4 spécialités emblématiques par jour, propres à la région/ville du jour. category = "plat", "pâtisserie", "fromage", "vin", "boisson", "rue", etc. description = 1-2 phrases descriptives (ingrédients, contexte). photo_query = expression courte en français ou langue locale optimisée pour Pexels (ex. "pastel de nata", "porchetta italienne", "fondue savoyarde"). Évite les doublons d'un jour à l'autre quand le lieu change.`;
 }
 
 function buildPlanPrompt(p: any): string {
@@ -331,6 +338,29 @@ ${instructions}
 """
 
 Renvoie UNIQUEMENT le JSON de la nouvelle journée selon le même schéma. Garde label, date et weekday. Recalcule day_total_eur. Cohérence avec le départ du jour suivant.`;
+}
+
+function buildFetchSpecialtiesPrompt(location: string, count = 4): string {
+  return `Tu es un expert en gastronomie locale. Pour le lieu "${location}", liste ${count} spécialités culinaires emblématiques.
+
+Renvoie UNIQUEMENT un JSON valide selon ce schéma (pas de texte autour) :
+
+{
+  "specialties": [
+    {
+      "name": "nom du plat / produit",
+      "category": "plat | pâtisserie | fromage | vin | boisson | rue | autre",
+      "description": "1-2 phrases : ingrédients + contexte local",
+      "photo_query": "expression courte optimisée pour Pexels, ex. 'pastel de nata'"
+    }
+  ]
+}
+
+Contraintes :
+- ${count} spécialités, vraiment emblématiques de ${location} ou sa région
+- description en français, 1-2 phrases concrètes
+- pas de doublons
+- photo_query court (2-4 mots) en français ou langue locale, choisi pour ramener une photo pertinente`;
 }
 
 function buildRegenerateActivityPrompt(
@@ -682,6 +712,21 @@ Deno.serve(async (req) => {
       const { text, usage } = await callClaude(prompt, 6000);
       const day = await parseOrRepair(text, MODEL);
       return jsonResponse({ day, usage, model: MODEL });
+    }
+
+    if (mode === 'fetch-specialties') {
+      const { location, count } = body;
+      if (!location || typeof location !== 'string') {
+        return jsonResponse({ error: 'Paramètre "location" requis.' }, 400);
+      }
+      const prompt = buildFetchSpecialtiesPrompt(location, count || 4);
+      const { text, usage } = await callClaude(prompt, 2000, EXPAND_MODEL);
+      const parsed = await parseOrRepair(text, EXPAND_MODEL);
+      return jsonResponse({
+        specialties: parsed?.specialties || [],
+        usage,
+        model: EXPAND_MODEL,
+      });
     }
 
     if (mode === 'regenerate-activity') {

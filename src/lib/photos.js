@@ -5,6 +5,23 @@ const FN_NAME = 'generate-itinerary';
 // Cache mémoire simple (vivace pendant la session) pour éviter de réinterroger Pexels
 const cache = new Map();
 
+export async function fetchSpecialties(location, count = 4) {
+  if (!location) return [];
+  try {
+    const { data, error } = await supabase.functions.invoke(FN_NAME, {
+      body: { mode: 'fetch-specialties', location, count },
+    });
+    if (error || data?.error) {
+      console.warn('[specialties] fetch failed', error || data.error);
+      return [];
+    }
+    return data?.specialties || [];
+  } catch (e) {
+    console.error('[specialties] exception', e);
+    return [];
+  }
+}
+
 export async function fetchPhotosFor(query, perPage = 5) {
   if (!query) return [];
   const key = `${query}|${perPage}`;

@@ -7,6 +7,7 @@ import {
   regenerateActivity,
   removeActivity,
 } from '../lib/ai';
+import { fetchSpecialties } from '../lib/photos';
 import ItineraryView from '../components/ItineraryView';
 import SharePanel from '../components/SharePanel';
 
@@ -90,6 +91,27 @@ export default function ItineraryDetailPage() {
     else setTrip(data);
   }
 
+  async function handleFetchSpecialties(dayIndex) {
+    if (!trip) return;
+    const day = trip.itinerary?.days?.[dayIndex];
+    if (!day?.location) return;
+    setError(null);
+    const specialties = await fetchSpecialties(day.location, 4);
+    if (!specialties.length) {
+      setError('Impossible de charger les spécialités pour ce lieu.');
+      return;
+    }
+    const newDays = trip.itinerary.days.map((d, i) =>
+      i === dayIndex ? { ...d, culinary_specialties: specialties } : d
+    );
+    const updatedItinerary = { ...trip.itinerary, days: newDays };
+    const { data, error: dbError } = await updateItinerary(trip.id, {
+      itinerary: updatedItinerary,
+    });
+    if (dbError) setError(dbError.message);
+    else setTrip(data);
+  }
+
   async function handleReplanFromDay(dayIndex, instructions) {
     if (!trip) return;
     setRegenerating(true);
@@ -148,6 +170,7 @@ export default function ItineraryDetailPage() {
         onReplanFromDay={handleReplanFromDay}
         onRegenerateActivity={handleRegenerateActivity}
         onRemoveActivity={handleRemoveActivity}
+        onFetchSpecialties={handleFetchSpecialties}
         regenerating={regenerating}
       />
     </div>

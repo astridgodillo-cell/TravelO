@@ -5,6 +5,7 @@ import RegenerateDayModal from './RegenerateDayModal';
 import ModifyDayModal from './ModifyDayModal';
 import EditActivityModal from './EditActivityModal';
 import DayPhotos from './DayPhotos';
+import DaySpecialties from './DaySpecialties';
 import ItineraryTable from './ItineraryTable';
 import {
   bestAccommodationLink,
@@ -42,12 +43,14 @@ export default function ItineraryView({
   onReplanFromDay,
   onRegenerateActivity,
   onRemoveActivity,
+  onFetchSpecialties,
   regenerating,
 }) {
   const [tab, setTab] = useState('planning');
   const [regenTarget, setRegenTarget] = useState(null);
   const [modifyTarget, setModifyTarget] = useState(null);
   const [activityTarget, setActivityTarget] = useState(null);
+  const [loadingSpecialtiesIdx, setLoadingSpecialtiesIdx] = useState(null);
 
   const allActivities = useMemo(() => {
     if (!itinerary?.days) return [];
@@ -101,6 +104,16 @@ export default function ItineraryView({
     if (!onRemoveActivity) return;
     if (!confirm('Supprimer cette activité ?')) return;
     await onRemoveActivity(dayIndex, activityIndex);
+  }
+
+  async function handleFetchSpecialties(dayIndex) {
+    if (!onFetchSpecialties) return;
+    setLoadingSpecialtiesIdx(dayIndex);
+    try {
+      await onFetchSpecialties(dayIndex);
+    } finally {
+      setLoadingSpecialtiesIdx(null);
+    }
   }
 
   return (
@@ -205,6 +218,10 @@ export default function ItineraryView({
               })
             }
             onRemoveActivity={handleRemoveActivity}
+            onFetchSpecialties={
+              onFetchSpecialties ? handleFetchSpecialties : null
+            }
+            loadingSpecialtiesIdx={loadingSpecialtiesIdx}
             canRegenerate={typeof onRegenerateDay === 'function'}
             canEditActivities={typeof onRegenerateActivity === 'function'}
           />
@@ -264,6 +281,8 @@ function Planning({
   onOpenModify,
   onEditActivity,
   onRemoveActivity,
+  onFetchSpecialties,
+  loadingSpecialtiesIdx,
   canRegenerate,
   canEditActivities,
 }) {
@@ -285,6 +304,10 @@ function Planning({
           onOpenModify={onOpenModify ? () => onOpenModify(i, d) : null}
           onEditActivity={onEditActivity}
           onRemoveActivity={onRemoveActivity}
+          onFetchSpecialties={
+            onFetchSpecialties ? () => onFetchSpecialties(i) : null
+          }
+          loadingSpecialties={loadingSpecialtiesIdx === i}
           canRegenerate={canRegenerate}
           canEditActivities={canEditActivities}
         />
@@ -303,6 +326,8 @@ function DayCard({
   onOpenModify,
   onEditActivity,
   onRemoveActivity,
+  onFetchSpecialties,
+  loadingSpecialties,
   canRegenerate,
   canEditActivities,
 }) {
@@ -547,6 +572,13 @@ function DayCard({
       </div>
 
       <DayPhotos location={day.location} max={5} />
+
+      <DaySpecialties
+        specialties={day.culinary_specialties}
+        location={day.location}
+        onFetch={onFetchSpecialties}
+        loading={loadingSpecialties}
+      />
     </article>
   );
 }
