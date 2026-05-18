@@ -101,7 +101,7 @@ export default function AdminPage() {
         ) : users.length === 0 ? (
           <p className="text-slate-500 p-6">Aucun utilisateur dans cette catégorie.</p>
         ) : (
-          <table className="w-full text-sm">
+          <table className="w-full text-sm min-w-[760px]">
             <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="text-left px-4 py-3">Email</th>
