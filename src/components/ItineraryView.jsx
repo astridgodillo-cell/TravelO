@@ -288,7 +288,11 @@ export default function ItineraryView({
           </div>
         )}
         <div className={tab === 'budget' ? '' : 'hidden print:block'}>
-          <BudgetGlobal budget={budget_summary} metadata={metadata} />
+          <BudgetGlobal
+            budget={budget_summary}
+            days={days}
+            metadata={metadata}
+          />
         </div>
         <div className={tab === 'notes' ? '' : 'hidden print:block'}>
           <NotesConseils notes={notes} />
@@ -792,9 +796,89 @@ function Moment({ label, m }) {
   );
 }
 
-function BudgetGlobal({ budget, metadata }) {
+const TRANSPORT_ICONS = {
+  Avion: '✈️',
+  Train: '🚄',
+  Voiture: '🚗',
+  Van: '🚐',
+  'Camping-car': '🚍',
+  Ferry: '🛳️',
+  Bus: '🚌',
+  'Transports en commun': '🚇',
+  Taxi: '🚕',
+  Vélo: '🚴',
+  Marche: '🚶',
+  Croisière: '🛳️',
+  Autre: '🧭',
+};
+
+function categorizeMode(mode) {
+  const m = (mode || '').toLowerCase();
+  if (m.includes('avion') || m.includes('vol') || m.includes('flight') || m.includes('plane'))
+    return 'Avion';
+  if (
+    m.includes('train') ||
+    m.includes('tgv') ||
+    m.includes('shinkansen') ||
+    m.includes('ice') ||
+    m.includes('eurostar') ||
+    m.includes('intercité') ||
+    m.includes('ter')
+  )
+    return 'Train';
+  if (m.includes('ferry') || m.includes('bateau') || m.includes('boat'))
+    return 'Ferry';
+  if (m.includes('croisière') || m.includes('croisiere') || m.includes('cruise'))
+    return 'Croisière';
+  if (m.includes('camping-car') || m.includes('camping car') || m.includes('cc'))
+    return 'Camping-car';
+  if (m.includes('van') || m.includes('fourgon')) return 'Van';
+  if (
+    m.includes('voiture') ||
+    m.includes('location') ||
+    m.includes('rental') ||
+    m.includes('car')
+  )
+    return 'Voiture';
+  if (m.includes('taxi') || m.includes('uber') || m.includes('vtc'))
+    return 'Taxi';
+  if (
+    m.includes('métro') ||
+    m.includes('metro') ||
+    m.includes('tram') ||
+    m.includes('transports') ||
+    m.includes('public') ||
+    m.includes('local')
+  )
+    return 'Transports en commun';
+  if (m.includes('bus') || m.includes('autobus') || m.includes('autocar'))
+    return 'Bus';
+  if (m.includes('vélo') || m.includes('velo') || m.includes('bike'))
+    return 'Vélo';
+  if (m.includes('marche') || m.includes('pied') || m.includes('walk'))
+    return 'Marche';
+  return 'Autre';
+}
+
+function BudgetGlobal({ budget, days, metadata }) {
   if (!budget) return null;
   const aiEur = costEur(metadata?.total_cost_usd);
+
+  // Agrégation des trajets par mode de transport (avion/train/voiture/…)
+  const modeBreakdown = useMemo(() => {
+    const totals = {};
+    for (const d of days || []) {
+      for (const t of d.trips || []) {
+        const cat = categorizeMode(t.mode);
+        totals[cat] = (totals[cat] || 0) + (t.estimated_cost_eur || 0);
+      }
+    }
+    return Object.entries(totals)
+      .filter(([, v]) => v > 0)
+      .sort((a, b) => b[1] - a[1]);
+  }, [days]);
+
+  // Sous-détail pour les trajets routiers (carburant / péages / ferries)
   const tripsBreakdown = [
     budget.fuel_eur && ['Carburant', budget.fuel_eur],
     budget.tolls_eur && ['Péages', budget.tolls_eur],
@@ -845,10 +929,35 @@ function BudgetGlobal({ budget, metadata }) {
         </tbody>
       </table>
 
+      {modeBreakdown.length > 0 && (
+        <div className="mt-6">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-2">
+            Détail par mode de transport
+          </h3>
+          <table className="w-full text-sm">
+            <tbody>
+              {modeBreakdown.map(([label, value]) => (
+                <tr key={label} className="border-b border-slate-100 last:border-0">
+                  <td className="py-2 text-slate-700">
+                    <span className="mr-2">
+                      {TRANSPORT_ICONS[label] || '🧭'}
+                    </span>
+                    {label}
+                  </td>
+                  <td className="py-2 text-right font-medium tabular-nums">
+                    {formatEur(value)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {tripsBreakdown.length > 0 && (
         <div className="mt-6">
           <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-2">
-            Détail des trajets
+            Détail trajets routiers
           </h3>
           <table className="w-full text-sm">
             <tbody>
