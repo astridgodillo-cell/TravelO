@@ -116,6 +116,12 @@ EXEMPLES À SUIVRE :
 ✅ BON :
 "Repas : impossible de partir sans goûter à la pâtisserie nationale chez Manteigaria : une coque croquante, une crème vanillée encore tiède, un nuage de cannelle — l'archétype du pastel de nata, à savourer debout au comptoir, comme les Lisboètes."
 
+UNICITÉ — RÈGLE STRICTE (pas de doublons dans l'itinéraire) :
+- Chaque activité unique apparaît UNE SEULE fois sur tout le voyage. Pas 2 visites du même temple, pas 2 dégustations du même plat dans deux endroits différents, pas 2 musées identiques.
+- culinary_specialties : MAX 2 par jour. Si une journée n'a pas de spécialité vraiment marquante, mets un tableau VIDE ([]) — mieux vaut 0 spécialité qu'une banale ou répétée.
+- Aucune spécialité culinaire ne doit être citée 2 fois dans l'itinéraire (ex. si "panettone" est en J3, n'en parle plus dans aucune autre journée).
+- Cette unicité vaut pour activities, culinary_specialties, et le contenu des moments (morning/noon/afternoon/evening).
+
 Règles strictes (en plus du style) :
 - Rédige TOUJOURS en français, ton chaleureux, sensoriel, narratif.
 - TEMPÉRATURE NARRATIVE ÉLEVÉE : sois généreux dans les descriptions, lyrique mais jamais kitsch. Pas de superlatifs vides ("magnifique", "incroyable", "merveilleux" seuls). Préfère des images précises.

@@ -110,6 +110,38 @@ const WEEKDAYS_FR = [
   'samedi',
 ];
 
+// Filet de sécurité : dédoublonne activités et spécialités culinaires
+// dans l'ensemble de l'itinéraire (au cas où le modèle se trompe malgré
+// les instructions du prompt). Limite aussi à 2 spécialités par jour.
+function dedupeItinerary(itinerary) {
+  if (!itinerary?.days) return itinerary;
+  const seenActivities = new Set();
+  const seenSpecialties = new Set();
+  for (const day of itinerary.days) {
+    if (Array.isArray(day.activities)) {
+      day.activities = day.activities.filter((a) => {
+        const key = (a?.title || '').toLowerCase().trim();
+        if (!key) return true;
+        if (seenActivities.has(key)) return false;
+        seenActivities.add(key);
+        return true;
+      });
+    }
+    if (Array.isArray(day.culinary_specialties)) {
+      day.culinary_specialties = day.culinary_specialties
+        .filter((s) => {
+          const key = (s?.name || '').toLowerCase().trim();
+          if (!key) return true;
+          if (seenSpecialties.has(key)) return false;
+          seenSpecialties.add(key);
+          return true;
+        })
+        .slice(0, 2);
+    }
+  }
+  return itinerary;
+}
+
 function isoAddDays(startIso, days) {
   const d = new Date(startIso + 'T00:00:00Z');
   d.setUTCDate(d.getUTCDate() + days);
@@ -164,6 +196,7 @@ export async function generateItinerary(preferences, onProgress) {
     meta = addUsageToMeta(meta, data.model, data.usage);
     // Normalise les dates : on force celles de l'utilisateur, l'IA hallucine parfois
     normalizeItineraryDates(data.itinerary, preferences, 'days');
+    dedupeItinerary(data.itinerary);
     onProgress?.({ phase: 'generating', current: 1, total: 1 });
     return { ...data.itinerary, metadata: meta };
   }
@@ -234,13 +267,15 @@ export async function generateItinerary(preferences, onProgress) {
   }
 
   const budget = computeBudget(expandedDays, plan.summary);
-  return {
+  const itinerary = {
     summary: { ...plan.summary, ...budget.summaryPatch },
     days: expandedDays,
     budget_summary: budget.budget_summary,
     notes: plan.notes || {},
     metadata: meta,
   };
+  dedupeItinerary(itinerary);
+  return itinerary;
 }
 
 export async function replanFromDay(itinerary, fromDayIndex, instructions) {

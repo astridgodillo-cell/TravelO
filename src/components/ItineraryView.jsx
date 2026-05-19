@@ -750,16 +750,45 @@ function TripRow({ trip, dayDate }) {
 
 function Moment({ label, m }) {
   if (!m) return null;
-  return (
-    <div className="rounded-lg border border-slate-100 p-3 bg-white">
-      <div className="text-xs uppercase tracking-wide text-brand-700 font-semibold">
-        {label}
+  const hasDetail = !!m.description;
+  // Quand il n'y a pas de description, pas de toggle (le moment reste plat)
+  if (!hasDetail) {
+    return (
+      <div className="rounded-lg border border-slate-100 p-3 bg-white">
+        <div className="text-xs uppercase tracking-wide text-brand-700 font-semibold">
+          {label}
+        </div>
+        <div className="text-slate-800 font-medium mt-1">{m.title}</div>
       </div>
-      <div className="text-slate-800 font-medium mt-1">{m.title}</div>
-      {m.description && (
-        <p className="text-sm text-slate-600 mt-1">{m.description}</p>
-      )}
-    </div>
+    );
+  }
+  return (
+    <details className="group rounded-lg border border-slate-100 bg-white open:bg-slate-50/50 transition-colors print:open">
+      <summary className="cursor-pointer list-none p-3 flex items-start justify-between gap-2 hover:bg-slate-50 rounded-lg select-none">
+        <div className="min-w-0">
+          <div className="text-xs uppercase tracking-wide text-brand-700 font-semibold">
+            {label}
+          </div>
+          <div className="text-slate-800 font-medium mt-1">{m.title}</div>
+        </div>
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="text-slate-400 mt-1 shrink-0 transition-transform group-open:rotate-180 print:hidden"
+        >
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </summary>
+      <p className="text-sm text-slate-600 px-3 pb-3 leading-relaxed">
+        {m.description}
+      </p>
+    </details>
   );
 }
 
