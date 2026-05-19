@@ -65,6 +65,16 @@ Règles strictes :
   ❌ "location": "Vérone - puis route vers Bologne"
   ❌ "from": "Route vers Florence via Apennins"
 
+COHÉRENCE GÉOGRAPHIQUE (RÈGLE STRICTE) :
+- Optimise l'ORDRE des étapes pour suivre un trajet logique de proche en proche.
+- NE REVIENS JAMAIS SUR TES PAS : ne place pas une étape qui oblige à traverser deux fois la même région.
+- Si plusieurs lieux impératifs (mustInclude) sont demandés, classe-les dans l'ordre géographique optimal entre le départ et l'arrivée, pas dans l'ordre où l'utilisateur les a listés.
+- Pour un aller-retour (départ = arrivée), trace une boucle qui visite chaque étape une fois, sans repassage.
+- Si une seule séquence "logique" est possible mais qu'elle vous fait passer 2 fois par un même endroit, signale-le dans road_warning du trip.
+- Exemple : Paris → Bretagne avec Puy du Fou (Les Epesses, Vendée) ET zoo de Beauval (Saint-Aignan, Loir-et-Cher) imposés.
+  ✅ ORDRE CORRECT : Paris → Saint-Aignan (proche, est) → Les Epesses (sud-ouest) → Vannes (Bretagne)
+  ❌ MAUVAIS ORDRE : Paris → Les Epesses → Saint-Aignan (retour est) → Vannes (re-ouest) [zigzag inutile]
+
 MODE ROAD TRIP — règles supplémentaires :
 - Construis un VRAI itinéraire bout-en-bout, en boucle si départ = retour, sinon en ligne.
 - Trajets : distance_km, duration, coût carburant ((distance × conso / 100) × prix local), péages selon hauteur (classe 1 ≤ 2 m, 2 si 2-3 m, 3 si > 3 m en France), ferry si traversée maritime.
