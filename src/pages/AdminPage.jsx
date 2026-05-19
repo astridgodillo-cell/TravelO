@@ -1,5 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
-import { adminListUsers, adminUpdateUser } from '../lib/supabase';
+import { Link } from 'react-router-dom';
+import {
+  adminListUsers,
+  adminUpdateUser,
+  adminListAllItineraries,
+  adminGetStats,
+  getAppConfig,
+  setAppConfig,
+} from '../lib/supabase';
+import { costEur } from '../lib/ai';
 
 const STATUS_FILTERS = [
   { id: 'all', label: 'Tous' },
@@ -18,12 +27,29 @@ const STATUS_BADGES = {
 
 const TIER_OPTIONS = ['free', 'pro', 'illimited'];
 
+const BACKEND_OPTIONS = [
+  { id: 'gemini', label: '🟢 Gemini 2.5 Flash', hint: 'Le moins cher après DeepSeek. Quota élevé. Recommandé par défaut.' },
+  { id: 'deepseek', label: '🔵 DeepSeek Chat', hint: 'Le moins cher (~5× moins que Claude). Qualité narrative légèrement inférieure.' },
+  { id: 'claude', label: '🟠 Claude Sonnet + Haiku', hint: 'Meilleure qualité narrative. Plus cher, quotas plus stricts.' },
+];
+
+const TABS = [
+  { id: 'users', label: '👥 Utilisateurs' },
+  { id: 'trips', label: '✈️ Tous les itinéraires' },
+];
+
 export default function AdminPage() {
+  const [tab, setTab] = useState('users');
   const [filter, setFilter] = useState('pending');
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [busyId, setBusyId] = useState(null);
+  const [backend, setBackend] = useState(null);
+  const [backendBusy, setBackendBusy] = useState(false);
+  const [stats, setStats] = useState(null);
+  const [allTrips, setAllTrips] = useState([]);
+  const [tripsLoading, setTripsLoading] = useState(false);
 
   async function refresh() {
     setLoading(true);
@@ -36,18 +62,55 @@ export default function AdminPage() {
     setLoading(false);
   }
 
+  async function refreshStats() {
+    const s = await adminGetStats();
+    setStats(s);
+  }
+
+  async function refreshBackend() {
+    const { value } = await getAppConfig('llm_backend');
+    setBackend(value || 'gemini');
+  }
+
+  async function refreshAllTrips() {
+    setTripsLoading(true);
+    const { data, error } = await adminListAllItineraries();
+    if (error) setError(error.message);
+    else setAllTrips(data || []);
+    setTripsLoading(false);
+  }
+
   useEffect(() => {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter]);
 
-  async function patch(userId, p) {
+  useEffect(() => {
+    refreshStats();
+    refreshBackend();
+  }, []);
+
+  useEffect(() => {
+    if (tab === 'trips') refreshAllTrips();
+  }, [tab]);
+
+  async function patchUser(userId, p) {
     setBusyId(userId);
     setError(null);
     const { error } = await adminUpdateUser(userId, p);
     if (error) setError(error.message);
-    else await refresh();
+    else await Promise.all([refresh(), refreshStats()]);
     setBusyId(null);
+  }
+
+  async function changeBackend(newBackend) {
+    if (newBackend === backend) return;
+    setBackendBusy(true);
+    setError(null);
+    const { error } = await setAppConfig('llm_backend', newBackend);
+    if (error) setError(error.message);
+    else setBackend(newBackend);
+    setBackendBusy(false);
   }
 
   const counts = useMemo(() => {
@@ -56,18 +119,169 @@ export default function AdminPage() {
     return c;
   }, [users]);
 
+  const totalAiEur = costEur(stats?.ai?.total_cost_usd);
+
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900">
-          Administration
-        </h1>
+        <h1 className="text-2xl font-semibold text-slate-900">Administration</h1>
         <p className="text-sm text-slate-500">
-          Gérez les inscriptions, validez ou refusez les comptes et ajustez les
-          niveaux d'abonnement.
+          Tableau de bord, gestion des utilisateurs, backend LLM et bibliothèque
+          de modèles.
         </p>
       </div>
 
+      {/* Paramètres globaux : choix du backend LLM */}
+      <section className="card">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-3">
+          ⚙️ Backend LLM utilisé par tous les utilisateurs
+        </h2>
+        <div className="grid sm:grid-cols-3 gap-2">
+          {BACKEND_OPTIONS.map((b) => {
+            const active = backend === b.id;
+            return (
+              <button
+                key={b.id}
+                onClick={() => changeBackend(b.id)}
+                disabled={backendBusy}
+                className={`rounded-xl border p-3 text-left transition-all ${
+                  active
+                    ? 'border-brand-600 bg-brand-50 ring-1 ring-brand-600'
+                    : 'border-slate-200 bg-white hover:bg-slate-50'
+                }`}
+              >
+                <div className="text-sm font-semibold text-slate-900">
+                  {b.label}
+                </div>
+                <div className="text-xs text-slate-500 mt-1">{b.hint}</div>
+                {active && (
+                  <div className="text-xs text-brand-700 mt-1 font-medium">
+                    ✓ Actif
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-xs text-slate-500 mt-3">
+          Le changement prend effet sous 60 secondes (cache Edge Function). La
+          clé API du backend choisi doit être configurée dans Supabase Secrets :{' '}
+          <code className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded">
+            GEMINI_API_KEY
+          </code>{' '}
+          /{' '}
+          <code className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded">
+            DEEPSEEK_API_KEY
+          </code>{' '}
+          /{' '}
+          <code className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded">
+            ANTHROPIC_API_KEY
+          </code>
+          .
+        </p>
+      </section>
+
+      {/* Statistiques globales */}
+      {stats && (
+        <section className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <StatCard
+            label="Utilisateurs"
+            value={stats.users.total}
+            detail={`${stats.users.approved} approuvés · ${stats.users.pending} en attente`}
+          />
+          <StatCard
+            label="Itinéraires"
+            value={stats.trips.total}
+            detail={`${stats.trips.this_month} ce mois · ${stats.trips.templates} modèles`}
+          />
+          <StatCard
+            label="Tokens IA"
+            value={`${((stats.ai.total_input_tokens + stats.ai.total_output_tokens) / 1000).toFixed(0)}k`}
+            detail={`${(stats.ai.total_input_tokens / 1000).toFixed(0)}k in · ${(stats.ai.total_output_tokens / 1000).toFixed(0)}k out`}
+          />
+          <StatCard
+            label="Coût IA cumulé"
+            value={
+              totalAiEur != null
+                ? totalAiEur.toLocaleString('fr-FR', {
+                    style: 'currency',
+                    currency: 'EUR',
+                    maximumFractionDigits: 2,
+                  })
+                : '—'
+            }
+            detail={
+              Object.keys(stats.ai.models_count).length > 0
+                ? Object.entries(stats.ai.models_count)
+                    .map(([m, n]) => `${m.split('-')[0]}×${n}`)
+                    .join(' · ')
+                : 'Aucun appel'
+            }
+          />
+        </section>
+      )}
+
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      {/* Tabs */}
+      <nav className="flex flex-wrap gap-1 border-b border-slate-200">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={`px-4 py-2 text-sm font-medium rounded-t-md border-b-2 transition-colors ${
+              tab === t.id
+                ? 'border-brand-600 text-brand-700'
+                : 'border-transparent text-slate-500 hover:text-slate-800'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </nav>
+
+      {tab === 'users' && (
+        <UsersTab
+          filter={filter}
+          setFilter={setFilter}
+          users={users}
+          counts={counts}
+          loading={loading}
+          busyId={busyId}
+          patchUser={patchUser}
+        />
+      )}
+
+      {tab === 'trips' && (
+        <AllTripsTab trips={allTrips} loading={tripsLoading} />
+      )}
+    </div>
+  );
+}
+
+function StatCard({ label, value, detail }) {
+  return (
+    <div className="card">
+      <div className="text-[10px] uppercase tracking-widest text-slate-400">
+        {label}
+      </div>
+      <div className="text-2xl font-bold text-slate-900 mt-1 tabular-nums">
+        {value}
+      </div>
+      <div className="text-xs text-slate-500 mt-0.5 truncate" title={detail}>
+        {detail}
+      </div>
+    </div>
+  );
+}
+
+function UsersTab({ filter, setFilter, users, counts, loading, busyId, patchUser }) {
+  return (
+    <>
       <nav className="flex flex-wrap gap-1 border-b border-slate-200">
         {STATUS_FILTERS.map((f) => (
           <button
@@ -89,17 +303,11 @@ export default function AdminPage() {
         ))}
       </nav>
 
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          {error}
-        </div>
-      )}
-
       <div className="card p-0 overflow-x-auto">
         {loading ? (
           <p className="text-slate-500 p-6">Chargement…</p>
         ) : users.length === 0 ? (
-          <p className="text-slate-500 p-6">Aucun utilisateur dans cette catégorie.</p>
+          <p className="text-slate-500 p-6">Aucun utilisateur.</p>
         ) : (
           <table className="w-full text-sm min-w-[760px]">
             <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
@@ -117,10 +325,7 @@ export default function AdminPage() {
               {users.map((u) => {
                 const busy = busyId === u.id;
                 return (
-                  <tr
-                    key={u.id}
-                    className="border-t border-slate-100 hover:bg-slate-50"
-                  >
+                  <tr key={u.id} className="border-t border-slate-100 hover:bg-slate-50">
                     <td className="px-4 py-3">
                       <div className="font-medium text-slate-800">{u.email}</div>
                       {u.full_name && (
@@ -144,7 +349,7 @@ export default function AdminPage() {
                         disabled={busy}
                         value={u.subscription_tier}
                         onChange={(e) =>
-                          patch(u.id, { subscription_tier: e.target.value })
+                          patchUser(u.id, { subscription_tier: e.target.value })
                         }
                         className="input py-1 text-xs"
                       >
@@ -174,7 +379,7 @@ export default function AdminPage() {
                         {u.status !== 'approved' && (
                           <button
                             disabled={busy}
-                            onClick={() => patch(u.id, { status: 'approved' })}
+                            onClick={() => patchUser(u.id, { status: 'approved' })}
                             className="text-xs px-2 py-1 rounded bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
                           >
                             Approuver
@@ -183,7 +388,7 @@ export default function AdminPage() {
                         {u.status !== 'rejected' && (
                           <button
                             disabled={busy}
-                            onClick={() => patch(u.id, { status: 'rejected' })}
+                            onClick={() => patchUser(u.id, { status: 'rejected' })}
                             className="text-xs px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200 disabled:opacity-50"
                           >
                             Refuser
@@ -192,7 +397,7 @@ export default function AdminPage() {
                         {u.status === 'approved' && (
                           <button
                             disabled={busy}
-                            onClick={() => patch(u.id, { status: 'suspended' })}
+                            onClick={() => patchUser(u.id, { status: 'suspended' })}
                             className="text-xs px-2 py-1 rounded bg-slate-200 text-slate-700 hover:bg-slate-300 disabled:opacity-50"
                           >
                             Suspendre
@@ -201,7 +406,7 @@ export default function AdminPage() {
                         {u.role === 'user' ? (
                           <button
                             disabled={busy}
-                            onClick={() => patch(u.id, { role: 'admin' })}
+                            onClick={() => patchUser(u.id, { role: 'admin' })}
                             className="text-xs px-2 py-1 rounded bg-purple-100 text-purple-700 hover:bg-purple-200 disabled:opacity-50"
                           >
                             ↑ Admin
@@ -209,7 +414,7 @@ export default function AdminPage() {
                         ) : (
                           <button
                             disabled={busy}
-                            onClick={() => patch(u.id, { role: 'user' })}
+                            onClick={() => patchUser(u.id, { role: 'user' })}
                             className="text-xs px-2 py-1 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50"
                           >
                             ↓ User
@@ -224,6 +429,84 @@ export default function AdminPage() {
           </table>
         )}
       </div>
+    </>
+  );
+}
+
+function AllTripsTab({ trips, loading }) {
+  return (
+    <div className="card p-0 overflow-x-auto">
+      {loading ? (
+        <p className="text-slate-500 p-6">Chargement…</p>
+      ) : trips.length === 0 ? (
+        <p className="text-slate-500 p-6">Aucun itinéraire pour l'instant.</p>
+      ) : (
+        <table className="w-full text-sm min-w-[760px]">
+          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="text-left px-4 py-3">Titre</th>
+              <th className="text-left px-4 py-3">Créé le</th>
+              <th className="text-left px-4 py-3">Durée</th>
+              <th className="text-left px-4 py-3">Coût IA</th>
+              <th className="text-left px-4 py-3">Statut</th>
+              <th className="text-right px-4 py-3">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {trips.map((t) => {
+              const meta = t.itinerary?.metadata;
+              const eur = costEur(meta?.total_cost_usd);
+              return (
+                <tr key={t.id} className="border-t border-slate-100 hover:bg-slate-50">
+                  <td className="px-4 py-3">
+                    <div className="font-medium text-slate-800 truncate max-w-xs">
+                      {t.title}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-slate-500">
+                    {formatDate(t.created_at)}
+                  </td>
+                  <td className="px-4 py-3 text-slate-700">
+                    {t.itinerary?.summary?.duration_days
+                      ? `${t.itinerary.summary.duration_days} j`
+                      : '—'}
+                  </td>
+                  <td className="px-4 py-3 text-slate-700 tabular-nums">
+                    {eur != null
+                      ? eur.toLocaleString('fr-FR', {
+                          style: 'currency',
+                          currency: 'EUR',
+                          maximumFractionDigits: 3,
+                          minimumFractionDigits: 2,
+                        })
+                      : '—'}
+                  </td>
+                  <td className="px-4 py-3 space-x-1">
+                    {t.is_template && (
+                      <span className="chip bg-purple-100 text-purple-700">
+                        📘 Modèle
+                      </span>
+                    )}
+                    {t.is_public && (
+                      <span className="chip bg-emerald-100 text-emerald-700">
+                        Public
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <Link
+                      to={`/itineraire/${t.id}`}
+                      className="text-xs text-brand-700 hover:underline"
+                    >
+                      Ouvrir →
+                    </Link>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }

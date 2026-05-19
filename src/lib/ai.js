@@ -17,14 +17,16 @@ const PRICING = {
   'claude-sonnet-4-20250514': { input: 3, output: 15, cached_input: 0.3 },
   'claude-sonnet-4-6': { input: 3, output: 15, cached_input: 0.3 },
   'claude-haiku-4-5-20251001': { input: 1, output: 5, cached_input: 0.1 },
+  'deepseek-chat': { input: 0.27, output: 1.1, cached_input: 0.07 },
+  'deepseek-reasoner': { input: 0.55, output: 2.19, cached_input: 0.14 },
 };
 const USD_TO_EUR = 0.92;
 
 function pricingFor(model) {
-  return (
-    PRICING[model] ||
-    (model?.includes('gemini') ? PRICING['gemini-2.5-flash'] : PRICING['claude-haiku-4-5-20251001'])
-  );
+  if (PRICING[model]) return PRICING[model];
+  if (model?.includes('gemini')) return PRICING['gemini-2.5-flash'];
+  if (model?.includes('deepseek')) return PRICING['deepseek-chat'];
+  return PRICING['claude-haiku-4-5-20251001'];
 }
 
 function computeCallCost(model, usage) {

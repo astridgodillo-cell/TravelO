@@ -10,8 +10,11 @@ import {
 import { fetchSpecialties } from '../lib/photos';
 import ItineraryView from '../components/ItineraryView';
 import SharePanel from '../components/SharePanel';
+import AdminTemplatePanel from '../components/AdminTemplatePanel';
+import { useAuth } from '../context/AuthContext';
 
 export default function ItineraryDetailPage() {
+  const { isAdmin } = useAuth();
   const { id } = useParams();
   const [trip, setTrip] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -163,6 +166,13 @@ export default function ItineraryDetailPage() {
       </div>
 
       <SharePanel itinerary={trip} onUpdate={(updated) => setTrip(updated)} />
+
+      {isAdmin && (
+        <AdminTemplatePanel
+          itinerary={trip}
+          onUpdate={(updated) => setTrip(updated)}
+        />
+      )}
 
       <ItineraryView
         itinerary={trip.itinerary}

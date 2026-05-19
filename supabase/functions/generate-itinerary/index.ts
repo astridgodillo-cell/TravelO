@@ -23,16 +23,53 @@ const PEXELS_API_KEY = Deno.env.get('PEXELS_API_KEY') || '';
 const UNSPLASH_ACCESS_KEY = Deno.env.get('UNSPLASH_ACCESS_KEY') || '';
 const GOOGLE_PLACES_API_KEY = Deno.env.get('GOOGLE_PLACES_API_KEY') || '';
 
-// Backend LLM unifié : 'gemini' ou 'claude'. Auto-détecté en fonction des clés.
-// Quand BACKEND='gemini', TOUTES les opérations passent par Gemini Flash :
-// plan, expand, régénération, fetch-spécialités, etc.
+// Backend LLM : 'gemini', 'claude' ou 'deepseek'. Lu dynamiquement depuis
+// la table app_config (clé 'llm_backend') — l'admin peut basculer depuis
+// le dashboard sans redéployer la fonction.
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') || '';
 const GEMINI_MODEL = Deno.env.get('GEMINI_MODEL') || 'gemini-2.5-flash';
-const BACKEND = (
+const DEEPSEEK_API_KEY = Deno.env.get('DEEPSEEK_API_KEY') || '';
+const DEEPSEEK_MODEL = Deno.env.get('DEEPSEEK_MODEL') || 'deepseek-chat';
+// Fallback statique si la table app_config est inaccessible
+const DEFAULT_BACKEND = (
   Deno.env.get('BACKEND') ||
   Deno.env.get('EXPAND_BACKEND') ||
   (GEMINI_API_KEY ? 'gemini' : 'claude')
 ).toLowerCase();
+
+// Cache 60s pour ne pas spammer la DB à chaque appel
+let cachedBackend: { value: string; expires: number } | null = null;
+
+async function getActiveBackend(): Promise<string> {
+  if (cachedBackend && Date.now() < cachedBackend.expires) {
+    return cachedBackend.value;
+  }
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return DEFAULT_BACKEND;
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/app_config?key=eq.llm_backend&select=value`,
+      {
+        headers: {
+          apikey: SUPABASE_SERVICE_ROLE_KEY,
+          authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        },
+      }
+    );
+    if (res.ok) {
+      const rows = await res.json();
+      const stored = rows?.[0]?.value;
+      const value =
+        typeof stored === 'string'
+          ? stored.toLowerCase()
+          : DEFAULT_BACKEND;
+      cachedBackend = { value, expires: Date.now() + 60_000 };
+      return value;
+    }
+  } catch (e) {
+    console.warn('[config] failed to read llm_backend', e);
+  }
+  return DEFAULT_BACKEND;
+}
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -642,44 +679,102 @@ async function callGemini(
   };
 }
 
-// Dispatcher principal (plan, régénération de jour, replan) :
-// Gemini si configuré, sinon Sonnet (Claude). Fallback automatique.
+// Appel DeepSeek (API OpenAI-compatible)
+async function callDeepseek(
+  userPrompt: string,
+  maxTokens = 8000,
+  retryCount = 0
+): Promise<LLMResult> {
+  if (!DEEPSEEK_API_KEY) throw new Error('DEEPSEEK_API_KEY non configuré.');
+  const res = await fetch(
+    'https://api.deepseek.com/v1/chat/completions',
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${DEEPSEEK_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: DEEPSEEK_MODEL,
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: userPrompt },
+        ],
+        max_tokens: maxTokens,
+        temperature: 0.7,
+        response_format: { type: 'json_object' },
+      }),
+    }
+  );
+
+  if ((res.status === 429 || res.status === 503) && retryCount < 4) {
+    const backoff = 5 * Math.pow(2, retryCount);
+    console.warn(
+      `[deepseek] ${res.status} (try ${retryCount + 1}/4), waiting ${backoff}s`
+    );
+    await new Promise((r) => setTimeout(r, backoff * 1000));
+    return callDeepseek(userPrompt, maxTokens, retryCount + 1);
+  }
+
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`DeepSeek ${res.status} : ${txt}`);
+  }
+  const data = await res.json();
+  const text = data?.choices?.[0]?.message?.content;
+  if (!text) throw new Error('Réponse DeepSeek vide.');
+  return {
+    text,
+    usage: {
+      input_tokens: data?.usage?.prompt_tokens || 0,
+      output_tokens: data?.usage?.completion_tokens || 0,
+      cache_read_input_tokens:
+        data?.usage?.prompt_cache_hit_tokens || 0,
+    },
+    modelUsed: DEEPSEEK_MODEL,
+  };
+}
+
+// Sélection du provider selon le backend actif
+async function callProvider(
+  prompt: string,
+  maxTokens: number,
+  claudeModel: string
+): Promise<LLMResult> {
+  const backend = await getActiveBackend();
+  if (backend === 'gemini' && GEMINI_API_KEY) {
+    try {
+      return await callGemini(prompt, maxTokens);
+    } catch (e) {
+      console.warn('[provider] Gemini échec :', (e as Error).message);
+    }
+  }
+  if (backend === 'deepseek' && DEEPSEEK_API_KEY) {
+    try {
+      return await callDeepseek(prompt, maxTokens);
+    } catch (e) {
+      console.warn('[provider] DeepSeek échec :', (e as Error).message);
+    }
+  }
+  // Fallback Claude
+  const r = await callClaude(prompt, maxTokens, claudeModel);
+  return { ...r, modelUsed: claudeModel };
+}
+
+// Dispatcher principal (plan, régénération de jour, replan)
 async function callMain(
   userPrompt: string,
   maxTokens = 16000
 ): Promise<LLMResult> {
-  if (BACKEND === 'gemini' && GEMINI_API_KEY) {
-    try {
-      return await callGemini(userPrompt, maxTokens);
-    } catch (e) {
-      console.warn(
-        '[main] Gemini échec, fallback sur Claude Sonnet :',
-        (e as Error).message
-      );
-    }
-  }
-  const r = await callClaude(userPrompt, maxTokens, MODEL);
-  return { ...r, modelUsed: MODEL };
+  return callProvider(userPrompt, maxTokens, MODEL);
 }
 
-// Dispatcher expansion (expand-day, regenerate-activity, fetch-specialties) :
-// Gemini si configuré, sinon Haiku (Claude). Fallback automatique.
+// Dispatcher expansion (expand-day, regenerate-activity, fetch-specialties)
 async function callExpansion(
   userPrompt: string,
   maxTokens = 6000
 ): Promise<LLMResult> {
-  if (BACKEND === 'gemini' && GEMINI_API_KEY) {
-    try {
-      return await callGemini(userPrompt, maxTokens);
-    } catch (e) {
-      console.warn(
-        '[expansion] Gemini échec, fallback sur Claude Haiku :',
-        (e as Error).message
-      );
-    }
-  }
-  const r = await callClaude(userPrompt, maxTokens, EXPAND_MODEL);
-  return { ...r, modelUsed: EXPAND_MODEL };
+  return callProvider(userPrompt, maxTokens, EXPAND_MODEL);
 }
 
 function extractJsonString(text: string): string {

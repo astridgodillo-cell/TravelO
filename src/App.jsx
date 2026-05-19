@@ -7,6 +7,8 @@ import HomePage from './pages/HomePage';
 import NewItineraryPage from './pages/NewItineraryPage';
 import MyTripsPage from './pages/MyTripsPage';
 import MyListsPage from './pages/MyListsPage';
+import TemplatesPage from './pages/TemplatesPage';
+import TemplateDetailPage from './pages/TemplateDetailPage';
 import ItineraryDetailPage from './pages/ItineraryDetailPage';
 import PublicItineraryPage from './pages/PublicItineraryPage';
 import LoginPage from './pages/LoginPage';
@@ -46,6 +48,22 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <MyListsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/modeles"
+            element={
+              <ProtectedRoute>
+                <TemplatesPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/modele/:id"
+            element={
+              <ProtectedRoute>
+                <TemplateDetailPage />
               </ProtectedRoute>
             }
           />

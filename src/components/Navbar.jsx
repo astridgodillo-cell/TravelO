@@ -64,6 +64,11 @@ export default function Navbar() {
           </NavLink>
         )}
         {user && (
+          <NavLink to="/modeles" className={cls}>
+            Modèles
+          </NavLink>
+        )}
+        {user && (
           <NavLink to="/mes-listes" className={cls}>
             Mes listes
           </NavLink>

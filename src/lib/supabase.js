@@ -183,6 +183,34 @@ export async function deletePackingList(id) {
   return supabase.from('user_packing_lists').delete().eq('id', id);
 }
 
+// ----- TEMPLATES (modèles d'itinéraires publics) -----
+export async function listTemplateItineraries() {
+  return supabase
+    .from('itineraries')
+    .select('id, title, preferences, itinerary, template_category, template_description, created_at')
+    .eq('is_template', true)
+    .order('created_at', { ascending: false });
+}
+
+export async function getTemplateItinerary(id) {
+  return supabase
+    .from('itineraries')
+    .select('id, title, preferences, itinerary, template_category, template_description, created_at')
+    .eq('id', id)
+    .eq('is_template', true)
+    .maybeSingle();
+}
+
+export async function setItineraryAsTemplate(id, patch) {
+  // patch = { is_template, template_category, template_description }
+  return supabase
+    .from('itineraries')
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single();
+}
+
 // ----- ADMIN -----
 export async function adminListUsers({ status } = {}) {
   let q = supabase
@@ -206,4 +234,106 @@ export async function adminUpdateUser(userId, patch) {
     .eq('id', userId)
     .select()
     .single();
+}
+
+// Configuration globale (lecture/écriture admin)
+export async function getAppConfig(key) {
+  const { data, error } = await supabase
+    .from('app_config')
+    .select('value')
+    .eq('key', key)
+    .maybeSingle();
+  if (error) return { value: null, error };
+  return { value: data?.value ?? null, error: null };
+}
+
+export async function setAppConfig(key, value) {
+  const user = await getCurrentUser();
+  return supabase
+    .from('app_config')
+    .upsert(
+      {
+        key,
+        value,
+        updated_at: new Date().toISOString(),
+        updated_by: user?.id || null,
+      },
+      { onConflict: 'key' }
+    )
+    .select()
+    .single();
+}
+
+// Tous les itinéraires (admin only, RLS le permet via is_admin())
+export async function adminListAllItineraries() {
+  return supabase
+    .from('itineraries')
+    .select(
+      'id, user_id, title, preferences, itinerary, is_public, is_template, template_category, template_description, created_at, updated_at'
+    )
+    .order('created_at', { ascending: false });
+}
+
+// Stats agrégées pour le dashboard admin
+export async function adminGetStats() {
+  // On récupère les utilisateurs + itinéraires côté client puis on agrège.
+  // À l'échelle d'une app perso/PME c'est largement suffisant.
+  const [usersRes, tripsRes] = await Promise.all([
+    supabase.from('profiles').select('id, status, role, subscription_tier'),
+    supabase.from('itineraries').select('id, user_id, itinerary, created_at, is_template'),
+  ]);
+
+  const users = usersRes.data || [];
+  const trips = tripsRes.data || [];
+
+  const byStatus = users.reduce((acc, u) => {
+    acc[u.status] = (acc[u.status] || 0) + 1;
+    return acc;
+  }, {});
+
+  let totalCostUsd = 0;
+  let totalInputTokens = 0;
+  let totalOutputTokens = 0;
+  const modelsCount = {};
+
+  for (const t of trips) {
+    const m = t.itinerary?.metadata;
+    if (!m) continue;
+    totalCostUsd += m.total_cost_usd || 0;
+    totalInputTokens += m.total_input_tokens || 0;
+    totalOutputTokens += m.total_output_tokens || 0;
+    for (const mod of m.models_used || []) {
+      modelsCount[mod] = (modelsCount[mod] || 0) + 1;
+    }
+  }
+
+  // Itinéraires du mois en cours
+  const thisMonth = new Date();
+  thisMonth.setDate(1);
+  thisMonth.setHours(0, 0, 0, 0);
+  const tripsThisMonth = trips.filter(
+    (t) => new Date(t.created_at) >= thisMonth
+  ).length;
+
+  return {
+    users: {
+      total: users.length,
+      pending: byStatus.pending || 0,
+      approved: byStatus.approved || 0,
+      rejected: byStatus.rejected || 0,
+      suspended: byStatus.suspended || 0,
+      admins: users.filter((u) => u.role === 'admin').length,
+    },
+    trips: {
+      total: trips.length,
+      this_month: tripsThisMonth,
+      templates: trips.filter((t) => t.is_template).length,
+    },
+    ai: {
+      total_cost_usd: totalCostUsd,
+      total_input_tokens: totalInputTokens,
+      total_output_tokens: totalOutputTokens,
+      models_count: modelsCount,
+    },
+  };
 }
