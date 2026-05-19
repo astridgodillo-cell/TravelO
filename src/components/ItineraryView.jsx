@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { listPackingLists } from '../lib/supabase';
+import { costEur } from '../lib/ai';
 import RouteMap from './RouteMap';
 import RegenerateDayModal from './RegenerateDayModal';
 import ModifyDayModal from './ModifyDayModal';
@@ -37,6 +38,24 @@ const formatEur = (n) =>
 
 const formatEurOrFree = (n) => (n === 0 ? 'Gratuit' : formatEur(n));
 
+function formatAiCost(eur) {
+  if (typeof eur !== 'number' || !isFinite(eur)) return '—';
+  if (eur < 0.005) return '< 0,01 €';
+  if (eur < 1) {
+    return eur.toLocaleString('fr-FR', {
+      style: 'currency',
+      currency: 'EUR',
+      maximumFractionDigits: 3,
+      minimumFractionDigits: 2,
+    });
+  }
+  return eur.toLocaleString('fr-FR', {
+    style: 'currency',
+    currency: 'EUR',
+    maximumFractionDigits: 2,
+  });
+}
+
 export default function ItineraryView({
   itinerary,
   onRegenerateDay,
@@ -69,10 +88,11 @@ export default function ItineraryView({
   }, [itinerary]);
 
   if (!itinerary) return null;
-  const { summary, days, budget_summary, notes } = itinerary;
+  const { summary, days, budget_summary, notes, metadata } = itinerary;
   const adults = summary?.travellers?.adults || 2;
   const children = summary?.travellers?.children_ages?.length || 0;
   const isVanTrip = VAN_TRIP_TYPES.has(summary?.trip_type);
+  const aiCostEur = costEur(metadata?.total_cost_usd);
 
   async function handleSubmitRegen(instructions) {
     if (!regenTarget) return;
@@ -192,6 +212,20 @@ export default function ItineraryView({
               </a>
             </div>
           )}
+
+          {aiCostEur != null && (
+            <div
+              className="mt-4 text-xs text-white/70 print:text-slate-500"
+              title={`${metadata.call_count || 0} appels IA · ${(metadata.total_input_tokens || 0).toLocaleString('fr-FR')} tokens entrée + ${(metadata.total_output_tokens || 0).toLocaleString('fr-FR')} tokens sortie · modèle(s) : ${(metadata.models_used || []).join(', ') || '?'}`}
+            >
+              💸 Coût IA de génération : {formatAiCost(aiCostEur)}
+              {metadata.call_count > 1 && (
+                <span className="opacity-70 ml-1">
+                  ({metadata.call_count} appels)
+                </span>
+              )}
+            </div>
+          )}
         </div>
       </header>
 
@@ -247,7 +281,7 @@ export default function ItineraryView({
           <RouteMap itinerary={itinerary} />
         </div>
         <div className={tab === 'budget' ? '' : 'hidden print:block'}>
-          <BudgetGlobal budget={budget_summary} />
+          <BudgetGlobal budget={budget_summary} metadata={metadata} />
         </div>
         <div className={tab === 'notes' ? '' : 'hidden print:block'}>
           <NotesConseils notes={notes} />
@@ -691,8 +725,9 @@ function Moment({ label, m }) {
   );
 }
 
-function BudgetGlobal({ budget }) {
+function BudgetGlobal({ budget, metadata }) {
   if (!budget) return null;
+  const aiEur = costEur(metadata?.total_cost_usd);
   const tripsBreakdown = [
     budget.fuel_eur && ['Carburant', budget.fuel_eur],
     budget.tolls_eur && ['Péages', budget.tolls_eur],
@@ -762,7 +797,53 @@ function BudgetGlobal({ budget }) {
           </table>
         </div>
       )}
+
+      {aiEur != null && (
+        <div className="mt-6 rounded-xl border border-slate-100 bg-slate-50 p-4 text-sm">
+          <div className="flex items-baseline justify-between gap-2">
+            <h3 className="font-semibold text-slate-700">
+              💸 Coût IA de génération
+            </h3>
+            <span className="font-bold text-slate-900 tabular-nums">
+              {formatAiCost(aiEur)}
+            </span>
+          </div>
+          <p className="text-xs text-slate-500 mt-1">
+            Coût total des appels à l'IA (génération + modifications). Compris
+            dans votre crédit Anthropic / Google AI Studio, pas dans le budget
+            de voyage ci-dessus.
+          </p>
+          <dl className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+            <Stat label="Appels IA" value={metadata?.call_count || 0} />
+            <Stat
+              label="Tokens entrée"
+              value={(metadata?.total_input_tokens || 0).toLocaleString('fr-FR')}
+            />
+            <Stat
+              label="Tokens sortie"
+              value={(metadata?.total_output_tokens || 0).toLocaleString('fr-FR')}
+            />
+            <Stat
+              label="Modèle"
+              value={(metadata?.models_used || []).join(' + ') || '—'}
+            />
+          </dl>
+        </div>
+      )}
     </section>
+  );
+}
+
+function Stat({ label, value }) {
+  return (
+    <div>
+      <dt className="text-[10px] uppercase tracking-wide text-slate-400">
+        {label}
+      </dt>
+      <dd className="font-medium text-slate-700 truncate" title={String(value)}>
+        {value}
+      </dd>
+    </div>
   );
 }
 

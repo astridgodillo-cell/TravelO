@@ -9,6 +9,68 @@ const SHORT_TRIP_MAX_DAYS = 8;
 // (output tokens per minute). 2 = bon compromis vitesse/sécurité.
 const EXPAND_CONCURRENCY = 2;
 
+// Prix en USD par million de tokens. À mettre à jour si la tarification évolue.
+const PRICING = {
+  'gemini-2.5-flash': { input: 0.3, output: 2.5, cached_input: 0.075 },
+  'gemini-2.5-flash-lite': { input: 0.1, output: 0.4, cached_input: 0.025 },
+  'gemini-2.5-pro': { input: 1.25, output: 10, cached_input: 0.31 },
+  'claude-sonnet-4-20250514': { input: 3, output: 15, cached_input: 0.3 },
+  'claude-sonnet-4-6': { input: 3, output: 15, cached_input: 0.3 },
+  'claude-haiku-4-5-20251001': { input: 1, output: 5, cached_input: 0.1 },
+};
+const USD_TO_EUR = 0.92;
+
+function pricingFor(model) {
+  return (
+    PRICING[model] ||
+    (model?.includes('gemini') ? PRICING['gemini-2.5-flash'] : PRICING['claude-haiku-4-5-20251001'])
+  );
+}
+
+function computeCallCost(model, usage) {
+  if (!usage) return 0;
+  const p = pricingFor(model);
+  const cached = usage.cache_read_input_tokens || 0;
+  const uncachedInput = Math.max(0, (usage.input_tokens || 0) - cached);
+  const output = usage.output_tokens || 0;
+  return (
+    (uncachedInput * p.input + cached * p.cached_input + output * p.output) /
+    1_000_000
+  );
+}
+
+function emptyMeta() {
+  return {
+    total_input_tokens: 0,
+    total_output_tokens: 0,
+    total_cached_input_tokens: 0,
+    total_cost_usd: 0,
+    models_used: [],
+    call_count: 0,
+    last_updated: new Date().toISOString(),
+  };
+}
+
+function addUsageToMeta(meta, model, usage) {
+  const m = { ...(meta || emptyMeta()) };
+  if (!m.models_used) m.models_used = [];
+  if (usage) {
+    m.total_input_tokens += usage.input_tokens || 0;
+    m.total_output_tokens += usage.output_tokens || 0;
+    m.total_cached_input_tokens += usage.cache_read_input_tokens || 0;
+    m.total_cost_usd += computeCallCost(model, usage);
+    if (model && !m.models_used.includes(model)) m.models_used.push(model);
+    m.call_count = (m.call_count || 0) + 1;
+  }
+  m.last_updated = new Date().toISOString();
+  return m;
+}
+
+export function costEur(usd) {
+  if (typeof usd !== 'number' || !isFinite(usd)) return null;
+  return usd * USD_TO_EUR;
+}
+
 async function readErrorDetail(error) {
   try {
     // En supabase-js v2, error.context EST la Response (pour FunctionsHttpError)
@@ -49,14 +111,16 @@ async function invoke(body) {
 
 export async function generateItinerary(preferences, onProgress) {
   const days = computeDurationDays(preferences.startDate, preferences.endDate);
+  let meta = emptyMeta();
 
   // Petits voyages : un seul appel (plus rapide grâce au prompt caching).
   if (days > 0 && days <= SHORT_TRIP_MAX_DAYS) {
     onProgress?.({ phase: 'generating', current: 0, total: 1 });
     const data = await invoke({ preferences });
     if (!data?.itinerary) throw new Error('Réponse vide reçue.');
+    meta = addUsageToMeta(meta, data.model, data.usage);
     onProgress?.({ phase: 'generating', current: 1, total: 1 });
-    return data.itinerary;
+    return { ...data.itinerary, metadata: meta };
   }
 
   // Long voyages : plan + expand parallèle.
@@ -66,6 +130,7 @@ export async function generateItinerary(preferences, onProgress) {
   if (!plan?.day_plans?.length) {
     throw new Error('Plan reçu vide. Relancez la génération.');
   }
+  meta = addUsageToMeta(meta, planData.model, planData.usage);
 
   const total = plan.day_plans.length;
   const expandedDays = new Array(total);
@@ -86,6 +151,8 @@ export async function generateItinerary(preferences, onProgress) {
         });
         if (!data?.day) throw new Error(`Jour ${dayPlan.label} vide.`);
         expandedDays[dayIndex] = data.day;
+        // Note : on cumule dans meta de façon thread-unsafe mais OK car JS mono-thread
+        meta = addUsageToMeta(meta, data.model, data.usage);
         done += 1;
         onProgress?.({ phase: 'expanding', current: done, total });
       })
@@ -99,6 +166,7 @@ export async function generateItinerary(preferences, onProgress) {
     days: expandedDays,
     budget_summary: budget.budget_summary,
     notes: plan.notes || {},
+    metadata: meta,
   };
 }
 
@@ -115,11 +183,13 @@ export async function replanFromDay(itinerary, fromDayIndex, instructions) {
   const before = itinerary.days.slice(0, fromDayIndex);
   const newDays = [...before, ...data.days];
   const budget = computeBudget(newDays, itinerary.summary);
+  const metadata = addUsageToMeta(itinerary.metadata, data.model, data.usage);
   return {
     ...itinerary,
     days: newDays,
     summary: { ...itinerary.summary, ...budget.summaryPatch },
     budget_summary: { ...itinerary.budget_summary, ...budget.budget_summary },
+    metadata,
   };
 }
 
@@ -139,6 +209,7 @@ export async function regenerateActivity(
   if (!data?.activity) {
     throw new Error('Réponse vide pour l\'activité.');
   }
+  const metadata = addUsageToMeta(itinerary.metadata, data.model, data.usage);
   const newDays = itinerary.days.map((d, di) => {
     if (di !== dayIndex) return d;
     const newActivities = d.activities.map((a, ai) =>
@@ -169,6 +240,7 @@ export async function regenerateActivity(
     days: newDays,
     summary: { ...itinerary.summary, ...budget.summaryPatch },
     budget_summary: { ...itinerary.budget_summary, ...budget.budget_summary },
+    metadata,
   };
 }
 
@@ -206,11 +278,13 @@ export async function regenerateDay(itinerary, dayIndex, instructions) {
 
   const newDays = itinerary.days.map((d, i) => (i === dayIndex ? data.day : d));
   const budget = computeBudget(newDays, itinerary.summary);
+  const metadata = addUsageToMeta(itinerary.metadata, data.model, data.usage);
   return {
     ...itinerary,
     days: newDays,
     summary: { ...itinerary.summary, ...budget.summaryPatch },
     budget_summary: { ...itinerary.budget_summary, ...budget.budget_summary },
+    metadata,
   };
 }
 
