@@ -23,6 +23,13 @@ const PEXELS_API_KEY = Deno.env.get('PEXELS_API_KEY') || '';
 const UNSPLASH_ACCESS_KEY = Deno.env.get('UNSPLASH_ACCESS_KEY') || '';
 const GOOGLE_PLACES_API_KEY = Deno.env.get('GOOGLE_PLACES_API_KEY') || '';
 
+// Backend pour les appels "expansion" (expand-day, regenerate-activity, fetch-specialties)
+// — 95 % des appels. Choix : 'gemini' (moins cher, plus haut quota) ou 'claude' (Haiku, fallback).
+const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') || '';
+const GEMINI_MODEL = Deno.env.get('GEMINI_MODEL') || 'gemini-2.5-flash';
+const EXPAND_BACKEND =
+  (Deno.env.get('EXPAND_BACKEND') || (GEMINI_API_KEY ? 'gemini' : 'claude')).toLowerCase();
+
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers':
@@ -513,6 +520,83 @@ async function callClaude(
   return { text, usage: data?.usage };
 }
 
+// ----- Backend Gemini -----
+type LLMResult = { text: string; usage: any; modelUsed: string };
+
+async function callGemini(
+  userPrompt: string,
+  maxTokens = 6000,
+  retryCount = 0
+): Promise<LLMResult> {
+  if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY non configuré.');
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+      contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+      generationConfig: {
+        maxOutputTokens: maxTokens,
+        temperature: 0.9,
+        // Force la sortie en JSON valide (Gemini garantit la syntaxe).
+        responseMimeType: 'application/json',
+      },
+    }),
+  });
+
+  if ((res.status === 429 || res.status === 503) && retryCount < 4) {
+    const retryAfterHeader = res.headers.get('retry-after');
+    const fromHeader = retryAfterHeader ? parseInt(retryAfterHeader, 10) : NaN;
+    const backoff = Math.min(
+      Number.isFinite(fromHeader) ? fromHeader : 5 * Math.pow(2, retryCount),
+      60
+    );
+    console.warn(
+      `[gemini] ${res.status} (try ${retryCount + 1}/4), waiting ${backoff}s`
+    );
+    await new Promise((r) => setTimeout(r, backoff * 1000));
+    return callGemini(userPrompt, maxTokens, retryCount + 1);
+  }
+
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`Gemini ${res.status} : ${txt}`);
+  }
+  const data = await res.json();
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error('Réponse Gemini vide.');
+  return {
+    text,
+    usage: {
+      input_tokens: data?.usageMetadata?.promptTokenCount,
+      output_tokens: data?.usageMetadata?.candidatesTokenCount,
+      cache_read_input_tokens: data?.usageMetadata?.cachedContentTokenCount,
+    },
+    modelUsed: GEMINI_MODEL,
+  };
+}
+
+// Dispatcher : utilise Gemini quand configuré, sinon Haiku (Claude).
+// Fallback automatique : si Gemini échoue, on bascule sur Claude.
+async function callExpansion(
+  userPrompt: string,
+  maxTokens = 6000
+): Promise<LLMResult> {
+  if (EXPAND_BACKEND === 'gemini' && GEMINI_API_KEY) {
+    try {
+      return await callGemini(userPrompt, maxTokens);
+    } catch (e) {
+      console.warn(
+        '[expansion] Gemini échec, fallback sur Claude Haiku :',
+        (e as Error).message
+      );
+    }
+  }
+  const r = await callClaude(userPrompt, maxTokens, EXPAND_MODEL);
+  return { ...r, modelUsed: EXPAND_MODEL };
+}
+
 function extractJsonString(text: string): string {
   const trimmed = text.trim();
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
@@ -534,9 +618,16 @@ function tryParseJson(text: string): { ok: true; value: any } | { ok: false; err
   }
 }
 
-// Si Claude renvoie du JSON cassé, on fait un seul aller-retour pour qu'il le corrige.
-// Bien moins cher qu'une nouvelle génération complète.
-async function parseOrRepair(rawText: string, model: string): Promise<any> {
+// Helpers prêts à passer comme caller à parseOrRepair
+const callClaudeMain = (p: string, t: number) => callClaude(p, t, MODEL);
+const callExpansionSafe = (p: string, t: number) => callExpansion(p, t);
+
+// Si le LLM renvoie du JSON cassé, on fait un seul aller-retour pour qu'il le corrige.
+// "caller" = fonction qui appelle le LLM (Claude main ou expansion = Gemini/Haiku).
+async function parseOrRepair(
+  rawText: string,
+  caller: (prompt: string, maxTokens: number) => Promise<{ text: string; usage: any }>
+): Promise<any> {
   const first = tryParseJson(rawText);
   if (first.ok) return first.value;
 
@@ -560,7 +651,7 @@ Tâche : renvoie EXACTEMENT le même contenu mais avec la syntaxe JSON corrigée
 
 Réponds UNIQUEMENT avec le JSON valide. Aucun texte autour, aucun bloc markdown, aucun commentaire.`;
 
-  const { text: repaired } = await callClaude(repairPrompt, 16000, model);
+  const { text: repaired } = await caller(repairPrompt, 16000);
   const second = tryParseJson(repaired);
   if (second.ok) {
     console.log('[json] réparé avec succès');
@@ -866,7 +957,7 @@ Deno.serve(async (req) => {
       }
       const prompt = buildRegenerateDayPrompt(itinerary, day_index, instructions);
       const { text, usage } = await callClaude(prompt, 6000);
-      const day = await parseOrRepair(text, MODEL);
+      const day = await parseOrRepair(text, callClaudeMain);
       return jsonResponse({ day, usage, model: MODEL });
     }
 
@@ -876,12 +967,13 @@ Deno.serve(async (req) => {
         return jsonResponse({ error: 'Paramètre "location" requis.' }, 400);
       }
       const prompt = buildFetchSpecialtiesPrompt(location, count || 4);
-      const { text, usage } = await callClaude(prompt, 2000, EXPAND_MODEL);
-      const parsed = await parseOrRepair(text, EXPAND_MODEL);
+      // Expansion backend (Gemini ou Haiku selon EXPAND_BACKEND)
+      const { text, usage, modelUsed } = await callExpansion(prompt, 2000);
+      const parsed = await parseOrRepair(text, callExpansionSafe);
       return jsonResponse({
         specialties: parsed?.specialties || [],
         usage,
-        model: EXPAND_MODEL,
+        model: modelUsed,
       });
     }
 
@@ -907,10 +999,10 @@ Deno.serve(async (req) => {
         activity_index,
         instructions
       );
-      // Haiku : modification ciblée, pas besoin de Sonnet
-      const { text, usage } = await callClaude(prompt, 2000, EXPAND_MODEL);
-      const activity = await parseOrRepair(text, EXPAND_MODEL);
-      return jsonResponse({ activity, usage, model: EXPAND_MODEL });
+      // Expansion backend (Gemini ou Haiku) — modification ciblée, pas besoin de Sonnet
+      const { text, usage, modelUsed } = await callExpansion(prompt, 2000);
+      const activity = await parseOrRepair(text, callExpansionSafe);
+      return jsonResponse({ activity, usage, model: modelUsed });
     }
 
     if (mode === 'replan-from-day') {
@@ -927,7 +1019,7 @@ Deno.serve(async (req) => {
       }
       const prompt = buildReplanFromDayPrompt(itinerary, from_day_index, instructions);
       const { text, usage } = await callClaude(prompt, 16000);
-      const parsed = await parseOrRepair(text, MODEL);
+      const parsed = await parseOrRepair(text, callClaudeMain);
       const days = parsed?.days;
       if (!Array.isArray(days)) {
         return jsonResponse(
@@ -955,7 +1047,7 @@ Deno.serve(async (req) => {
       }
       const prompt = buildPlanPrompt(preferences);
       const { text, usage } = await callClaude(prompt, 8000);
-      const plan = await parseOrRepair(text, MODEL);
+      const plan = await parseOrRepair(text, callClaudeMain);
       return jsonResponse({ plan, usage, model: MODEL });
     }
 
@@ -973,10 +1065,10 @@ Deno.serve(async (req) => {
         previous_plan,
         next_plan
       );
-      // Haiku pour le détail des journées : suffisant et 4× moins cher
-      const { text, usage } = await callClaude(prompt, 6000, EXPAND_MODEL);
-      const day = await parseOrRepair(text, EXPAND_MODEL);
-      return jsonResponse({ day, usage, model: EXPAND_MODEL });
+      // Expansion backend : Gemini 2.5 Flash si configuré, sinon Haiku
+      const { text, usage, modelUsed } = await callExpansion(prompt, 6000);
+      const day = await parseOrRepair(text, callExpansionSafe);
+      return jsonResponse({ day, usage, model: modelUsed });
     }
 
     // Default : full single-call generation (small trips ≤ 8 days)
@@ -986,7 +1078,7 @@ Deno.serve(async (req) => {
     }
     const userPrompt = buildFullPrompt(preferences);
     const { text, usage } = await callClaude(userPrompt, 16000);
-    const itinerary = await parseOrRepair(text, MODEL);
+    const itinerary = await parseOrRepair(text, callClaudeMain);
     return jsonResponse({ itinerary, usage, model: MODEL });
   } catch (err) {
     return jsonResponse(
