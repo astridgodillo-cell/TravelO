@@ -56,6 +56,44 @@ export function directFerriesSearch(from, to, date) {
   return `https://www.directferries.fr/?${params.toString()}`;
 }
 
+// IDs d'affiliation optionnels. Si configurés (via .env VITE_*),
+// les liens incluent automatiquement le tracking pour toucher la commission.
+const GYG_PARTNER_ID = import.meta.env?.VITE_GYG_PARTNER_ID || '';
+const TIQETS_PARTNER_ID = import.meta.env?.VITE_TIQETS_PARTNER_ID || '';
+
+export function getYourGuideSearch(activityTitle, location) {
+  const query = [activityTitle, cleanLocation(location)]
+    .filter(Boolean)
+    .join(' ');
+  const params = new URLSearchParams({ q: query });
+  if (GYG_PARTNER_ID) params.set('partner_id', GYG_PARTNER_ID);
+  return `https://www.getyourguide.com/s/?${params.toString()}`;
+}
+
+export function tiqetsSearch(activityTitle, location) {
+  const query = [activityTitle, cleanLocation(location)]
+    .filter(Boolean)
+    .join(' ');
+  const url = `https://www.tiqets.com/en/search?q=${q(query)}`;
+  return TIQETS_PARTNER_ID
+    ? `${url}&partner=${TIQETS_PARTNER_ID}`
+    : url;
+}
+
+export function viatorSearch(activityTitle, location) {
+  const query = [activityTitle, cleanLocation(location)]
+    .filter(Boolean)
+    .join(' ');
+  return `https://www.viator.com/searchResults/all?text=${q(query)}`;
+}
+
+export function theForkSearch(restaurantName, city) {
+  const params = new URLSearchParams();
+  if (city) params.set('cityName', cleanLocation(city));
+  if (restaurantName) params.set('searchText', restaurantName);
+  return `https://www.thefork.fr/search?${params.toString()}`;
+}
+
 export function googleMapsMultiStop(stops) {
   if (!stops?.length) return null;
   const cleaned = stops
