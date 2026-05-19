@@ -64,6 +64,13 @@ Règles strictes :
   ✅ "location": "Vérone"          ✅ "from": "Bastia"
   ❌ "location": "Vérone - puis route vers Bologne"
   ❌ "from": "Route vers Florence via Apennins"
+- Champ "bookable" pour chaque activité :
+  * true UNIQUEMENT si l'activité est typiquement réservable en ligne sur GetYourGuide / Tiqets / Viator (musée payant, château avec billetterie, visite guidée, excursion organisée, croisière, parc d'attractions, atelier, cours, dégustation, plongée, kayak, etc.)
+  * false pour les activités libres / gratuites / non encadrées : balades, flâneries, plages, points de vue, pique-niques, marchés libres, temps libre, randonnée non guidée, repas dans un restaurant non chaîne, apéros, couchers de soleil.
+  ✅ "Visite guidée du Louvre" → bookable: true
+  ✅ "Cours de cuisine portugaise" → bookable: true
+  ❌ "Balade sur le port" → bookable: false
+  ❌ "Dîner dans une trattoria locale" → bookable: false
 
 COHÉRENCE GÉOGRAPHIQUE (RÈGLE STRICTE) :
 - Optimise l'ORDRE des étapes pour suivre un trajet logique de proche en proche.
@@ -182,7 +189,8 @@ const FULL_DAY_SCHEMA = `{
   "activities": [ {
     "title": string, "schedule": string, "duration": string,
     "description": string, "immersive_description": string,
-    "price_per_person_eur": number, "family_total_eur": number
+    "price_per_person_eur": number, "family_total_eur": number,
+    "bookable": boolean
   } ],
   "meals": { "daily_family_budget_eur": number, "style": string, "note": string },
   "culinary_specialties": [ {

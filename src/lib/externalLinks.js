@@ -61,6 +61,66 @@ export function directFerriesSearch(from, to, date) {
 const GYG_PARTNER_ID = import.meta.env?.VITE_GYG_PARTNER_ID || '';
 const TIQETS_PARTNER_ID = import.meta.env?.VITE_TIQETS_PARTNER_ID || '';
 
+// Heuristique : détermine si une activité a des chances d'être réservable
+// en ligne sur GetYourGuide / Tiqets / Viator. Évite d'afficher des liens
+// vers des recherches vides (qui font "pas sérieux").
+const TICKETED_KEYWORDS = [
+  // Patrimoine / musées
+  'musée', 'musee', 'château', 'chateau', 'cathédrale', 'cathedrale',
+  'basilique', 'palais', 'monument', 'forteresse', 'site archéologique',
+  'sites archéologiques', 'archéo', 'patrimoine',
+  // Parcs et attractions
+  "parc d'attraction", 'parc national', 'zoo', 'aquarium', 'safari',
+  'planétarium', 'planetarium',
+  // Tours et visites
+  'visite guidée', 'visite guidee', 'tour guidé', 'tour guide',
+  'guidé', 'guide local', 'excursion', 'croisière', 'croisiere',
+  // Sports / nautique payants
+  'kayak', 'paddle', 'plongée', 'plongee', 'snorkel', 'voile',
+  'parapente', 'canyoning', 'escalade', 'via ferrata', 'spéléo', 'speleo',
+  'rafting', 'jet ski', 'quad',
+  // Ateliers et expériences
+  'cours', 'atelier', 'dégustation', 'degustation', 'œnologie', 'oenologie',
+  'masterclass', 'initiation',
+  // Spectacle / bien-être payant
+  'spectacle', 'concert', 'théâtre', 'theatre', 'opéra', 'opera',
+  'spa', 'thermes', 'thalasso', 'sauna', 'hammam',
+  // Mots explicites
+  'billet', 'entrée', 'entree', 'ticket', 'réservation', 'reservation',
+];
+
+const FREE_KEYWORDS = [
+  'balade', 'flânerie', 'flanerie', 'flâner', 'flaner', 'promenade',
+  'marché local', 'marché libre', 'flâner sur le marché',
+  'plage', 'baignade', 'pique-nique', 'pique nique', 'piquenique',
+  'point de vue', 'panorama', 'belvédère', 'belvedere', 'mirador',
+  'apéro', 'apero', 'détente', 'detente', 'repos', 'farniente',
+  'coucher de soleil', 'lever de soleil', 'sunset',
+  'temps libre', 'shopping libre',
+];
+
+export function isLikelyBookable(activity) {
+  if (!activity) return false;
+  // Si le modèle a explicitement marqué l'activité, on respecte
+  if (typeof activity.bookable === 'boolean') return activity.bookable;
+
+  const price = Number(activity.price_per_person_eur) || 0;
+  const text = `${activity.title || ''} ${activity.description || ''}`.toLowerCase();
+
+  // Mot-clé "free" présent → on cache
+  if (FREE_KEYWORDS.some((k) => text.includes(k))) return false;
+
+  // Prix > 0 → réservable
+  if (price > 0) return true;
+
+  // Mot-clé "ticketed" présent → réservable
+  if (TICKETED_KEYWORDS.some((k) => text.includes(k))) return true;
+
+  // Par défaut, dans le doute, on n'affiche pas le bouton (mieux vaut
+  // sous-proposer que sur-proposer).
+  return false;
+}
+
 export function getYourGuideSearch(activityTitle, location) {
   const query = [activityTitle, cleanLocation(location)]
     .filter(Boolean)

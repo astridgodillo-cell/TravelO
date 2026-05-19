@@ -17,6 +17,7 @@ import {
   park4nightSearch,
   getYourGuideSearch,
   tiqetsSearch,
+  isLikelyBookable,
 } from '../lib/externalLinks';
 
 const TABS = [
@@ -483,22 +484,26 @@ function DayCard({
                       <p className="text-slate-600 mt-1">{a.description}</p>
                     )}
                     <div className="print:hidden mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs items-center">
-                      <a
-                        href={getYourGuideSearch(a.title, day.location)}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-800 hover:bg-emerald-200 px-2.5 py-0.5 font-semibold"
-                      >
-                        🎫 Réserver (GetYourGuide)
-                      </a>
-                      <a
-                        href={tiqetsSearch(a.title, day.location)}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-brand-700 hover:underline"
-                      >
-                        🏛️ Tiqets
-                      </a>
+                      {isLikelyBookable(a) && (
+                        <>
+                          <a
+                            href={getYourGuideSearch(a.title, day.location)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-800 hover:bg-emerald-200 px-2.5 py-0.5 font-semibold"
+                          >
+                            🎫 Réserver (GetYourGuide)
+                          </a>
+                          <a
+                            href={tiqetsSearch(a.title, day.location)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-brand-700 hover:underline"
+                          >
+                            🏛️ Tiqets
+                          </a>
+                        </>
+                      )}
                       <a
                         href={googleMapsSearch(`${a.title} ${day.location}`)}
                         target="_blank"
