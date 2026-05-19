@@ -91,10 +91,18 @@ NIVEAU DE BUDGET :
 
 Réponds UNIQUEMENT avec un JSON valide. Pas de texte autour. Pas de markdown.`;
 
+function computeDays(startDate: string, endDate: string): number {
+  if (!startDate || !endDate) return 0;
+  const start = new Date(startDate).getTime();
+  const end = new Date(endDate).getTime();
+  return Math.round((end - start) / 86400000) + 1;
+}
+
 function buildPreferencesContext(p: any): string {
   const children = Array.isArray(p.childrenAges) && p.childrenAges.length
     ? `${p.childrenAges.length} enfant(s) (âges : ${p.childrenAges.join(', ')} ans)`
     : '0 enfant';
+  const expectedDays = computeDays(p.startDate, p.endDate);
 
   const isRoadTrip = ROAD_TRIP_TYPES.has(p.tripType);
   const v = p.vehicle;
@@ -132,7 +140,7 @@ Ferries acceptés : ${p.okWithFerry === false ? 'NON' : 'OUI si nécessaire'}`
     : '';
 
   return `Destination(s) : ${p.destinations}
-Période : du ${p.startDate} au ${p.endDate}
+Période : du ${p.startDate} au ${p.endDate} (durée = ${expectedDays} jours inclusifs, à respecter EXACTEMENT — ne change AUCUNE date)
 Départ : ${p.departureLocation}
 Arrivée finale : ${p.returnLocation || p.departureLocation}${
     p.returnLocation && p.returnLocation !== p.departureLocation

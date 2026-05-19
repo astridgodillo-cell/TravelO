@@ -277,9 +277,13 @@ export default function ItineraryView({
         <div className={tab === 'table' ? '' : 'hidden'}>
           <ItineraryTable days={days} />
         </div>
-        <div className={tab === 'map' ? '' : 'hidden'}>
-          <RouteMap itinerary={itinerary} />
-        </div>
+        {/* Rendu conditionnel : sinon Leaflet pense que le conteneur fait 0px
+            (parent hidden) et ne charge pas les tuiles correctement. */}
+        {tab === 'map' && (
+          <div>
+            <RouteMap itinerary={itinerary} />
+          </div>
+        )}
         <div className={tab === 'budget' ? '' : 'hidden print:block'}>
           <BudgetGlobal budget={budget_summary} metadata={metadata} />
         </div>

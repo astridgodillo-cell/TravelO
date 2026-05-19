@@ -1,7 +1,33 @@
 import { useEffect, useMemo, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
+import {
+  MapContainer,
+  TileLayer,
+  Marker,
+  Popup,
+  Polyline,
+  useMap,
+} from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+
+function FitToPoints({ points }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!points?.length) return;
+    // Petit délai pour laisser Leaflet mesurer son conteneur après mount
+    const t = setTimeout(() => {
+      map.invalidateSize();
+      if (points.length === 1) {
+        map.setView([points[0].lat, points[0].lng], 10);
+      } else {
+        const bounds = L.latLngBounds(points.map((p) => [p.lat, p.lng]));
+        map.fitBounds(bounds, { padding: [40, 40] });
+      }
+    }, 80);
+    return () => clearTimeout(t);
+  }, [points, map]);
+  return null;
+}
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -153,6 +179,7 @@ export default function RouteMap({ itinerary }) {
           scrollWheelZoom={false}
           style={{ height: '500px', width: '100%' }}
         >
+          <FitToPoints points={points} />
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"

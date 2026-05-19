@@ -98,6 +98,47 @@ function computeDurationDays(startDate, endDate) {
   return Math.round((end - start) / 86400000) + 1;
 }
 
+const WEEKDAYS_FR = [
+  'dimanche',
+  'lundi',
+  'mardi',
+  'mercredi',
+  'jeudi',
+  'vendredi',
+  'samedi',
+];
+
+function isoAddDays(startIso, days) {
+  const d = new Date(startIso + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + days);
+  return {
+    iso: d.toISOString().slice(0, 10),
+    weekday: WEEKDAYS_FR[d.getUTCDay()],
+  };
+}
+
+// Réécrit les dates (start/end/duration + chaque jour) en se basant
+// sur les préférences utilisateur. Évite que l'IA hallucine les dates.
+function normalizeItineraryDates(itinerary, preferences, dayArrayKey = 'days') {
+  const expectedDays = computeDurationDays(
+    preferences.startDate,
+    preferences.endDate
+  );
+  if (!itinerary.summary) itinerary.summary = {};
+  itinerary.summary.start_date = preferences.startDate;
+  itinerary.summary.end_date = preferences.endDate;
+  itinerary.summary.duration_days = expectedDays;
+
+  const arr = itinerary[dayArrayKey];
+  if (Array.isArray(arr)) {
+    itinerary[dayArrayKey] = arr.slice(0, expectedDays).map((d, i) => {
+      const { iso, weekday } = isoAddDays(preferences.startDate, i);
+      return { ...d, label: `J${i + 1}`, date: iso, weekday };
+    });
+  }
+  return itinerary;
+}
+
 async function invoke(body) {
   const { data, error } = await supabase.functions.invoke(FN_NAME, { body });
   if (error) {
@@ -119,6 +160,8 @@ export async function generateItinerary(preferences, onProgress) {
     const data = await invoke({ preferences });
     if (!data?.itinerary) throw new Error('Réponse vide reçue.');
     meta = addUsageToMeta(meta, data.model, data.usage);
+    // Normalise les dates : on force celles de l'utilisateur, l'IA hallucine parfois
+    normalizeItineraryDates(data.itinerary, preferences, 'days');
     onProgress?.({ phase: 'generating', current: 1, total: 1 });
     return { ...data.itinerary, metadata: meta };
   }
@@ -131,6 +174,17 @@ export async function generateItinerary(preferences, onProgress) {
     throw new Error('Plan reçu vide. Relancez la génération.');
   }
   meta = addUsageToMeta(meta, planData.model, planData.usage);
+
+  // Si le plan a une mauvaise durée, c'est que le modèle s'est trompé sur les dates.
+  // On informe l'utilisateur pour qu'il relance.
+  if (plan.day_plans.length !== days) {
+    throw new Error(
+      `Le plan généré a ${plan.day_plans.length} jours mais ${days} étaient demandés (du ${preferences.startDate} au ${preferences.endDate}). Veuillez régénérer — le modèle s'est trompé sur la durée.`
+    );
+  }
+
+  // Normalise les dates de chaque day_plan
+  normalizeItineraryDates(plan, preferences, 'day_plans');
 
   const total = plan.day_plans.length;
   const expandedDays = new Array(total);
@@ -150,7 +204,14 @@ export async function generateItinerary(preferences, onProgress) {
           next_plan: plan.day_plans[dayIndex + 1] || null,
         });
         if (!data?.day) throw new Error(`Jour ${dayPlan.label} vide.`);
-        expandedDays[dayIndex] = data.day;
+        // Force le label, date, weekday du jour à correspondre au plan normalisé
+        // (sinon l'expansion peut renvoyer des dates inventées).
+        expandedDays[dayIndex] = {
+          ...data.day,
+          label: dayPlan.label,
+          date: dayPlan.date,
+          weekday: dayPlan.weekday,
+        };
         // Note : on cumule dans meta de façon thread-unsafe mais OK car JS mono-thread
         meta = addUsageToMeta(meta, data.model, data.usage);
         done += 1;
