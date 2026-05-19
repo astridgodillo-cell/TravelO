@@ -1068,7 +1068,9 @@ Deno.serve(async (req) => {
         );
       }
       const prompt = buildReplanFromDayPrompt(itinerary, from_day_index, instructions);
-      const { text, usage, modelUsed } = await callMain(prompt, 16000);
+      // Budget large : replanifier la suite d'un long voyage peut nécessiter
+      // beaucoup de tokens (chaque jour fait ~1500-2000 tokens).
+      const { text, usage, modelUsed } = await callMain(prompt, 32000);
       const parsed = await parseOrRepair(text, callMainSafe);
       const days = parsed?.days;
       if (!Array.isArray(days)) {
@@ -1096,7 +1098,10 @@ Deno.serve(async (req) => {
         return jsonResponse({ error: 'preferences invalides' }, 400);
       }
       const prompt = buildPlanPrompt(preferences);
-      const { text, usage, modelUsed } = await callMain(prompt, 8000);
+      // 32000 tokens : Gemini "thinking" peut en consommer une partie,
+      // le reste doit suffire pour summary + 30+ day_plans + notes complètes
+      // (packing list + phrases + tips). Gemini Flash supporte jusqu'à 65k.
+      const { text, usage, modelUsed } = await callMain(prompt, 32000);
       const plan = await parseOrRepair(text, callMainSafe);
       return jsonResponse({ plan, usage, model: modelUsed });
     }
@@ -1127,7 +1132,8 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: 'preferences invalides' }, 400);
     }
     const userPrompt = buildFullPrompt(preferences);
-    const { text, usage, modelUsed } = await callMain(userPrompt, 16000);
+    // Budget large : un voyage 8 jours détaillé peut atteindre 20k tokens.
+    const { text, usage, modelUsed } = await callMain(userPrompt, 24000);
     const itinerary = await parseOrRepair(text, callMainSafe);
     return jsonResponse({ itinerary, usage, model: modelUsed });
   } catch (err) {
