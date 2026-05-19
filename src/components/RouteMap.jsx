@@ -14,17 +14,27 @@ function FitToPoints({ points }) {
   const map = useMap();
   useEffect(() => {
     if (!points?.length) return;
-    // Petit délai pour laisser Leaflet mesurer son conteneur après mount
-    const t = setTimeout(() => {
+    let cancelled = false;
+    // Plusieurs tentatives d'invalidate + fit, pour laisser le temps au DOM
+    // de monter et au TileLayer de charger ses tuiles.
+    const tryFit = (attempt = 0) => {
+      if (cancelled) return;
       map.invalidateSize();
       if (points.length === 1) {
         map.setView([points[0].lat, points[0].lng], 10);
       } else {
         const bounds = L.latLngBounds(points.map((p) => [p.lat, p.lng]));
-        map.fitBounds(bounds, { padding: [40, 40] });
+        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 12 });
       }
-    }, 80);
-    return () => clearTimeout(t);
+      if (attempt < 3) {
+        setTimeout(() => tryFit(attempt + 1), 250);
+      }
+    };
+    const t = setTimeout(() => tryFit(0), 100);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
   }, [points, map]);
   return null;
 }
@@ -92,6 +102,11 @@ export default function RouteMap({ itinerary }) {
         if (!c || typeof c.lat !== 'number' || typeof c.lng !== 'number') {
           return null;
         }
+        // Filtre coordonnées aberrantes : (0,0) ou hors plage normale.
+        // Un point parasite à (0,0) explose la bounding-box jusqu'à l'Atlantique
+        // et fait disparaître la carte utile dans un coin minuscule.
+        if (Math.abs(c.lat) < 0.5 && Math.abs(c.lng) < 0.5) return null;
+        if (c.lat < -90 || c.lat > 90 || c.lng < -180 || c.lng > 180) return null;
         return {
           index: i,
           label: d.label,

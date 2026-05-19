@@ -588,12 +588,20 @@ async function callGemini(
   const data = await res.json();
   const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!text) throw new Error('Réponse Gemini vide.');
+  const meta = data?.usageMetadata || {};
+  // Gemini 2.5 Flash utilise "thinking" par défaut → thoughtsTokenCount est
+  // billé comme output. Sans ça, on sous-estime le coût d'un facteur 2.
+  const candidates = meta.candidatesTokenCount || 0;
+  const thoughts = meta.thoughtsTokenCount || 0;
   return {
     text,
     usage: {
-      input_tokens: data?.usageMetadata?.promptTokenCount,
-      output_tokens: data?.usageMetadata?.candidatesTokenCount,
-      cache_read_input_tokens: data?.usageMetadata?.cachedContentTokenCount,
+      input_tokens: meta.promptTokenCount || 0,
+      output_tokens: candidates + thoughts,
+      cache_read_input_tokens: meta.cachedContentTokenCount || 0,
+      // détails séparés pour debug si besoin
+      thoughts_tokens: thoughts,
+      response_tokens: candidates,
     },
     modelUsed: GEMINI_MODEL,
   };

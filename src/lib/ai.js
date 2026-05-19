@@ -221,6 +221,16 @@ export async function generateItinerary(preferences, onProgress) {
   }
 
   onProgress?.({ phase: 'assembling' });
+
+  // Vérification finale : on doit avoir EXACTEMENT le bon nombre de jours,
+  // et chaque jour doit avoir du contenu (pas un trou dans expandedDays).
+  const filledCount = expandedDays.filter(Boolean).length;
+  if (filledCount !== days) {
+    throw new Error(
+      `Itinéraire incomplet : ${filledCount} jours générés sur ${days} attendus. Veuillez régénérer.`
+    );
+  }
+
   const budget = computeBudget(expandedDays, plan.summary);
   return {
     summary: { ...plan.summary, ...budget.summaryPatch },

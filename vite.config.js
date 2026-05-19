@@ -49,7 +49,10 @@ export default defineConfig({
             urlPattern: /^https:\/\/[a-z]\.tile\.openstreetmap\.org\/.*/i,
             handler: 'CacheFirst',
             options: {
-              cacheName: 'osm-tiles',
+              // Nouveau nom de cache → on repart de zéro et on invalide les
+              // éventuelles tuiles cassées mises en cache précédemment.
+              cacheName: 'osm-tiles-v2',
+              cacheableResponse: { statuses: [0, 200] },
               expiration: {
                 maxEntries: 500,
                 maxAgeSeconds: 30 * 24 * 60 * 60, // 30 jours
