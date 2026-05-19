@@ -9,6 +9,8 @@
 // Secret requis : ANTHROPIC_API_KEY
 
 // deno-lint-ignore-file no-explicit-any
+import { jsonrepair } from 'https://esm.sh/jsonrepair@3.10.0';
+
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
 const MODEL = Deno.env.get('ANTHROPIC_MODEL') || 'claude-sonnet-4-20250514';
 const EXPAND_MODEL =
@@ -731,9 +733,11 @@ async function callDeepseek(
           { role: 'user', content: userPrompt },
         ],
         max_tokens: maxTokens,
-        // 1.3 = valeur recommandée par DeepSeek pour l'écriture créative
-        // (conversation/general talk). Plus narratif et descriptif.
-        temperature: 1.3,
+        // 1.0 : compromis entre créativité (1.3 = creative writing) et
+        // stabilité du JSON. Le prompt fait déjà beaucoup pour le style.
+        // Trop haut → DeepSeek glisse parfois des guillemets typographiques
+        // ou des sauts de ligne qui cassent la sortie JSON.
+        temperature: 1.0,
         response_format: { type: 'json_object' },
       }),
     }
@@ -826,7 +830,15 @@ function tryParseJson(text: string): { ok: true; value: any } | { ok: false; err
   try {
     return { ok: true, value: JSON.parse(candidate) };
   } catch (e) {
-    return { ok: false, error: (e as Error).message };
+    // Tentative de réparation locale via jsonrepair : gère les
+    // guillemets typographiques, virgules manquantes, sauts de ligne
+    // non échappés, accolades manquantes, etc. — sans appel LLM.
+    try {
+      const repaired = jsonrepair(candidate);
+      return { ok: true, value: JSON.parse(repaired) };
+    } catch {
+      return { ok: false, error: (e as Error).message };
+    }
   }
 }
 
