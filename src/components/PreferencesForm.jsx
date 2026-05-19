@@ -3,13 +3,29 @@ import TemplatePicker from './TemplatePicker';
 
 const TRIP_TYPES = [
   { id: 'itinerant', label: 'Itinérant' },
-  { id: 'roadtrip-voiture', label: 'Road trip voiture' },
-  { id: 'roadtrip-van', label: 'Road trip van' },
-  { id: 'roadtrip-camping-car', label: 'Road trip camping-car' },
-  { id: 'circuit-train', label: 'Circuit train' },
-  { id: 'sejour-fixe', label: 'Séjour fixe' },
+  { id: 'roadtrip-voiture', label: '🚗 Road trip voiture' },
+  { id: 'roadtrip-van', label: '🚐 Road trip van' },
+  { id: 'roadtrip-camping-car', label: '🚍 Road trip camping-car' },
+  { id: 'avion-voiture', label: '✈️ Avion + voiture de location' },
+  { id: 'avion-citybreak', label: '✈️ Avion + city break (à pied / TC)' },
+  { id: 'train-international', label: '🚄 Train international' },
+  { id: 'circuit-train', label: '🚉 Circuit train' },
+  { id: 'velo', label: '🚴 Vélo / cyclotourisme' },
+  { id: 'trek', label: '🥾 Trek itinérant' },
+  { id: 'croisiere', label: '🛳️ Croisière' },
+  { id: 'sejour-fixe', label: '🏖️ Séjour fixe' },
 ];
 
+// Types qui ont besoin de la section "Véhicule" (voiture perso ou location)
+const MOTORIZED_TRIP_TYPES = new Set([
+  'roadtrip-voiture',
+  'roadtrip-van',
+  'roadtrip-camping-car',
+  'avion-voiture',
+]);
+
+// Types qui ont besoin des options spécifiques van/CC (aires de service,
+// cuisine dans le véhicule, ferry…)
 const ROAD_TRIP_TYPES = new Set([
   'roadtrip-voiture',
   'roadtrip-van',
@@ -140,8 +156,13 @@ function computeTotalDays(start, end) {
 
 export default function PreferencesForm({ onSubmit, loading }) {
   const [values, setValues] = useState(DEFAULTS);
+  // Road trip "classique" : van/CC/voiture perso → besoin des options
+  // aires de service, ferry, cuisine, etc.
   const isRoadTrip = ROAD_TRIP_TYPES.has(values.tripType);
-  const isMotorized = isRoadTrip; // any road trip uses a vehicle
+  // Tout type avec véhicule (road trip OU avion+voiture de location)
+  // → besoin de la section "Véhicule"
+  const isMotorized = MOTORIZED_TRIP_TYPES.has(values.tripType);
+  const isRental = values.tripType === 'avion-voiture';
   const totalDays = computeTotalDays(values.startDate, values.endDate);
   const maxOffDays = Math.max(0, totalDays - 2); // au moins 1 jour de voyage à l'aller et 1 au retour
 
@@ -387,11 +408,11 @@ export default function PreferencesForm({ onSubmit, loading }) {
       </Section>
 
       {isMotorized && (
-        <Section title="Véhicule">
+        <Section title={isRental ? 'Voiture de location' : 'Véhicule'}>
           <p className="text-xs text-slate-500 -mt-2">
-            Ces informations servent à estimer les coûts de carburant et de
-            péage (classe du véhicule), et à proposer des hébergements adaptés
-            (aires CC, France Passion, bivouac…).
+            {isRental
+              ? 'Sélectionnez la catégorie de voiture envisagée pour la location sur place. Sert à estimer carburant, péages et coût de la location (~40-70 €/jour selon catégorie).'
+              : 'Ces informations servent à estimer les coûts de carburant et de péage (classe du véhicule), et à proposer des hébergements adaptés (aires CC, France Passion, bivouac…).'}
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="md:col-span-2">
@@ -597,7 +618,7 @@ export default function PreferencesForm({ onSubmit, loading }) {
         </div>
       </Section>
 
-      {isMotorized && (
+      {isRoadTrip && (
         <Section title="Vie pratique en voyage">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>

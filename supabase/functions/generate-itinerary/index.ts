@@ -47,6 +47,13 @@ const ROAD_TRIP_TYPES = new Set([
   'roadtrip-camping-car',
 ]);
 
+const VEHICLE_TYPES = new Set([
+  'roadtrip-voiture',
+  'roadtrip-van',
+  'roadtrip-camping-car',
+  'avion-voiture',
+]);
+
 const SYSTEM_PROMPT = `Tu es l'expert voyage TravelO, un agent de tour-opérateur francophone, méticuleux et passionné. Tu rédiges des itinéraires ultra-détaillés, comme un programme vendu par une grande agence.
 
 Règles strictes :
@@ -81,6 +88,18 @@ COHÉRENCE GÉOGRAPHIQUE (RÈGLE STRICTE) :
 - Exemple : Paris → Bretagne avec Puy du Fou (Les Epesses, Vendée) ET zoo de Beauval (Saint-Aignan, Loir-et-Cher) imposés.
   ✅ ORDRE CORRECT : Paris → Saint-Aignan (proche, est) → Les Epesses (sud-ouest) → Vannes (Bretagne)
   ❌ MAUVAIS ORDRE : Paris → Les Epesses → Saint-Aignan (retour est) → Vannes (re-ouest) [zigzag inutile]
+
+TYPES DE VOYAGE — RÈGLES SPÉCIFIQUES :
+- itinerant : voyage moyennement structuré, mix de transports selon le contexte.
+- roadtrip-voiture / roadtrip-van / roadtrip-camping-car : véhicule PERSONNEL du voyageur, départ direct du domicile (cf. règles road trip ci-dessous).
+- avion-voiture : vol aller depuis lieu de départ vers la destination, puis VOITURE DE LOCATION sur place. Journée 1 = arrivée vol + récupération voiture. Ajoute le coût de la location dans budget (~40-70 €/jour selon catégorie, + caution + assurance ~150 € amortie). Trajets locaux en voiture (carburant à compter). Dernière journée = restitution voiture + vol retour.
+- avion-citybreak : vol aller-retour + visite à PIED et transports en commun sur place. AUCUNE voiture. Hôtels en centre-ville. Plus court généralement (3-7 jours). Ajoute le coût des vols et des transports en commun.
+- train-international : Eurostar / TGV / ICE / nuit-train pour rejoindre une destination étrangère (Londres, Barcelone, Berlin, etc.). Pas de voiture, transports en commun sur place. Coût du billet aller-retour explicité dans le 1er et le dernier trip.
+- circuit-train : circuit en train DOMESTIQUE avec plusieurs étapes (ex. JR Pass au Japon, InterRail). Coût total des billets train.
+- velo : voyage à VÉLO. Étapes 50-80 km/jour, dénivelé raisonnable, hébergements vélo-friendly (gîtes/auberges/B&B avec garage vélo). Pas de voiture. Pense aux jours plus courts en montagne.
+- trek : voyage itinérant à PIED (randonnée). Étapes 15-25 km/jour, refuges/gîtes d'étape/bivouac selon préférence d'hébergement. Pas de voiture. Pense au dénivelé et à la difficulté.
+- croisiere : ports d'escale, transitions en MER entre les étapes (1 nuit en mer typiquement). Hébergement = cabine sur le navire (déjà inclus dans le forfait croisière, mettre price_eur = 0 et type = "Cabine croisière"). Compte le prix total du forfait dans les trips.
+- sejour-fixe : base unique + excursions à la journée. Pas d'enchaînement de villes, le même hébergement chaque nuit.
 
 MODE ROAD TRIP — règles supplémentaires :
 - Construis un VRAI itinéraire bout-en-bout, en boucle si départ = retour, sinon en ligne.
