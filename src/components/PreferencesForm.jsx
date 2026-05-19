@@ -202,6 +202,17 @@ export default function PreferencesForm({ onSubmit, loading }) {
 
   function handleSubmit(e) {
     e.preventDefault();
+    // Garde-fou : impossible de soumettre si la date de fin est antérieure au départ
+    if (
+      values.startDate &&
+      values.endDate &&
+      values.endDate < values.startDate
+    ) {
+      alert(
+        'La date de fin ne peut pas être antérieure à la date de début. Veuillez corriger.'
+      );
+      return;
+    }
     const payload = {
       ...values,
       returnLocation: values.returnLocation || values.departureLocation,
@@ -249,7 +260,18 @@ export default function PreferencesForm({ onSubmit, loading }) {
               type="date"
               className="input"
               value={values.startDate}
-              onChange={(e) => update('startDate', e.target.value)}
+              onChange={(e) => {
+                const newStart = e.target.value;
+                setValues((v) => ({
+                  ...v,
+                  startDate: newStart,
+                  // Si la date de fin devient antérieure, on la remet à la date de début
+                  endDate:
+                    v.endDate && newStart && v.endDate < newStart
+                      ? newStart
+                      : v.endDate,
+                }));
+              }}
             />
           </div>
           <div>
@@ -258,9 +280,17 @@ export default function PreferencesForm({ onSubmit, loading }) {
               required
               type="date"
               className="input"
+              min={values.startDate || undefined}
               value={values.endDate}
               onChange={(e) => update('endDate', e.target.value)}
             />
+            {values.startDate &&
+              values.endDate &&
+              values.endDate < values.startDate && (
+                <p className="text-xs text-red-600 mt-1">
+                  La date de fin doit être après la date de début.
+                </p>
+              )}
           </div>
           <div>
             <label className="label">Lieu de départ</label>
