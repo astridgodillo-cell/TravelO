@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { signOut } from '../lib/supabase';
+import BackendQuickSwitch from './BackendQuickSwitch';
 
 export default function Navbar() {
   const { user, profile, isAdmin } = useAuth();
@@ -103,6 +104,7 @@ export default function Navbar() {
         <div className="hidden md:flex items-center gap-2">
           {user ? (
             <>
+              {isAdmin && <BackendQuickSwitch />}
               <span className="hidden lg:flex flex-col items-end text-xs leading-tight">
                 <span className="text-slate-600 truncate max-w-[180px]">
                   {user.email}
@@ -169,6 +171,14 @@ export default function Navbar() {
                   <div className="text-xs text-slate-500 capitalize">
                     Plan {profile.subscription_tier}
                     {profile.status !== 'approved' && ` · ${profile.status}`}
+                  </div>
+                )}
+                {isAdmin && (
+                  <div className="pt-2">
+                    <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">
+                      Backend LLM
+                    </div>
+                    <BackendQuickSwitch />
                   </div>
                 )}
                 <button

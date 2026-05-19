@@ -62,7 +62,8 @@ async function getActiveBackend(): Promise<string> {
         typeof stored === 'string'
           ? stored.toLowerCase()
           : DEFAULT_BACKEND;
-      cachedBackend = { value, expires: Date.now() + 60_000 };
+      // TTL court (15s) pour que les bascules admin soient quasi immédiates
+      cachedBackend = { value, expires: Date.now() + 15_000 };
       return value;
     }
   } catch (e) {
