@@ -5,7 +5,9 @@ const FN_NAME = 'generate-itinerary';
 // Au-delà de ce nombre de jours, on bascule en mode plan+expand
 // pour rester sous le wall-clock limit des Edge Functions (150s plan gratuit).
 const SHORT_TRIP_MAX_DAYS = 8;
-const EXPAND_CONCURRENCY = 3;
+// Concurrence faible pour éviter de saturer le quota Anthropic
+// (output tokens per minute). 2 = bon compromis vitesse/sécurité.
+const EXPAND_CONCURRENCY = 2;
 
 async function readErrorDetail(error) {
   try {

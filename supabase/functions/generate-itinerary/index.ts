@@ -460,7 +460,12 @@ Contraintes :
 - coordinates obligatoire pour chaque jour.`;
 }
 
-async function callClaude(userPrompt: string, maxTokens = 16000, model = MODEL) {
+async function callClaude(
+  userPrompt: string,
+  maxTokens = 16000,
+  model = MODEL,
+  retryCount = 0
+): Promise<{ text: string; usage: any }> {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -481,6 +486,22 @@ async function callClaude(userPrompt: string, maxTokens = 16000, model = MODEL) 
       messages: [{ role: 'user', content: userPrompt }],
     }),
   });
+
+  // Retry sur 429 (rate limit) et 529 (overloaded) avec backoff exponentiel
+  if ((res.status === 429 || res.status === 529) && retryCount < 4) {
+    const retryAfterHeader = res.headers.get('retry-after');
+    const fromHeader = retryAfterHeader ? parseInt(retryAfterHeader, 10) : NaN;
+    // Backoff exponentiel : 8s, 16s, 32s, 64s (plafonné à 90s)
+    const backoff = Math.min(
+      Number.isFinite(fromHeader) ? fromHeader : 8 * Math.pow(2, retryCount),
+      90
+    );
+    console.warn(
+      `[anthropic] ${res.status} rate limited (try ${retryCount + 1}/4), waiting ${backoff}s`
+    );
+    await new Promise((r) => setTimeout(r, backoff * 1000));
+    return callClaude(userPrompt, maxTokens, model, retryCount + 1);
+  }
 
   if (!res.ok) {
     const txt = await res.text();
