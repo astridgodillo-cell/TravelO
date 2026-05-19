@@ -23,12 +23,16 @@ const PEXELS_API_KEY = Deno.env.get('PEXELS_API_KEY') || '';
 const UNSPLASH_ACCESS_KEY = Deno.env.get('UNSPLASH_ACCESS_KEY') || '';
 const GOOGLE_PLACES_API_KEY = Deno.env.get('GOOGLE_PLACES_API_KEY') || '';
 
-// Backend pour les appels "expansion" (expand-day, regenerate-activity, fetch-specialties)
-// — 95 % des appels. Choix : 'gemini' (moins cher, plus haut quota) ou 'claude' (Haiku, fallback).
+// Backend LLM unifié : 'gemini' ou 'claude'. Auto-détecté en fonction des clés.
+// Quand BACKEND='gemini', TOUTES les opérations passent par Gemini Flash :
+// plan, expand, régénération, fetch-spécialités, etc.
 const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') || '';
 const GEMINI_MODEL = Deno.env.get('GEMINI_MODEL') || 'gemini-2.5-flash';
-const EXPAND_BACKEND =
-  (Deno.env.get('EXPAND_BACKEND') || (GEMINI_API_KEY ? 'gemini' : 'claude')).toLowerCase();
+const BACKEND = (
+  Deno.env.get('BACKEND') ||
+  Deno.env.get('EXPAND_BACKEND') ||
+  (GEMINI_API_KEY ? 'gemini' : 'claude')
+).toLowerCase();
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -577,13 +581,33 @@ async function callGemini(
   };
 }
 
-// Dispatcher : utilise Gemini quand configuré, sinon Haiku (Claude).
-// Fallback automatique : si Gemini échoue, on bascule sur Claude.
+// Dispatcher principal (plan, régénération de jour, replan) :
+// Gemini si configuré, sinon Sonnet (Claude). Fallback automatique.
+async function callMain(
+  userPrompt: string,
+  maxTokens = 16000
+): Promise<LLMResult> {
+  if (BACKEND === 'gemini' && GEMINI_API_KEY) {
+    try {
+      return await callGemini(userPrompt, maxTokens);
+    } catch (e) {
+      console.warn(
+        '[main] Gemini échec, fallback sur Claude Sonnet :',
+        (e as Error).message
+      );
+    }
+  }
+  const r = await callClaude(userPrompt, maxTokens, MODEL);
+  return { ...r, modelUsed: MODEL };
+}
+
+// Dispatcher expansion (expand-day, regenerate-activity, fetch-specialties) :
+// Gemini si configuré, sinon Haiku (Claude). Fallback automatique.
 async function callExpansion(
   userPrompt: string,
   maxTokens = 6000
 ): Promise<LLMResult> {
-  if (EXPAND_BACKEND === 'gemini' && GEMINI_API_KEY) {
+  if (BACKEND === 'gemini' && GEMINI_API_KEY) {
     try {
       return await callGemini(userPrompt, maxTokens);
     } catch (e) {
@@ -619,7 +643,7 @@ function tryParseJson(text: string): { ok: true; value: any } | { ok: false; err
 }
 
 // Helpers prêts à passer comme caller à parseOrRepair
-const callClaudeMain = (p: string, t: number) => callClaude(p, t, MODEL);
+const callMainSafe = (p: string, t: number) => callMain(p, t);
 const callExpansionSafe = (p: string, t: number) => callExpansion(p, t);
 
 // Si le LLM renvoie du JSON cassé, on fait un seul aller-retour pour qu'il le corrige.
@@ -956,9 +980,9 @@ Deno.serve(async (req) => {
         );
       }
       const prompt = buildRegenerateDayPrompt(itinerary, day_index, instructions);
-      const { text, usage } = await callClaude(prompt, 6000);
-      const day = await parseOrRepair(text, callClaudeMain);
-      return jsonResponse({ day, usage, model: MODEL });
+      const { text, usage, modelUsed } = await callMain(prompt, 6000);
+      const day = await parseOrRepair(text, callMainSafe);
+      return jsonResponse({ day, usage, model: modelUsed });
     }
 
     if (mode === 'fetch-specialties') {
@@ -1018,8 +1042,8 @@ Deno.serve(async (req) => {
         );
       }
       const prompt = buildReplanFromDayPrompt(itinerary, from_day_index, instructions);
-      const { text, usage } = await callClaude(prompt, 16000);
-      const parsed = await parseOrRepair(text, callClaudeMain);
+      const { text, usage, modelUsed } = await callMain(prompt, 16000);
+      const parsed = await parseOrRepair(text, callMainSafe);
       const days = parsed?.days;
       if (!Array.isArray(days)) {
         return jsonResponse(
@@ -1027,7 +1051,7 @@ Deno.serve(async (req) => {
           500
         );
       }
-      return jsonResponse({ days, usage, model: MODEL });
+      return jsonResponse({ days, usage, model: modelUsed });
     }
 
     if (mode === 'fetch-photos') {
@@ -1046,9 +1070,9 @@ Deno.serve(async (req) => {
         return jsonResponse({ error: 'preferences invalides' }, 400);
       }
       const prompt = buildPlanPrompt(preferences);
-      const { text, usage } = await callClaude(prompt, 8000);
-      const plan = await parseOrRepair(text, callClaudeMain);
-      return jsonResponse({ plan, usage, model: MODEL });
+      const { text, usage, modelUsed } = await callMain(prompt, 8000);
+      const plan = await parseOrRepair(text, callMainSafe);
+      return jsonResponse({ plan, usage, model: modelUsed });
     }
 
     if (mode === 'expand-day') {
@@ -1077,9 +1101,9 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: 'preferences invalides' }, 400);
     }
     const userPrompt = buildFullPrompt(preferences);
-    const { text, usage } = await callClaude(userPrompt, 16000);
-    const itinerary = await parseOrRepair(text, callClaudeMain);
-    return jsonResponse({ itinerary, usage, model: MODEL });
+    const { text, usage, modelUsed } = await callMain(userPrompt, 16000);
+    const itinerary = await parseOrRepair(text, callMainSafe);
+    return jsonResponse({ itinerary, usage, model: modelUsed });
   } catch (err) {
     return jsonResponse(
       { error: (err as Error).message || String(err) },
