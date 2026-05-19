@@ -398,15 +398,26 @@ function DayCard({
     <article className="card print:break-inside-avoid print:shadow-none print:border-slate-300 animate-fade-up">
       <header className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 pb-4">
         <div className="flex items-start gap-3 sm:gap-4 min-w-0">
-          <div className="shrink-0 grid place-items-center h-14 w-14 rounded-2xl bg-day-gradient text-white font-bold text-lg shadow-pop print:bg-slate-900">
-            {day.label}
+          <div
+            className={`shrink-0 grid place-items-center h-14 w-14 rounded-2xl text-white font-bold text-lg shadow-pop print:bg-slate-900 ${
+              day.is_off_day
+                ? 'bg-gradient-to-br from-emerald-500 to-teal-500'
+                : 'bg-day-gradient'
+            }`}
+          >
+            {day.is_off_day ? '🛋️' : day.label}
           </div>
           <div className="min-w-0">
-            <h3 className="text-lg sm:text-xl font-bold text-slate-900 leading-tight">
+            <h3 className="text-lg sm:text-xl font-bold text-slate-900 leading-tight flex items-center flex-wrap gap-2">
               {day.location}
+              {day.is_off_day && (
+                <span className="chip bg-emerald-100 text-emerald-700 text-[10px]">
+                  🛋️ Jour off
+                </span>
+              )}
             </h3>
             <p className="text-xs sm:text-sm text-slate-500 capitalize mt-0.5">
-              {day.weekday} {day.date}
+              {day.label} · {day.weekday} {day.date}
             </p>
             {day.weather && (
               <div className="text-xs text-slate-600 mt-1.5">

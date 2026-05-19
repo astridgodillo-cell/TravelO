@@ -114,6 +114,7 @@ const DEFAULTS = {
   interests: ['culture', 'gastronomie'],
   specificActivities: [],
   budget: 'moyen',
+  offDays: 0,
   mustInclude: '',
   toAvoid: '',
   vehicle: {
@@ -129,10 +130,20 @@ const DEFAULTS = {
   okWithFerry: true,
 };
 
+function computeTotalDays(start, end) {
+  if (!start || !end) return 0;
+  const s = new Date(start);
+  const e = new Date(end);
+  if (isNaN(s) || isNaN(e) || e < s) return 0;
+  return Math.round((e - s) / 86400000) + 1;
+}
+
 export default function PreferencesForm({ onSubmit, loading }) {
   const [values, setValues] = useState(DEFAULTS);
   const isRoadTrip = ROAD_TRIP_TYPES.has(values.tripType);
   const isMotorized = isRoadTrip; // any road trip uses a vehicle
+  const totalDays = computeTotalDays(values.startDate, values.endDate);
+  const maxOffDays = Math.max(0, totalDays - 2); // au moins 1 jour de voyage à l'aller et 1 au retour
 
   function update(field, value) {
     setValues((v) => ({ ...v, [field]: value }));
@@ -339,6 +350,39 @@ export default function PreferencesForm({ onSubmit, loading }) {
               </button>
             );
           })}
+        </div>
+      </Section>
+
+      <Section title="Rythme du voyage">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <label className="label">Jours off / repos</label>
+            <input
+              type="number"
+              min="0"
+              max={maxOffDays}
+              className="input"
+              value={values.offDays}
+              onChange={(e) => {
+                const n = Math.max(
+                  0,
+                  Math.min(maxOffDays, Number(e.target.value) || 0)
+                );
+                update('offDays', n);
+              }}
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              {totalDays > 0
+                ? `Sur ${totalDays} jours au total. Max conseillé : ${maxOffDays}.`
+                : 'Renseignez d\'abord les dates pour calibrer.'}
+            </p>
+          </div>
+          <div className="sm:col-span-2 text-xs text-slate-500 self-end pb-2">
+            🛋️ Une journée off = pas de gros trajet (on reste au même endroit
+            que la veille), activités très light ou optionnelles, surtout du
+            repos. Idéal pour souffler au milieu d'un long voyage. Claude les
+            répartit équilibrement dans l'itinéraire.
+          </div>
         </div>
       </Section>
 

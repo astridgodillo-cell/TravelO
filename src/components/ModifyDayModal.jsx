@@ -11,6 +11,7 @@ export default function ModifyDayModal({
   const [newLocation, setNewLocation] = useState('');
   const [instructions, setInstructions] = useState('');
   const [cascade, setCascade] = useState(false);
+  const [makeOffDay, setMakeOffDay] = useState(false);
 
   if (!open) return null;
 
@@ -18,6 +19,7 @@ export default function ModifyDayModal({
     setNewLocation('');
     setInstructions('');
     setCascade(false);
+    setMakeOffDay(false);
   }
 
   function handleClose() {
@@ -28,6 +30,11 @@ export default function ModifyDayModal({
   function handleSubmit(e) {
     e.preventDefault();
     const parts = [];
+    if (makeOffDay) {
+      parts.push(
+        'Transforme cette journée en JOUR OFF (repos) : aucun gros trajet, on reste sur le lieu de la veille, activités très light ou optionnelles, repas tranquille, anchor_theme commence par "Journée libre" ou "Repos". Mets is_off_day = true.'
+      );
+    }
     if (newLocation.trim()) {
       parts.push(`Change le lieu pour : ${newLocation.trim()}`);
     }
@@ -62,6 +69,24 @@ export default function ModifyDayModal({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-3">
+          <label className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={makeOffDay}
+              onChange={(e) => setMakeOffDay(e.target.checked)}
+            />
+            <div>
+              <span className="font-medium text-emerald-800">
+                🛋️ Faire de cette journée un jour off (repos)
+              </span>
+              <div className="text-xs text-emerald-700 mt-0.5">
+                Pas de trajet, on reste sur place, activités minimales, repas
+                tranquille.
+              </div>
+            </div>
+          </label>
+
           <div>
             <label className="label">Changer le lieu (optionnel)</label>
             <input
@@ -69,7 +94,13 @@ export default function ModifyDayModal({
               placeholder={`Actuellement : ${day?.location || ''}`}
               value={newLocation}
               onChange={(e) => setNewLocation(e.target.value)}
+              disabled={makeOffDay}
             />
+            {makeOffDay && (
+              <p className="text-xs text-slate-500 mt-1">
+                (Désactivé : un jour off reste sur le lieu de la veille)
+              </p>
+            )}
           </div>
 
           <div>
@@ -115,7 +146,8 @@ export default function ModifyDayModal({
             <button
               type="submit"
               disabled={
-                loading || (!newLocation.trim() && !instructions.trim())
+                loading ||
+                (!newLocation.trim() && !instructions.trim() && !makeOffDay)
               }
               className="btn-primary"
             >

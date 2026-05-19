@@ -146,6 +146,12 @@ Ferries acceptés : ${p.okWithFerry === false ? 'NON' : 'OUI si nécessaire'}`
     ? `\nActivités spécifiques souhaitées : ${p.specificActivities.join(', ')}`
     : '';
 
+  const offDays = Number(p.offDays) || 0;
+  const offBlock =
+    offDays > 0
+      ? `\nJours off / repos : ${offDays} jours sur ${expectedDays}, à RÉPARTIR ÉQUILIBREMENT dans l'itinéraire. Un jour off : reste au même endroit que la veille (pas de trajet), activités minimales/optionnelles, pas d'excursion payante, repas tranquille. anchor_theme commence par "Journée libre" ou "Repos à <lieu>". is_off_day = true.`
+      : '';
+
   return `Destination(s) : ${p.destinations}
 Période : du ${p.startDate} au ${p.endDate} (durée = ${expectedDays} jours inclusifs, à respecter EXACTEMENT — ne change AUCUNE date)
 Départ : ${p.departureLocation}
@@ -157,7 +163,7 @@ Arrivée finale : ${p.returnLocation || p.departureLocation}${
 Participants : ${p.adults} adulte(s), ${children}
 Type de voyage : ${p.tripType}${vehicleBlock}
 Centres d'intérêt : ${(p.interests || []).join(', ')}${specificActivities}
-Niveau de budget : ${p.budget}${practicalBlock}
+Niveau de budget : ${p.budget}${practicalBlock}${offBlock}
 Étapes IMPÉRATIVES : ${p.mustInclude || '(aucune)'}
 À éviter : ${p.toAvoid || '(aucun)'}`;
 }
@@ -167,6 +173,7 @@ const FULL_DAY_SCHEMA = `{
   "date": "YYYY-MM-DD",
   "weekday": "lundi",
   "location": "Ville / région",
+  "is_off_day": boolean,
   "coordinates": { "lat": number, "lng": number },
   "weather": { "temperature_c": number, "emoji": string, "description": string },
   "morning":   { "title": string, "description": string },
@@ -281,6 +288,7 @@ Schéma JSON STRICT :
       "date": "YYYY-MM-DD",
       "weekday": "lundi",
       "location": "Ville / région du jour",
+      "is_off_day": boolean,
       "anchor_theme": "1 phrase qui résume la journée",
       "end_location": "lieu d'arrivée en fin de journée (pour cohérence avec j+1)",
       "coordinates": { "lat": number, "lng": number }
