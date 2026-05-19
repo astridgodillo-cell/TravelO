@@ -1,0 +1,37 @@
+name: Deploy Supabase Edge Functions
+
+# Déploie automatiquement les Edge Functions à chaque push sur main
+# qui touche un fichier dans supabase/functions/
+#
+# Setup requis (une seule fois) :
+# 1. Générer un Personal Access Token sur https://supabase.com/dashboard/account/tokens
+# 2. Sur GitHub, dans Settings → Secrets and variables → Actions, ajouter :
+#    - SUPABASE_ACCESS_TOKEN  (le token créé)
+#    - SUPABASE_PROJECT_REF   (fccihzezneramexfiffz)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/functions/**'
+  # Permet de re-déployer manuellement depuis l'onglet "Actions" si besoin
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Deploy generate-itinerary
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          supabase functions deploy generate-itinerary \
+            --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
