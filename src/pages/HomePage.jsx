@@ -69,7 +69,7 @@ export default function HomePage() {
             </p>
           )}
 
-          <div className="mt-8 flex justify-center gap-3 flex-wrap">
+          <div className="mt-8 flex flex-col sm:flex-row sm:justify-center items-stretch sm:items-center gap-2 sm:gap-3">
             {primaryCta}
             {secondaryCta}
           </div>

@@ -361,7 +361,7 @@ export default function PreferencesForm({ onSubmit, loading }) {
                 key={t.id}
                 type="button"
                 onClick={() => update('tripType', t.id)}
-                className={`rounded-full border px-4 py-2 text-sm transition-colors ${
+                className={`rounded-full border px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm transition-colors ${
                   active
                     ? 'border-brand-600 bg-brand-600 text-white'
                     : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
@@ -425,7 +425,7 @@ export default function PreferencesForm({ onSubmit, loading }) {
                       key={vt.id}
                       type="button"
                       onClick={() => pickVehicleType(vt.id)}
-                      className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
+                      className={`rounded-full border px-2.5 py-1 sm:px-3 sm:py-1.5 text-[11px] sm:text-sm transition-colors ${
                         active
                           ? 'border-brand-600 bg-brand-600 text-white'
                           : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
@@ -580,7 +580,7 @@ export default function PreferencesForm({ onSubmit, loading }) {
                 key={a.id}
                 type="button"
                 onClick={() => toggle('specificActivities', a.id)}
-                className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
+                className={`rounded-full border px-2.5 py-1 sm:px-3 sm:py-1.5 text-[11px] sm:text-sm transition-colors ${
                   active
                     ? 'border-brand-600 bg-brand-600 text-white'
                     : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
@@ -605,7 +605,7 @@ export default function PreferencesForm({ onSubmit, loading }) {
                 key={opt}
                 type="button"
                 onClick={() => toggle('nightStayPreferences', opt)}
-                className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
+                className={`rounded-full border px-2.5 py-1 sm:px-3 sm:py-1.5 text-[11px] sm:text-sm transition-colors ${
                   active
                     ? 'border-brand-600 bg-brand-600 text-white'
                     : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100'

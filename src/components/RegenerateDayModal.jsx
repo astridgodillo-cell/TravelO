@@ -21,14 +21,14 @@ export default function RegenerateDayModal({ open, day, onClose, onSubmit, loadi
   }
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/50 p-4">
-      <div className="w-full max-w-lg bg-white rounded-xl shadow-xl p-6 space-y-4">
+    <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-slate-900/50 p-3 sm:p-4 overflow-y-auto">
+      <div className="w-full max-w-lg bg-white rounded-xl shadow-xl p-4 sm:p-6 space-y-4 my-4 sm:my-0">
         <div className="flex items-start justify-between gap-3">
-          <div>
-            <h3 className="text-lg font-semibold text-slate-900">
+          <div className="min-w-0">
+            <h3 className="text-base sm:text-lg font-semibold text-slate-900 break-words">
               Régénérer {day?.label} — {day?.location}
             </h3>
-            <p className="text-sm text-slate-500">
+            <p className="text-xs sm:text-sm text-slate-500 mt-1">
               Décrivez ce que vous souhaitez changer ; nous réécrivons juste cette
               journée en gardant la cohérence avec le reste du voyage.
             </p>
@@ -36,7 +36,7 @@ export default function RegenerateDayModal({ open, day, onClose, onSubmit, loadi
           <button
             onClick={onClose}
             disabled={loading}
-            className="text-slate-400 hover:text-slate-700 text-xl leading-none"
+            className="text-slate-400 hover:text-slate-700 text-2xl leading-none shrink-0"
             aria-label="Fermer"
           >
             ×
@@ -59,26 +59,26 @@ export default function RegenerateDayModal({ open, day, onClose, onSubmit, loadi
                 key={s}
                 type="button"
                 onClick={() => setInstructions(s)}
-                className="text-xs rounded-full border border-slate-200 px-3 py-1 text-slate-600 hover:bg-slate-100"
+                className="text-[11px] sm:text-xs rounded-full border border-slate-200 px-2.5 sm:px-3 py-1 text-slate-600 hover:bg-slate-100"
               >
                 {s}
               </button>
             ))}
           </div>
 
-          <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 pt-2 border-t border-slate-100">
             <button
               type="button"
               onClick={onClose}
               disabled={loading}
-              className="btn-secondary"
+              className="btn-secondary w-full sm:w-auto"
             >
               Annuler
             </button>
             <button
               type="submit"
               disabled={loading || !instructions.trim()}
-              className="btn-primary"
+              className="btn-primary w-full sm:w-auto"
             >
               {loading ? 'Régénération…' : 'Régénérer cette journée'}
             </button>

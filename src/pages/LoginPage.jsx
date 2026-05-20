@@ -29,9 +29,9 @@ export default function LoginPage() {
 
         <GoogleAuthButton redirectPath={from} />
 
-        <div className="relative my-2 flex items-center gap-3 text-xs text-slate-400">
+        <div className="relative my-2 flex items-center gap-2 sm:gap-3 text-[11px] sm:text-xs text-slate-400">
           <div className="flex-1 border-t border-slate-200" />
-          ou avec votre email
+          <span className="whitespace-nowrap">ou avec votre email</span>
           <div className="flex-1 border-t border-slate-200" />
         </div>
 

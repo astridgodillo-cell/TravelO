@@ -136,7 +136,7 @@ export default function AdminPage() {
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-3">
           ⚙️ Backend LLM utilisé par tous les utilisateurs
         </h2>
-        <div className="grid sm:grid-cols-3 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
           {BACKEND_OPTIONS.map((b) => {
             const active = backend === b.id;
             return (
@@ -228,20 +228,22 @@ export default function AdminPage() {
       )}
 
       {/* Tabs */}
-      <nav className="flex flex-wrap gap-1 border-b border-slate-200">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`px-4 py-2 text-sm font-medium rounded-t-md border-b-2 transition-colors ${
-              tab === t.id
-                ? 'border-brand-600 text-brand-700'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
+      <nav className="-mx-4 sm:mx-0 overflow-x-auto scrollbar-hide">
+        <div className="flex gap-1 border-b border-slate-200 px-4 sm:px-0 sm:flex-wrap min-w-max sm:min-w-0">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-t-md border-b-2 transition-colors whitespace-nowrap shrink-0 ${
+                tab === t.id
+                  ? 'border-brand-600 text-brand-700'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
       </nav>
 
       {tab === 'users' && (
