@@ -503,42 +503,82 @@ Contraintes :
   ❌ "Panettone de Como"   ❌ "Formaggini di Tresenda"`;
 }
 
+const CATEGORY_BRIEF: Record<string, { label: string; brief: string; examples: string }> = {
+  incontournable: {
+    label: 'INCONTOURNABLES',
+    brief:
+      'les lieux qu\'on ne peut pas manquer, ceux qu\'on regrettera toute sa vie d\'avoir ratés. Les emblèmes absolus de la destination, ceux que tout le monde reconnaît mais qui méritent vraiment leur réputation.',
+    examples:
+      'monuments mythiques, panoramas légendaires, villes-symboles, sites classés UNESCO, plages emblématiques',
+  },
+  insolite: {
+    label: 'INSOLITES',
+    brief:
+      'des expériences originales, inattendues, qu\'on ne trouve pas dans les guides classiques mais qui marquent à vie. Le contraire d\'une visite touristique standard : on raconte ça en rentrant.',
+    examples:
+      'bains thermaux secrets, dîners chez l\'habitant, festivals locaux insolites, observation d\'un phénomène naturel, ateliers d\'artisans, hôtels improbables, restos sans menu, marchés nocturnes confidentiels, micro-musées passion',
+  },
+  'hors-sentiers': {
+    label: 'HORS DES SENTIERS BATTUS',
+    brief:
+      'les pépites que seuls les locaux connaissent. Villages confidentiels, vallées oubliées, sentiers déserts, lieux préservés du tourisme de masse. L\'authenticité brute, sans filtre, sans foule.',
+    examples:
+      'villages perchés à 800 habitants, criques accessibles uniquement à pied, lacs d\'altitude peu fréquentés, chemins muletiers oubliés, vallées rurales méconnues, ports de pêche authentiques',
+  },
+};
+
 function buildSuggestPlacesPrompt(
   destination: string,
   tripType: string,
   startDate: string,
   endDate: string,
   adults: number,
-  childrenAges: number[]
+  childrenAges: number[],
+  category: 'incontournable' | 'insolite' | 'hors-sentiers'
 ): string {
   const days = computeDays(startDate, endDate);
   const children = Array.isArray(childrenAges) && childrenAges.length
     ? `${childrenAges.length} enfant(s) (âges : ${childrenAges.join(', ')} ans)`
     : '0 enfant';
-  return `Tu es un expert voyage. L'utilisateur ne sait pas encore quoi visiter à "${destination}" et veut une SÉLECTION de lieux/expériences à découvrir, pour ensuite construire son itinéraire.
+  const c = CATEGORY_BRIEF[category];
 
-Contexte :
+  return `Tu es l'expert voyage TravelO. L'utilisateur ne sait pas encore quoi visiter à "${destination}". Tu vas lui proposer une SÉLECTION RICHE et VARIÉE de lieux dans UNE SEULE catégorie : ${c.label}.
+
+DÉFINITION DE LA CATÉGORIE :
+${c.brief}
+Exemples : ${c.examples}
+
+Contexte voyage :
 - Destination : ${destination}
-- Période : du ${startDate} au ${endDate} (${days} jours)
+- Période : du ${startDate} au ${endDate} (${days} jours sur place)
 - Mode de voyage : ${tripType}
 - Participants : ${adults} adulte(s), ${children}
 
-Renvoie UNE liste de 18 à 24 lieux/expériences couvrant 3 catégories, équilibrées (6 à 8 par catégorie) :
-- "incontournable" : les must-see de la destination, ceux qu'on regrette de ne pas avoir vus
-- "insolite" : expériences originales, inattendues, hors du commun (bains thermaux secrets, restos atypiques, festivals locaux, points de vue méconnus…)
-- "hors-sentiers" : pépites cachées, villages confidentiels, sentiers peu fréquentés, lieux que les locaux gardent pour eux
+OBJECTIF : 15 à 18 lieux ${c.label} de ${destination}, vraiment différents les uns des autres, qui donnent toutes envie de partir.
 
-Schéma JSON STRICT (renvoie UNIQUEMENT ce JSON, pas de texte autour) :
+STYLE D'ÉCRITURE — RÈGLE CRITIQUE :
+Tu écris dans le style d'un magazine de voyage haut de gamme (Condé Nast Traveller, Géo, Le Routard). Chaque description doit :
+- Faire APPEL AUX SENS : ce qu'on voit, entend, sent, goûte, ressent
+- Utiliser des détails CONCRETS et VISUELS (couleurs, textures, sons, lumière, ambiance)
+- Avoir une accroche qui DONNE ENVIE — pas de phrases plates comme "lieu très intéressant"
+- Faire 2 à 3 phrases (40-70 mots), denses, évocatrices, jamais génériques
+- Inclure un détail singulier qui ne s'invente pas (un moment précis, un produit local, une heure idéale, une vue particulière)
+
+EXEMPLE DU STYLE ATTENDU (à ne PAS copier, c'est juste pour le ton) :
+✅ "À l'aube, quand la brume du lac s'effiloche entre les pins, le toit pointu du sanctuaire émerge en silhouette noire. On entre pieds nus sur les tatamis chauds, l'odeur du cèdre se mêle à celle de l'encens. C'est l'heure où les moines récitent les sutras — un quart d'heure suspendu hors du temps."
+❌ "Un sanctuaire célèbre dans la forêt, idéal pour la méditation."
+
+Schéma JSON STRICT (renvoie UNIQUEMENT ce JSON, pas de texte autour, pas de markdown) :
 {
   "places": [
     {
-      "id": "slug-unique-en-minuscules-tirets",
+      "id": "slug-ascii-en-minuscules-tirets",
       "name": "Nom du lieu / de l'expérience",
-      "category": "incontournable" | "insolite" | "hors-sentiers",
+      "category": "${category}",
       "type": "ville" | "village" | "site" | "musée" | "plage" | "rando" | "parc" | "panorama" | "experience" | "gastronomie",
       "location": "Ville ou région où se trouve le lieu",
       "coordinates": { "lat": number, "lng": number },
-      "short_description": "2 phrases concrètes et évocatrices qui donnent envie d'y aller, dans le style d'un magazine de voyage",
+      "short_description": "2-3 phrases évocatrices façon magazine voyage, 40-70 mots, faisant appel aux sens",
       "suggested_duration": "1h" | "2h" | "Demi-journée" | "1 jour" | "1-2 jours",
       "best_season": "Toute l'année" | "Printemps-été" | "Été" | "Automne" | "Hiver" | "Avril-octobre",
       "photo_query": "expression COURTE (2-4 mots) optimisée pour trouver une photo sur Unsplash/Pexels"
@@ -547,14 +587,15 @@ Schéma JSON STRICT (renvoie UNIQUEMENT ce JSON, pas de texte autour) :
 }
 
 Contraintes :
-- 18 à 24 lieux au total, vraiment représentatifs de ${destination}
-- Adapter au mode de voyage "${tripType}" (ex: vélo → privilégier lieux accessibles à vélo ; van/CC → bivouacs, aires nature ; avion+citybreak → quartiers et lieux urbains)
-- Adapter à ${days} jours sur place : ne propose pas 20 trucs si seulement 4 jours, propose 10-12 ciblés ; si 14+ jours, monte à 22-24
-- ${childrenAges?.length ? 'Famille avec enfants : inclure quelques lieux family-friendly' : ''}
-- Pas de doublons, pas de lieux trop génériques type "centre-ville"
-- coordinates obligatoire et réaliste pour chaque lieu (utilise tes connaissances géographiques)
-- photo_query : nom du lieu en 2-4 mots SANS préposition (ex: "Cap Fréhel Bretagne", "Bains Szechenyi Budapest"), pour qu'Unsplash trouve une photo du lieu lui-même
-- id : slug ASCII en minuscules, ex: "cap-frehel", "bains-szechenyi"`;
+- 15 à 18 lieux, TOUS dans la catégorie "${category}" (ne mélange pas)
+- Varier les TYPES : ne propose pas 12 musées, mélange paysages, expériences, sites, gastronomie, panoramas, etc.
+- Géographiquement RÉPARTIS sur ${destination} — pas tous dans la même ville
+- Adapter au mode de voyage "${tripType}" : vélo → accessible vélo ; van/CC → nature et bivouacs ; citybreak → urbain ; trek → randos
+- ${childrenAges?.length ? `Avec enfants (${childrenAges.join(', ')} ans) : inclure 2-3 lieux clairement family-friendly` : 'Sans enfants : tu peux pousser sur des lieux plus pointus ou physiques'}
+- Pas de doublons, pas de "centre-ville de X" générique
+- coordinates obligatoire et précis (utilise tes connaissances géographiques)
+- photo_query : 2-4 mots, nom du lieu sans préposition (ex: "Kinkaku-ji Kyoto", "Mont Fuji Kawaguchiko"), pour qu'Unsplash trouve une photo du LIEU lui-même
+- id : slug ASCII unique en minuscules, ex: "kinkaku-ji-kyoto"`;
 }
 
 function buildRegenerateActivityPrompt(
@@ -1263,6 +1304,7 @@ Deno.serve(async (req) => {
         endDate,
         adults,
         childrenAges,
+        category,
       } = body;
       if (!destination || !startDate || !endDate) {
         return jsonResponse(
@@ -1270,15 +1312,21 @@ Deno.serve(async (req) => {
           400
         );
       }
+      const cat = ['incontournable', 'insolite', 'hors-sentiers'].includes(
+        category
+      )
+        ? category
+        : 'incontournable';
       const prompt = buildSuggestPlacesPrompt(
         destination,
         tripType || 'itinerant',
         startDate,
         endDate,
         adults || 2,
-        childrenAges || []
+        childrenAges || [],
+        cat
       );
-      // Budget large : 18-24 lieux avec descriptions ~150 tokens chacun → ~4-5k tokens
+      // Budget large : 15-18 lieux avec descriptions riches ~200 tokens chacun → ~3-4k tokens
       const { text, usage, modelUsed } = await callMain(prompt, 8000);
       const parsed = await parseOrRepair(text, callMainSafe);
       return jsonResponse({

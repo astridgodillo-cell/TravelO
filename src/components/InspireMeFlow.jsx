@@ -65,12 +65,16 @@ function computeTotalDays(start, end) {
   return Math.round((e - s) / 86400000) + 1;
 }
 
+const INITIAL_VISIBLE_PER_CATEGORY = 9;
+
 export default function InspireMeFlow({ onSubmit, loading }) {
   const [phase, setPhase] = useState('form');
   const [form, setForm] = useState(DEFAULT_FORM);
   const [places, setPlaces] = useState([]);
+  const [readyCategories, setReadyCategories] = useState(new Set());
   const [selected, setSelected] = useState(new Set());
   const [photoMap, setPhotoMap] = useState({});
+  const [expanded, setExpanded] = useState(new Set());
   const [error, setError] = useState(null);
 
   const totalDays = computeTotalDays(form.startDate, form.endDate);
@@ -108,51 +112,62 @@ export default function InspireMeFlow({ onSubmit, loading }) {
       return;
     }
     setError(null);
-    setPhase('fetching');
+    setPlaces([]);
+    setReadyCategories(new Set());
+    setSelected(new Set());
+    setPhotoMap({});
+    setExpanded(new Set());
+    setPhase('selecting');
     try {
-      const list = await suggestPlaces({
+      await suggestPlaces({
         destination: form.destination,
         tripType: form.tripType,
         startDate: form.startDate,
         endDate: form.endDate,
         adults: form.adults,
         childrenAges: form.childrenAges,
+        // Chaque catégorie s'affiche dès qu'elle est prête (streaming)
+        onCategoryReady: (category, newPlaces) => {
+          setPlaces((prev) => [...prev, ...newPlaces]);
+          setReadyCategories((prev) => new Set(prev).add(category));
+          // Photos en parallèle, sans bloquer l'affichage
+          loadPhotosFor(newPlaces);
+        },
       });
-      setPlaces(list);
-      setSelected(new Set());
-      setPhase('selecting');
     } catch (err) {
       setError(err.message || 'Erreur lors de la recherche de lieux.');
       setPhase('form');
     }
   }
 
-  useEffect(() => {
-    if (phase !== 'selecting' || places.length === 0) return;
-    let cancelled = false;
-    async function load() {
-      const entries = await Promise.all(
-        places.map(async (p) => {
-          const query = p.photo_query || `${p.name} ${p.location || ''}`.trim();
-          const photos = await fetchPhotosFor(query, 1);
-          const photo = photos?.[0];
-          const url =
-            photo?.src?.medium ||
-            photo?.src?.large ||
-            photo?.src?.small ||
-            null;
-          return [p.id, url];
-        })
-      );
-      if (!cancelled) {
-        setPhotoMap(Object.fromEntries(entries));
-      }
-    }
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [phase, places]);
+  async function loadPhotosFor(list) {
+    const entries = await Promise.all(
+      list.map(async (p) => {
+        const query = p.photo_query || `${p.name} ${p.location || ''}`.trim();
+        const photos = await fetchPhotosFor(query, 1);
+        const photo = photos?.[0];
+        const url =
+          photo?.src?.medium ||
+          photo?.src?.large ||
+          photo?.src?.small ||
+          null;
+        return [p.id, url];
+      })
+    );
+    setPhotoMap((prev) => ({
+      ...prev,
+      ...Object.fromEntries(entries),
+    }));
+  }
+
+  function toggleExpand(catId) {
+    setExpanded((s) => {
+      const next = new Set(s);
+      if (next.has(catId)) next.delete(catId);
+      else next.add(catId);
+      return next;
+    });
+  }
 
   function toggleSelect(id) {
     setSelected((s) => {
@@ -166,8 +181,10 @@ export default function InspireMeFlow({ onSubmit, loading }) {
   function backToForm() {
     setPhase('form');
     setPlaces([]);
+    setReadyCategories(new Set());
     setSelected(new Set());
     setPhotoMap({});
+    setExpanded(new Set());
   }
 
   function buildPreferences() {
@@ -393,23 +410,9 @@ export default function InspireMeFlow({ onSubmit, loading }) {
     );
   }
 
-  // ─────────── PHASE FETCHING ───────────
-  if (phase === 'fetching') {
-    return (
-      <div className="card text-center py-16 space-y-4">
-        <div className="mx-auto h-12 w-12 rounded-full border-4 border-brand-200 border-t-brand-600 animate-spin" />
-        <h2 className="text-lg font-semibold text-slate-900">
-          L'IA explore {form.destination}…
-        </h2>
-        <p className="text-slate-600 text-sm max-w-md mx-auto">
-          On rassemble pour vous une sélection d'incontournables,
-          d'insolites et de pépites cachées. ~15 secondes.
-        </p>
-      </div>
-    );
-  }
-
   // ─────────── PHASE SELECTING ───────────
+  const allReady = readyCategories.size === CATEGORIES.length;
+
   return (
     <div className="space-y-6">
       <div className="card space-y-2">
@@ -419,8 +422,19 @@ export default function InspireMeFlow({ onSubmit, loading }) {
               Que voulez-vous voir à {form.destination} ?
             </h2>
             <p className="text-sm text-slate-500 mt-1">
-              Cliquez pour sélectionner les lieux qui vous tentent.
-              L'itinéraire sera construit autour de vos choix.
+              {allReady ? (
+                <>
+                  {places.length} lieux suggérés. Cliquez pour sélectionner
+                  ce qui vous tente — l'itinéraire sera construit autour de
+                  vos choix.
+                </>
+              ) : (
+                <>
+                  L'IA explore {form.destination} en 3 axes en parallèle…
+                  ({readyCategories.size}/{CATEGORIES.length} catégories
+                  prêtes — vous pouvez déjà sélectionner ce qui est affiché)
+                </>
+              )}
             </p>
           </div>
           <button
@@ -435,28 +449,69 @@ export default function InspireMeFlow({ onSubmit, loading }) {
 
       {CATEGORIES.map((cat) => {
         const list = placesByCategory[cat.id] || [];
-        if (list.length === 0) return null;
+        const isReady = readyCategories.has(cat.id);
+        const isExpanded = expanded.has(cat.id);
+        const visibleCount = isExpanded
+          ? list.length
+          : Math.min(INITIAL_VISIBLE_PER_CATEGORY, list.length);
+        const visible = list.slice(0, visibleCount);
+        const hidden = list.length - visibleCount;
+
         return (
           <section key={cat.id} className="space-y-3">
-            <div className="flex items-baseline gap-3">
+            <div className="flex flex-wrap items-baseline gap-3">
               <h3
-                className={`text-lg font-semibold bg-gradient-to-r ${cat.color} bg-clip-text text-transparent`}
+                className={`text-xl font-semibold bg-gradient-to-r ${cat.color} bg-clip-text text-transparent`}
               >
                 {cat.emoji} {cat.label}
               </h3>
               <p className="text-xs text-slate-500">{cat.hint}</p>
+              {isReady && (
+                <span className="text-xs text-slate-400 ml-auto">
+                  {list.length} lieux
+                </span>
+              )}
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {list.map((place) => (
-                <PlaceCard
-                  key={place.id}
-                  place={place}
-                  photoUrl={photoMap[place.id]}
-                  selected={selected.has(place.id)}
-                  onToggle={() => toggleSelect(place.id)}
-                />
-              ))}
-            </div>
+
+            {!isReady && list.length === 0 ? (
+              <CategorySkeleton color={cat.color} />
+            ) : (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {visible.map((place) => (
+                    <PlaceCard
+                      key={place.id}
+                      place={place}
+                      photoUrl={photoMap[place.id]}
+                      selected={selected.has(place.id)}
+                      onToggle={() => toggleSelect(place.id)}
+                    />
+                  ))}
+                </div>
+                {hidden > 0 && (
+                  <div className="flex justify-center">
+                    <button
+                      type="button"
+                      onClick={() => toggleExpand(cat.id)}
+                      className="btn-secondary text-sm"
+                    >
+                      Voir {hidden} lieu{hidden > 1 ? 'x' : ''} de plus ↓
+                    </button>
+                  </div>
+                )}
+                {isExpanded && list.length > INITIAL_VISIBLE_PER_CATEGORY && (
+                  <div className="flex justify-center">
+                    <button
+                      type="button"
+                      onClick={() => toggleExpand(cat.id)}
+                      className="text-sm text-slate-500 hover:text-slate-700 hover:underline"
+                    >
+                      Réduire ↑
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
           </section>
         );
       })}
@@ -487,18 +542,47 @@ export default function InspireMeFlow({ onSubmit, loading }) {
   );
 }
 
+function CategorySkeleton({ color }) {
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 text-sm text-slate-500">
+        <div
+          className={`h-4 w-4 rounded-full bg-gradient-to-r ${color} animate-pulse`}
+        />
+        <span>L'IA rédige les descriptions…</span>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {[0, 1, 2].map((i) => (
+          <div
+            key={i}
+            className="overflow-hidden rounded-2xl border border-slate-200 bg-white"
+          >
+            <div className="h-48 bg-slate-100 animate-pulse" />
+            <div className="p-3 space-y-2">
+              <div className="h-4 w-3/4 bg-slate-100 rounded animate-pulse" />
+              <div className="h-3 w-1/2 bg-slate-100 rounded animate-pulse" />
+              <div className="h-3 w-full bg-slate-100 rounded animate-pulse" />
+              <div className="h-3 w-5/6 bg-slate-100 rounded animate-pulse" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function PlaceCard({ place, photoUrl, selected, onToggle }) {
   return (
     <button
       type="button"
       onClick={onToggle}
-      className={`text-left w-full overflow-hidden rounded-2xl border bg-white transition-all ${
+      className={`text-left w-full overflow-hidden rounded-2xl border bg-white transition-all flex flex-col ${
         selected
           ? 'border-brand-600 ring-2 ring-brand-500 shadow-glow'
           : 'border-slate-200 hover:border-slate-300 hover:shadow-md'
       }`}
     >
-      <div className="relative h-40 bg-slate-100">
+      <div className="relative h-48 bg-slate-100">
         {photoUrl ? (
           <img
             src={photoUrl}
@@ -507,32 +591,40 @@ function PlaceCard({ place, photoUrl, selected, onToggle }) {
             loading="lazy"
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-slate-300 text-3xl">
+          <div className="w-full h-full flex items-center justify-center text-slate-300 text-3xl animate-pulse">
             📷
           </div>
         )}
         {selected && (
-          <div className="absolute top-2 right-2 h-7 w-7 rounded-full bg-brand-600 text-white flex items-center justify-center text-sm shadow-pop">
+          <div className="absolute top-2 right-2 h-8 w-8 rounded-full bg-brand-600 text-white flex items-center justify-center text-base shadow-pop">
             ✓
           </div>
         )}
-      </div>
-      <div className="p-3 space-y-2">
-        <div className="flex items-start justify-between gap-2">
-          <h4 className="font-semibold text-slate-900 leading-tight">
+        <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/75 via-black/30 to-transparent pointer-events-none" />
+        <div className="absolute bottom-2 left-3 right-3 text-white">
+          <h4 className="font-semibold leading-tight drop-shadow text-base">
             {place.name}
           </h4>
+          {place.location && (
+            <p className="text-xs text-white/80 drop-shadow">
+              📍 {place.location}
+            </p>
+          )}
         </div>
-        {place.location && (
-          <p className="text-xs text-slate-500">📍 {place.location}</p>
-        )}
-        <p className="text-sm text-slate-600 line-clamp-3">
+      </div>
+      <div className="p-4 space-y-3 flex-1 flex flex-col">
+        <p className="text-sm text-slate-700 leading-relaxed line-clamp-5 flex-1">
           {place.short_description}
         </p>
-        <div className="flex flex-wrap gap-1 pt-1">
+        <div className="flex flex-wrap gap-1.5 pt-1 border-t border-slate-100">
           {place.suggested_duration && (
-            <span className="chip bg-slate-100 text-slate-600">
+            <span className="chip bg-slate-100 text-slate-700">
               ⏱ {place.suggested_duration}
+            </span>
+          )}
+          {place.best_season && place.best_season !== 'Toute l\'année' && (
+            <span className="chip bg-amber-50 text-amber-700">
+              {place.best_season}
             </span>
           )}
           {place.type && (

@@ -278,6 +278,10 @@ export async function generateItinerary(preferences, onProgress) {
   return itinerary;
 }
 
+// 3 catégories appelées en PARALLÈLE pour obtenir ~45-50 lieux au total
+// (15-18 par catégorie) avec des descriptions évocatrices.
+const PLACE_CATEGORIES = ['incontournable', 'insolite', 'hors-sentiers'];
+
 export async function suggestPlaces({
   destination,
   tripType,
@@ -285,20 +289,37 @@ export async function suggestPlaces({
   endDate,
   adults,
   childrenAges,
+  onCategoryReady,
 }) {
-  const data = await invoke({
-    mode: 'suggest-places',
-    destination,
-    tripType,
-    startDate,
-    endDate,
-    adults,
-    childrenAges,
-  });
-  if (!Array.isArray(data?.places)) {
-    throw new Error('Réponse vide : aucun lieu suggéré.');
+  const results = await Promise.all(
+    PLACE_CATEGORIES.map(async (category) => {
+      try {
+        const data = await invoke({
+          mode: 'suggest-places',
+          destination,
+          tripType,
+          startDate,
+          endDate,
+          adults,
+          childrenAges,
+          category,
+        });
+        const places = Array.isArray(data?.places) ? data.places : [];
+        // Force la catégorie au cas où le LLM se trompe
+        const normalized = places.map((p) => ({ ...p, category }));
+        onCategoryReady?.(category, normalized);
+        return normalized;
+      } catch (err) {
+        console.warn(`[suggest-places] ${category} a échoué`, err);
+        return [];
+      }
+    })
+  );
+  const all = results.flat();
+  if (all.length === 0) {
+    throw new Error('Aucun lieu n\'a pu être suggéré. Réessayez.');
   }
-  return data.places;
+  return all;
 }
 
 export async function replanFromDay(itinerary, fromDayIndex, instructions) {
