@@ -261,6 +261,7 @@ const FULL_DAY_SCHEMA = `{
   "date": "YYYY-MM-DD",
   "weekday": "lundi",
   "location": "Ville / région",
+  "day_title": "Titre accrocheur de la journée entière, 5 à 10 mots, évocateur style magazine voyage (ex: 'Kyoto poétique : du Pavillon d'Or au chemin des philosophes')",
   "is_off_day": boolean,
   "coordinates": { "lat": number, "lng": number },
   "weather": { "temperature_c": number, "emoji": string, "description": string },
@@ -343,6 +344,7 @@ ${FULL_SCHEMA}
 Contraintes :
 - days contient EXACTEMENT duration_days entrées.
 - coordinates obligatoire chaque jour.
+- day_title obligatoire pour CHAQUE jour : 5-10 mots, accrocheur, résume la journée entière (pas juste le matin). Style magazine voyage. Évite "Visite de X" et autres tournures plates. Préfère un titre qui mêle lieu + ambiance/promesse. Ex : "Kyoto poétique : du Pavillon d'Or au chemin des philosophes" / "Au cœur des Alpes japonaises en Shinkansen" / "Bains thermaux et lanternes à Kanazawa".
 - emoji météo : ☀️ 🌤️ ⛅ 🌧️ ❄️ 🌫️ 🌩️
 - day_total_eur = trips + accommodation + activities + meals + service_stops du jour.
 - grand_total_eur = somme des day_total_eur.
@@ -445,6 +447,7 @@ ${FULL_DAY_SCHEMA}
 Contraintes :
 - Garde EXACTEMENT le label, la date, le weekday et le location indiqués.
 - coordinates obligatoire (utilise les coordonnées du plan ou affine).
+- day_title obligatoire : 5-10 mots, accrocheur style magazine voyage, qui résume la JOURNÉE ENTIÈRE (pas juste le matin). Ex : "Kyoto poétique : du Pavillon d'Or au chemin des philosophes".
 - day_total_eur = somme trips + accommodation + activities + meals + service_stops.`;
 }
 

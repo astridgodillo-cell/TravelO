@@ -346,18 +346,50 @@ function Planning({
   canRegenerate,
   canEditActivities,
 }) {
+  // Tous les jours fermés par défaut : on voit la liste d'un coup d'œil
+  // et on déplie au besoin.
+  const [expandedDays, setExpandedDays] = useState(() => new Set());
+
   if (!days?.length) return null;
+
+  const allExpanded = expandedDays.size === days.length;
+
+  function toggleDay(i) {
+    setExpandedDays((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    if (allExpanded) setExpandedDays(new Set());
+    else setExpandedDays(new Set(days.map((_, i) => i)));
+  }
+
   return (
     <section className="space-y-4">
-      <h2 className="text-xl font-semibold text-slate-900 print:break-before-page">
-        Programme jour par jour
-      </h2>
+      <div className="flex flex-wrap items-baseline justify-between gap-3 print:block">
+        <h2 className="text-xl font-semibold text-slate-900 print:break-before-page">
+          Programme jour par jour
+        </h2>
+        <button
+          type="button"
+          onClick={toggleAll}
+          className="text-sm text-brand-700 hover:underline print:hidden"
+        >
+          {allExpanded ? '↑ Tout replier' : '↓ Tout déplier'}
+        </button>
+      </div>
       {days.map((d, i) => (
         <DayCard
           key={`${d.label}-${i}`}
           day={d}
           dayIndex={i}
           allDays={days}
+          expanded={expandedDays.has(i)}
+          onToggleExpand={() => toggleDay(i)}
           adults={adults}
           childrenCount={childrenCount}
           isVanTrip={isVanTrip}
@@ -381,6 +413,8 @@ function DayCard({
   day,
   dayIndex,
   allDays,
+  expanded,
+  onToggleExpand,
   adults,
   childrenCount,
   isVanTrip,
@@ -393,6 +427,10 @@ function DayCard({
   canRegenerate,
   canEditActivities,
 }) {
+  // Fallback titre accrocheur : day_title (nouveau schéma) → titre du matin
+  // (pour les anciens itinéraires sans day_title)
+  const dayTitle =
+    day.day_title || day.morning?.title || `Journée à ${day.location}`;
   const accomLink = bestAccommodationLink(day.accommodation, {
     location: day.location,
     checkin: day.date,
@@ -403,8 +441,20 @@ function DayCard({
 
   return (
     <article className="card print:break-inside-avoid print:shadow-none print:border-slate-300 animate-fade-up">
-      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 pb-4">
-        <div className="flex items-start gap-3 sm:gap-4 min-w-0">
+      <header
+        onClick={onToggleExpand}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onToggleExpand?.();
+          }
+        }}
+        aria-expanded={!!expanded}
+        className="flex flex-wrap items-start justify-between gap-3 cursor-pointer select-none -m-2 p-2 rounded-xl hover:bg-slate-50 transition-colors print:cursor-auto print:hover:bg-transparent"
+      >
+        <div className="flex items-start gap-3 sm:gap-4 min-w-0 flex-1">
           <div
             className={`shrink-0 grid place-items-center h-14 w-14 rounded-2xl text-white font-bold text-lg shadow-pop print:bg-slate-900 ${
               day.is_off_day
@@ -414,7 +464,7 @@ function DayCard({
           >
             {day.is_off_day ? '🛋️' : day.label}
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <h3 className="text-lg sm:text-xl font-bold text-slate-900 leading-tight flex items-center flex-wrap gap-2">
               {day.location}
               {day.is_off_day && (
@@ -425,6 +475,9 @@ function DayCard({
             </h3>
             <p className="text-xs sm:text-sm text-slate-500 capitalize mt-0.5">
               {day.label} · {day.weekday} {day.date}
+            </p>
+            <p className="text-sm font-semibold text-slate-700 mt-1.5 leading-snug">
+              {dayTitle}
             </p>
             {day.weather && (
               <div className="text-xs text-slate-600 mt-1.5">
@@ -449,7 +502,10 @@ function DayCard({
             </div>
           </div>
           {canRegenerate && (
-            <div className="flex gap-1.5 print:hidden">
+            <div
+              className="flex gap-1.5 print:hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
               {onOpenModify && (
                 <button
                   onClick={onOpenModify}
@@ -482,6 +538,20 @@ function DayCard({
         />
       </div>
 
+      <DayPhotos location={day.location} max={5} />
+
+      <button
+        type="button"
+        onClick={onToggleExpand}
+        className="mt-4 w-full rounded-xl border border-dashed border-slate-200 bg-slate-50 hover:bg-slate-100 text-sm text-slate-600 py-2.5 transition-colors print:hidden"
+      >
+        {expanded
+          ? '↑ Replier les détails de la journée'
+          : '↓ Voir tous les détails de la journée'}
+      </button>
+
+      {expanded && (
+      <>
       <div className="mt-4 grid md:grid-cols-2 gap-3">
         <Moment label="Matin" m={day.morning} />
         <Moment label="Midi" m={day.noon} />
@@ -683,14 +753,14 @@ function DayCard({
         )}
       </div>
 
-      <DayPhotos location={day.location} max={5} />
-
       <DaySpecialties
         specialties={day.culinary_specialties}
         location={day.location}
         onFetch={onFetchSpecialties}
         loading={loadingSpecialties}
       />
+      </>
+      )}
     </article>
   );
 }
