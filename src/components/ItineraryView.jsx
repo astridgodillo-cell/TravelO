@@ -529,16 +529,15 @@ function DayCard({
         </div>
       </header>
 
-      <div className="mt-4">
+      <div className="mt-4 grid lg:grid-cols-2 gap-3">
         <DayMiniMap
           coordinates={day.coordinates}
           label={day.label}
           location={day.location}
           allDays={allDays}
         />
+        <DayPhotos location={day.location} max={5} aspect />
       </div>
-
-      <DayPhotos location={day.location} max={5} />
 
       <button
         type="button"

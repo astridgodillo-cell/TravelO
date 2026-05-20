@@ -30,8 +30,16 @@ export default function PhotoCarousel({ photos, heightClass = 'h-64 sm:h-80' }) 
 
   if (!photos?.length) return null;
 
+  // Quand le parent impose une hauteur (heightClass = h-full), l'outer
+  // doit aussi prendre h-full pour propager la dimension.
+  const fillHeight = heightClass.includes('h-full');
+
   return (
-    <div className="relative group rounded-2xl overflow-hidden bg-slate-100 animate-pop-in">
+    <div
+      className={`relative group rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 animate-pop-in ${
+        fillHeight ? 'h-full' : ''
+      }`}
+    >
       <div
         ref={ref}
         className={`flex overflow-x-auto snap-x snap-mandatory scrollbar-hide ${heightClass}`}

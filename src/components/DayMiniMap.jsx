@@ -140,54 +140,52 @@ export default function DayMiniMap({
   const currentKey = `${coordinates.lat.toFixed(3)},${coordinates.lng.toFixed(3)}`;
 
   return (
-    <div className="flex justify-center print:hidden">
-      <div
-        ref={containerRef}
-        className="rounded-xl overflow-hidden border border-slate-200 bg-slate-100 w-full max-w-lg"
-        style={{ aspectRatio: '4 / 3' }}
-        aria-label={`Carte : ${location || ''}`}
-      >
-        {visible ? (
-          <MapContainer
-            center={[coordinates.lat, coordinates.lng]}
-            zoom={5}
-            scrollWheelZoom={false}
-            dragging={false}
-            doubleClickZoom={false}
-            touchZoom={false}
-            zoomControl={false}
-            attributionControl={false}
-            style={{ height: '100%', width: '100%' }}
-          >
-            <FitToBounds points={points} />
-            <TileLayer url={getTileUrl()} />
-            {/* Autres jours en petits points gris (contexte) */}
-            {points.map((p, i) => {
-              const key = `${p.lat.toFixed(3)},${p.lng.toFixed(3)}`;
-              if (key === currentKey) return null;
-              return (
-                <Marker
-                  key={`dot-${i}`}
-                  position={[p.lat, p.lng]}
-                  icon={smallDot()}
-                  interactive={false}
-                />
-              );
-            })}
-            {/* Jour courant en gros marker (rendu en dernier pour être au-dessus) */}
-            <Marker
-              position={[coordinates.lat, coordinates.lng]}
-              icon={bigPin(label)}
-              interactive={false}
-              zIndexOffset={1000}
-            />
-          </MapContainer>
-        ) : (
-          <div className="w-full h-full flex items-center justify-center text-slate-400 text-xs">
-            🗺️
-          </div>
-        )}
-      </div>
+    <div
+      ref={containerRef}
+      className="rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 w-full print:hidden relative"
+      style={{ aspectRatio: '4 / 3' }}
+      aria-label={`Carte : ${location || ''}`}
+    >
+      {visible ? (
+        <MapContainer
+          center={[coordinates.lat, coordinates.lng]}
+          zoom={5}
+          scrollWheelZoom={false}
+          dragging={true}
+          doubleClickZoom={true}
+          touchZoom={true}
+          zoomControl={true}
+          attributionControl={false}
+          style={{ height: '100%', width: '100%' }}
+        >
+          <FitToBounds points={points} />
+          <TileLayer url={getTileUrl()} />
+          {/* Autres jours en petits points gris (contexte) */}
+          {points.map((p, i) => {
+            const key = `${p.lat.toFixed(3)},${p.lng.toFixed(3)}`;
+            if (key === currentKey) return null;
+            return (
+              <Marker
+                key={`dot-${i}`}
+                position={[p.lat, p.lng]}
+                icon={smallDot()}
+                interactive={false}
+              />
+            );
+          })}
+          {/* Jour courant en gros marker (rendu en dernier pour être au-dessus) */}
+          <Marker
+            position={[coordinates.lat, coordinates.lng]}
+            icon={bigPin(label)}
+            interactive={false}
+            zIndexOffset={1000}
+          />
+        </MapContainer>
+      ) : (
+        <div className="w-full h-full flex items-center justify-center text-slate-400 text-xs">
+          🗺️
+        </div>
+      )}
     </div>
   );
 }
