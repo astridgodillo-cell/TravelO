@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { listPackingLists } from '../lib/supabase';
 import { costEur } from '../lib/ai';
 import RouteMap from './RouteMap';
+import DayMiniMap from './DayMiniMap';
 import RegenerateDayModal from './RegenerateDayModal';
 import ModifyDayModal from './ModifyDayModal';
 import EditActivityModal from './EditActivityModal';
@@ -469,6 +470,14 @@ function DayCard({
           )}
         </div>
       </header>
+
+      <div className="mt-4">
+        <DayMiniMap
+          coordinates={day.coordinates}
+          label={day.label}
+          location={day.location}
+        />
+      </div>
 
       <div className="mt-4 grid md:grid-cols-2 gap-3">
         <Moment label="Matin" m={day.morning} />
