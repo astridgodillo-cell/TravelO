@@ -41,12 +41,15 @@ export default function TemplateDetailPage() {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-purple-200 bg-purple-50 p-4 text-sm text-purple-900 flex flex-wrap items-center justify-between gap-3 print:hidden">
+      <div className="rounded-lg border border-purple-200 bg-purple-50 p-4 text-sm text-purple-900 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 print:hidden">
         <div>
           <strong>📘 Vous consultez un modèle d'itinéraire.</strong> Inspirez-vous
           de ce voyage pour créer le vôtre.
         </div>
-        <Link to="/nouveau" className="btn-primary">
+        <Link
+          to="/nouveau"
+          className="btn-primary w-full sm:w-auto shrink-0 text-center"
+        >
           Créer mon itinéraire
         </Link>
       </div>

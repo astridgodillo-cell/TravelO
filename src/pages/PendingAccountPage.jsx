@@ -67,11 +67,11 @@ export default function PendingAccountPage() {
         </div>
       </div>
 
-      <div className="flex justify-between gap-2">
-        <button onClick={refreshProfile} className="btn-secondary">
+      <div className="flex flex-col sm:flex-row sm:justify-between gap-2">
+        <button onClick={refreshProfile} className="btn-secondary w-full sm:w-auto">
           Vérifier à nouveau
         </button>
-        <button onClick={handleSignOut} className="btn-secondary">
+        <button onClick={handleSignOut} className="btn-secondary w-full sm:w-auto">
           Se déconnecter
         </button>
       </div>

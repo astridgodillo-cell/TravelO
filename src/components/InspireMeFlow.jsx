@@ -595,8 +595,8 @@ export default function InspireMeFlow({ onSubmit, loading }) {
       })}
 
       {/* Sticky bottom bar */}
-      <div className="sticky bottom-4 z-10">
-        <div className="card flex flex-wrap items-center justify-between gap-3 shadow-glow border-brand-200">
+      <div className="sticky bottom-2 sm:bottom-4 z-10">
+        <div className="card flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shadow-glow border-brand-200">
           <div className="text-sm text-slate-700">
             <span className="font-semibold text-brand-700">
               {totalSelected}
@@ -615,7 +615,7 @@ export default function InspireMeFlow({ onSubmit, loading }) {
             type="button"
             onClick={handleGenerate}
             disabled={loading || totalSelected === 0}
-            className="btn-pop text-base px-6 py-3"
+            className="btn-pop text-sm sm:text-base px-4 sm:px-6 py-2.5 sm:py-3 w-full sm:w-auto"
           >
             {loading
               ? 'Génération en cours…'

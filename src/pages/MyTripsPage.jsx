@@ -107,7 +107,7 @@ export default function MyTripsPage() {
       ) : (
         <>
           {/* Barre de sélection */}
-          <div className="card flex flex-wrap items-center justify-between gap-3 py-3">
+          <div className="card flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 py-3">
             <label className="flex items-center gap-2 cursor-pointer text-sm">
               <input
                 type="checkbox"
@@ -122,7 +122,7 @@ export default function MyTripsPage() {
               </span>
             </label>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {someSelected && (
                 <button
                   onClick={() => setSelected(new Set())}
@@ -141,7 +141,7 @@ export default function MyTripsPage() {
                   ? 'Suppression…'
                   : someSelected
                     ? `🗑️ Supprimer (${selected.size})`
-                    : '🗑️ Supprimer la sélection'}
+                    : '🗑️ Supprimer'}
               </button>
             </div>
           </div>

@@ -193,7 +193,8 @@ export default function RouteMap({ itinerary }) {
           center={center}
           zoom={6}
           scrollWheelZoom={false}
-          style={{ height: '500px', width: '100%' }}
+          className="h-[320px] sm:h-[420px] lg:h-[500px]"
+          style={{ width: '100%' }}
         >
           <FitToPoints points={points} />
           <TileLayer
@@ -289,9 +290,9 @@ function SegmentsRecap({ points, segments }) {
           return (
             <li
               key={i}
-              className="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-100 pb-1.5 last:border-0"
+              className="flex flex-col sm:flex-row sm:flex-wrap sm:items-baseline sm:justify-between gap-1 sm:gap-2 border-b border-slate-100 pb-1.5 last:border-0"
             >
-              <div className="text-slate-700">
+              <div className="text-slate-700 break-words">
                 <span className="font-medium">{p.label}</span>
                 <span className="text-slate-400 mx-1">→</span>
                 <span className="font-medium">{next.label}</span>
@@ -299,7 +300,7 @@ function SegmentsRecap({ points, segments }) {
                   {p.location} → {next.location}
                 </span>
               </div>
-              <div className="text-slate-600 text-xs">
+              <div className="text-slate-600 text-xs shrink-0">
                 {seg
                   ? `${seg.distance_km} km · ${formatHours(seg.duration_h)}`
                   : '—'}

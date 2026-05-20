@@ -233,13 +233,13 @@ export default function ItineraryView({
         </div>
       </header>
 
-      <nav className="print:hidden">
-        <ul className="flex flex-wrap gap-1 border-b border-slate-200">
+      <nav className="print:hidden -mx-4 sm:mx-0">
+        <ul className="flex gap-1 border-b border-slate-200 overflow-x-auto scrollbar-hide px-4 sm:px-0 sm:flex-wrap">
           {TABS.map((t) => (
-            <li key={t.id}>
+            <li key={t.id} className="shrink-0">
               <button
                 onClick={() => setTab(t.id)}
-                className={`px-4 py-2 text-sm font-medium rounded-t-md border-b-2 transition-colors ${
+                className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-t-md border-b-2 transition-colors whitespace-nowrap ${
                   tab === t.id
                     ? 'border-brand-600 text-brand-700'
                     : 'border-transparent text-slate-500 hover:text-slate-800'
@@ -502,11 +502,11 @@ function DayCard({
           }
         }}
         aria-expanded={!!expanded}
-        className="flex flex-wrap items-start justify-between gap-3 cursor-pointer select-none -m-2 p-2 rounded-xl hover:bg-slate-50 transition-colors print:cursor-auto print:hover:bg-transparent"
+        className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 cursor-pointer select-none -m-2 p-2 rounded-xl hover:bg-slate-50 transition-colors print:cursor-auto print:hover:bg-transparent"
       >
-        <div className="flex items-start gap-3 sm:gap-4 min-w-0 flex-1">
+        <div className="flex items-start gap-3 sm:gap-4 min-w-0 flex-1 w-full">
           <div
-            className={`shrink-0 grid place-items-center h-14 w-14 rounded-2xl text-white font-bold text-lg shadow-pop print:bg-slate-900 ${
+            className={`shrink-0 grid place-items-center h-12 w-12 sm:h-14 sm:w-14 rounded-2xl text-white font-bold text-base sm:text-lg shadow-pop print:bg-slate-900 ${
               day.is_off_day
                 ? 'bg-gradient-to-br from-emerald-500 to-teal-500'
                 : 'bg-day-gradient'
@@ -526,7 +526,7 @@ function DayCard({
             <p className="text-xs sm:text-sm text-slate-500 capitalize mt-0.5">
               {day.label} · {day.weekday} {day.date}
             </p>
-            <p className="text-sm font-semibold text-slate-700 mt-1.5 leading-snug">
+            <p className="text-sm font-semibold text-slate-700 mt-1.5 leading-snug break-words">
               {dayTitle}
             </p>
             {day.weather && (
@@ -542,12 +542,12 @@ function DayCard({
             )}
           </div>
         </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="text-right">
+        <div className="flex items-center justify-between sm:justify-end gap-3 flex-wrap w-full sm:w-auto sm:flex-shrink-0 border-t border-slate-100 pt-3 sm:border-t-0 sm:pt-0">
+          <div className="text-left sm:text-right">
             <div className="text-[10px] uppercase tracking-widest text-slate-400">
               Total jour
             </div>
-            <div className="text-xl font-bold text-slate-900 tabular-nums">
+            <div className="text-lg sm:text-xl font-bold text-slate-900 tabular-nums">
               {formatEur(day.day_total_eur)}
             </div>
           </div>
@@ -634,7 +634,7 @@ function DayCard({
                     {a.description && (
                       <p className="text-slate-600 mt-1">{a.description}</p>
                     )}
-                    <div className="print:hidden mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs items-center">
+                    <div className="print:hidden mt-2 flex flex-wrap gap-x-3 gap-y-1.5 text-xs items-center">
                       {isLikelyBookable(a) && (
                         <>
                           <a

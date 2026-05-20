@@ -148,19 +148,22 @@ export default function ItineraryDetailPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
-        <div>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 print:hidden">
+        <div className="min-w-0">
           <Link
             to="/mes-voyages"
             className="text-sm text-brand-700 hover:underline"
           >
             ← Mes voyages
           </Link>
-          <h1 className="text-2xl font-semibold text-slate-900">
+          <h1 className="text-xl sm:text-2xl font-semibold text-slate-900 break-words">
             {trip.title}
           </h1>
         </div>
-        <button onClick={() => window.print()} className="btn-secondary">
+        <button
+          onClick={() => window.print()}
+          className="btn-secondary w-full sm:w-auto shrink-0"
+        >
           Exporter en PDF
         </button>
       </div>

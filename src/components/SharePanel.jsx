@@ -67,14 +67,17 @@ export default function SharePanel({ itinerary, onUpdate }) {
       )}
 
       {isPublic && publicUrl && (
-        <div className="mt-3 flex items-center gap-2">
+        <div className="mt-3 flex flex-col sm:flex-row sm:items-center gap-2">
           <input
             readOnly
-            className="input flex-1 text-sm font-mono"
+            className="input flex-1 text-sm font-mono min-w-0"
             value={publicUrl}
             onClick={(e) => e.target.select()}
           />
-          <button onClick={copy} className="btn-secondary whitespace-nowrap">
+          <button
+            onClick={copy}
+            className="btn-secondary whitespace-nowrap w-full sm:w-auto shrink-0"
+          >
             {copied ? '✓ Copié' : 'Copier'}
           </button>
         </div>
