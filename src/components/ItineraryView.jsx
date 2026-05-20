@@ -357,6 +357,7 @@ function Planning({
           key={`${d.label}-${i}`}
           day={d}
           dayIndex={i}
+          allDays={days}
           adults={adults}
           childrenCount={childrenCount}
           isVanTrip={isVanTrip}
@@ -379,6 +380,7 @@ function Planning({
 function DayCard({
   day,
   dayIndex,
+  allDays,
   adults,
   childrenCount,
   isVanTrip,
@@ -476,6 +478,7 @@ function DayCard({
           coordinates={day.coordinates}
           label={day.label}
           location={day.location}
+          allDays={allDays}
         />
       </div>
 
