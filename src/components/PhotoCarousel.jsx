@@ -7,9 +7,19 @@ import { useEffect, useRef, useState } from 'react';
  * - dégradé sombre + crédit photo en overlay
  * - clique pour ouvrir la photo originale
  */
-export default function PhotoCarousel({ photos, heightClass = 'h-64 sm:h-80' }) {
+// Intervalle d'auto-défilement : 5 secondes par photo.
+// → assez long pour apprécier l'image (lire le crédit, observer les détails)
+// → assez court pour ne pas s'ennuyer et garder le rythme magazine voyage
+const AUTOPLAY_MS = 5000;
+
+export default function PhotoCarousel({
+  photos,
+  heightClass = 'h-64 sm:h-80',
+  autoplay = true,
+}) {
   const ref = useRef(null);
   const [current, setCurrent] = useState(0);
+  const [paused, setPaused] = useState(false);
 
   useEffect(() => {
     const el = ref.current;
@@ -21,6 +31,26 @@ export default function PhotoCarousel({ photos, heightClass = 'h-64 sm:h-80' }) 
     el.addEventListener('scroll', handler, { passive: true });
     return () => el.removeEventListener('scroll', handler);
   }, []);
+
+  // Respecte la préférence système "réduire les animations"
+  const reducedMotion =
+    typeof window !== 'undefined' &&
+    window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+  // Auto-défilement : avance d'une photo toutes les AUTOPLAY_MS,
+  // sauf si l'utilisateur survole le carrousel ou n'a qu'une seule photo.
+  useEffect(() => {
+    if (!autoplay || reducedMotion || !photos?.length || photos.length < 2)
+      return;
+    if (paused) return;
+    const el = ref.current;
+    if (!el) return;
+    const id = setInterval(() => {
+      const next = (current + 1) % photos.length;
+      el.scrollTo({ left: next * el.clientWidth, behavior: 'smooth' });
+    }, AUTOPLAY_MS);
+    return () => clearInterval(id);
+  }, [autoplay, reducedMotion, paused, current, photos]);
 
   function go(i) {
     const el = ref.current;
@@ -36,6 +66,10 @@ export default function PhotoCarousel({ photos, heightClass = 'h-64 sm:h-80' }) 
 
   return (
     <div
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onTouchStart={() => setPaused(true)}
+      onTouchEnd={() => setPaused(false)}
       className={`relative group rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 animate-pop-in ${
         fillHeight ? 'h-full' : ''
       }`}
