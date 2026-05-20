@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { MapContainer, TileLayer, Marker } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { getTileUrl } from '../lib/mapTiles';
 
 // Lazy-mount via IntersectionObserver : on n'instancie le composant Leaflet
 // que quand la carte est sur le point d'apparaître à l'écran. Sans ça,
@@ -86,7 +87,7 @@ export default function DayMiniMap({ coordinates, label, location }) {
           attributionControl={false}
           style={{ height: '100%', width: '100%' }}
         >
-          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+          <TileLayer url={getTileUrl()} />
           <Marker
             position={[c.lat, c.lng]}
             icon={pinIcon(label)}

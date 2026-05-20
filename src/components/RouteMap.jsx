@@ -9,6 +9,7 @@ import {
 } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { getTileUrl, getTileAttribution } from '../lib/mapTiles';
 
 function FitToPoints({ points }) {
   const map = useMap();
@@ -196,8 +197,8 @@ export default function RouteMap({ itinerary }) {
         >
           <FitToPoints points={points} />
           <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution={getTileAttribution()}
+            url={getTileUrl()}
           />
 
           {/* Tracé OSRM par segment */}
