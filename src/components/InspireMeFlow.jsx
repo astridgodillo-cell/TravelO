@@ -135,7 +135,13 @@ export default function InspireMeFlow({ onSubmit, loading }) {
         places.map(async (p) => {
           const query = p.photo_query || `${p.name} ${p.location || ''}`.trim();
           const photos = await fetchPhotosFor(query, 1);
-          return [p.id, photos?.[0]?.url || null];
+          const photo = photos?.[0];
+          const url =
+            photo?.src?.medium ||
+            photo?.src?.large ||
+            photo?.src?.small ||
+            null;
+          return [p.id, url];
         })
       );
       if (!cancelled) {
