@@ -1,8 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { fetchPhotosFor } from '../lib/photos';
 import PhotoCarousel from './PhotoCarousel';
 
-export default function DayPhotos({ location, max = 5, aspect = false }) {
+export default function DayPhotos({
+  location,
+  max = 5,
+  aspect = false,
+  photoOffset = 0,
+}) {
   const [photos, setPhotos] = useState(null);
 
   useEffect(() => {
@@ -16,6 +21,16 @@ export default function DayPhotos({ location, max = 5, aspect = false }) {
       active = false;
     };
   }, [location, max]);
+
+  // Rotation des photos en fonction de l'offset (nombre de fois où ce lieu
+  // est déjà apparu avant). Évite d'afficher la même photo en même position
+  // sur des jours consécutifs au même endroit.
+  const orderedPhotos = useMemo(() => {
+    if (!photos?.length || !photoOffset) return photos;
+    const n = photoOffset % photos.length;
+    if (n === 0) return photos;
+    return [...photos.slice(n), ...photos.slice(0, n)];
+  }, [photos, photoOffset]);
 
   // Mode aspect : wrapper en aspect-[4/3] pour s'aligner avec la mini-carte.
   // Mode classique : hauteur fixe (utilisation hors grille).
@@ -34,7 +49,7 @@ export default function DayPhotos({ location, max = 5, aspect = false }) {
         className="print:hidden w-full"
         style={{ aspectRatio: '4 / 3' }}
       >
-        <PhotoCarousel photos={photos} heightClass="h-full" />
+        <PhotoCarousel photos={orderedPhotos} heightClass="h-full" />
       </div>
     );
   }
@@ -47,7 +62,7 @@ export default function DayPhotos({ location, max = 5, aspect = false }) {
   if (!photos.length) return null;
   return (
     <div className="mt-4 print:hidden">
-      <PhotoCarousel photos={photos} />
+      <PhotoCarousel photos={orderedPhotos} />
     </div>
   );
 }

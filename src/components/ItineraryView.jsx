@@ -468,6 +468,19 @@ function DayCard({
   // 3. Sinon fallback minimal sur morning.title puis location
   const dayTitle =
     day.day_title || buildFallbackDayTitle(day) || `Journée à ${day.location}`;
+
+  // Si le même lieu apparaît sur plusieurs jours d'affilée, on décale
+  // l'ordre des photos pour ne pas montrer la même photo au même moment
+  // sur les jours consécutifs (évite la redondance visuelle).
+  const sameLocationBefore = Array.isArray(allDays)
+    ? allDays
+        .slice(0, dayIndex)
+        .filter(
+          (d) =>
+            (d?.location || '').toLowerCase().trim() ===
+            (day.location || '').toLowerCase().trim()
+        ).length
+    : 0;
   const accomLink = bestAccommodationLink(day.accommodation, {
     location: day.location,
     checkin: day.date,
@@ -573,7 +586,12 @@ function DayCard({
           location={day.location}
           allDays={allDays}
         />
-        <DayPhotos location={day.location} max={5} aspect />
+        <DayPhotos
+          location={day.location}
+          max={5}
+          aspect
+          photoOffset={sameLocationBefore}
+        />
       </div>
 
       <button
