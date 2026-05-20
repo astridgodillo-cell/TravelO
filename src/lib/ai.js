@@ -278,6 +278,29 @@ export async function generateItinerary(preferences, onProgress) {
   return itinerary;
 }
 
+export async function suggestPlaces({
+  destination,
+  tripType,
+  startDate,
+  endDate,
+  adults,
+  childrenAges,
+}) {
+  const data = await invoke({
+    mode: 'suggest-places',
+    destination,
+    tripType,
+    startDate,
+    endDate,
+    adults,
+    childrenAges,
+  });
+  if (!Array.isArray(data?.places)) {
+    throw new Error('Réponse vide : aucun lieu suggéré.');
+  }
+  return data.places;
+}
+
 export async function replanFromDay(itinerary, fromDayIndex, instructions) {
   const data = await invoke({
     mode: 'replan-from-day',

@@ -18,7 +18,10 @@ Ne jamais hardcoder ces valeurs dans le code. Toujours passer par les variables 
 
 Règles de workflow
 
-Branche principale : toujours travailler et pusher sur main sauf indication contraire explicite
+Branche principale : toujours travailler et pusher sur main, sans demander confirmation.
+  → À la fin de toute modification de code, je commit ET je push sur main automatiquement.
+  → Pas besoin que l'utilisateur dise "commit" ou "push" — c'est implicite.
+  → Exception unique : si l'utilisateur dit explicitement "ne pousse pas" ou "branche X".
 Migrations SQL : appliquées manuellement via le dashboard Supabase (pas de workflow GitHub automatisé)
 Avant tout changement majeur : créer une branche backup (git checkout -b backup/avant-[feature])
 

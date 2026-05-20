@@ -503,6 +503,60 @@ Contraintes :
   ❌ "Panettone de Como"   ❌ "Formaggini di Tresenda"`;
 }
 
+function buildSuggestPlacesPrompt(
+  destination: string,
+  tripType: string,
+  startDate: string,
+  endDate: string,
+  adults: number,
+  childrenAges: number[]
+): string {
+  const days = computeDays(startDate, endDate);
+  const children = Array.isArray(childrenAges) && childrenAges.length
+    ? `${childrenAges.length} enfant(s) (âges : ${childrenAges.join(', ')} ans)`
+    : '0 enfant';
+  return `Tu es un expert voyage. L'utilisateur ne sait pas encore quoi visiter à "${destination}" et veut une SÉLECTION de lieux/expériences à découvrir, pour ensuite construire son itinéraire.
+
+Contexte :
+- Destination : ${destination}
+- Période : du ${startDate} au ${endDate} (${days} jours)
+- Mode de voyage : ${tripType}
+- Participants : ${adults} adulte(s), ${children}
+
+Renvoie UNE liste de 18 à 24 lieux/expériences couvrant 3 catégories, équilibrées (6 à 8 par catégorie) :
+- "incontournable" : les must-see de la destination, ceux qu'on regrette de ne pas avoir vus
+- "insolite" : expériences originales, inattendues, hors du commun (bains thermaux secrets, restos atypiques, festivals locaux, points de vue méconnus…)
+- "hors-sentiers" : pépites cachées, villages confidentiels, sentiers peu fréquentés, lieux que les locaux gardent pour eux
+
+Schéma JSON STRICT (renvoie UNIQUEMENT ce JSON, pas de texte autour) :
+{
+  "places": [
+    {
+      "id": "slug-unique-en-minuscules-tirets",
+      "name": "Nom du lieu / de l'expérience",
+      "category": "incontournable" | "insolite" | "hors-sentiers",
+      "type": "ville" | "village" | "site" | "musée" | "plage" | "rando" | "parc" | "panorama" | "experience" | "gastronomie",
+      "location": "Ville ou région où se trouve le lieu",
+      "coordinates": { "lat": number, "lng": number },
+      "short_description": "2 phrases concrètes et évocatrices qui donnent envie d'y aller, dans le style d'un magazine de voyage",
+      "suggested_duration": "1h" | "2h" | "Demi-journée" | "1 jour" | "1-2 jours",
+      "best_season": "Toute l'année" | "Printemps-été" | "Été" | "Automne" | "Hiver" | "Avril-octobre",
+      "photo_query": "expression COURTE (2-4 mots) optimisée pour trouver une photo sur Unsplash/Pexels"
+    }
+  ]
+}
+
+Contraintes :
+- 18 à 24 lieux au total, vraiment représentatifs de ${destination}
+- Adapter au mode de voyage "${tripType}" (ex: vélo → privilégier lieux accessibles à vélo ; van/CC → bivouacs, aires nature ; avion+citybreak → quartiers et lieux urbains)
+- Adapter à ${days} jours sur place : ne propose pas 20 trucs si seulement 4 jours, propose 10-12 ciblés ; si 14+ jours, monte à 22-24
+- ${childrenAges?.length ? 'Famille avec enfants : inclure quelques lieux family-friendly' : ''}
+- Pas de doublons, pas de lieux trop génériques type "centre-ville"
+- coordinates obligatoire et réaliste pour chaque lieu (utilise tes connaissances géographiques)
+- photo_query : nom du lieu en 2-4 mots SANS préposition (ex: "Cap Fréhel Bretagne", "Bains Szechenyi Budapest"), pour qu'Unsplash trouve une photo du lieu lui-même
+- id : slug ASCII en minuscules, ex: "cap-frehel", "bains-szechenyi"`;
+}
+
 function buildRegenerateActivityPrompt(
   itinerary: any,
   dayIndex: number,
@@ -1196,6 +1250,39 @@ Deno.serve(async (req) => {
       const parsed = await parseOrRepair(text, callExpansionSafe);
       return jsonResponse({
         specialties: parsed?.specialties || [],
+        usage,
+        model: modelUsed,
+      });
+    }
+
+    if (mode === 'suggest-places') {
+      const {
+        destination,
+        tripType,
+        startDate,
+        endDate,
+        adults,
+        childrenAges,
+      } = body;
+      if (!destination || !startDate || !endDate) {
+        return jsonResponse(
+          { error: 'destination, startDate, endDate requis' },
+          400
+        );
+      }
+      const prompt = buildSuggestPlacesPrompt(
+        destination,
+        tripType || 'itinerant',
+        startDate,
+        endDate,
+        adults || 2,
+        childrenAges || []
+      );
+      // Budget large : 18-24 lieux avec descriptions ~150 tokens chacun → ~4-5k tokens
+      const { text, usage, modelUsed } = await callMain(prompt, 8000);
+      const parsed = await parseOrRepair(text, callMainSafe);
+      return jsonResponse({
+        places: parsed?.places || [],
         usage,
         model: modelUsed,
       });

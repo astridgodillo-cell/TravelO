@@ -1,12 +1,31 @@
 import { useState } from 'react';
 import PreferencesForm from '../components/PreferencesForm';
+import InspireMeFlow from '../components/InspireMeFlow';
 import GeneratingLoader from '../components/GeneratingLoader';
 import { generateItinerary } from '../lib/ai';
 import { saveItinerary } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
+const MODES = [
+  {
+    id: 'expert',
+    label: 'J\'ai mon plan en tête',
+    emoji: '🗺️',
+    description:
+      'Formulaire détaillé : vous précisez tout (étapes, activités, hébergement, budget…).',
+  },
+  {
+    id: 'inspire',
+    label: 'Inspire-moi',
+    emoji: '✨',
+    description:
+      'Vous tapez juste une destination. On vous propose des lieux à visiter, vous choisissez, on construit l\'itinéraire.',
+  },
+];
+
 export default function NewItineraryPage() {
+  const [mode, setMode] = useState('expert');
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(null);
   const [error, setError] = useState(null);
@@ -63,7 +82,45 @@ export default function NewItineraryPage() {
   return (
     <div className="space-y-6">
       {!loading && (
+        <div className="card">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {MODES.map((m) => {
+              const active = mode === m.id;
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => setMode(m.id)}
+                  className={`text-left rounded-xl border p-4 transition-all ${
+                    active
+                      ? 'border-brand-600 bg-brand-50 ring-2 ring-brand-500 shadow-glow'
+                      : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-md'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-2xl">{m.emoji}</span>
+                    <span
+                      className={`font-semibold ${
+                        active ? 'text-brand-700' : 'text-slate-900'
+                      }`}
+                    >
+                      {m.label}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-600">{m.description}</p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {!loading && mode === 'expert' && (
         <PreferencesForm onSubmit={handleGenerate} loading={loading} />
+      )}
+
+      {!loading && mode === 'inspire' && (
+        <InspireMeFlow onSubmit={handleGenerate} loading={loading} />
       )}
 
       {loading && <GeneratingLoader progress={progress} />}
