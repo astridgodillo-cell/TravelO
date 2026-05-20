@@ -1,36 +1,27 @@
 import { useEffect, useRef, useState } from 'react';
 
 /**
- * Carrousel swipable horizontal :
- * - scroll-snap CSS pour le swipe natif (mobile et trackpad)
+ * Carrousel avec fondu enchaîné (crossfade) :
+ * - photos empilées en absolute, opacity transition (~700 ms)
  * - dots + flèches sur desktop
+ * - swipe gauche/droite sur mobile via touchstart/touchend
  * - dégradé sombre + crédit photo en overlay
- * - clique pour ouvrir la photo originale
+ * - clic pour ouvrir la photo originale
  */
+
 // Intervalle d'auto-défilement : 5 secondes par photo.
-// → assez long pour apprécier l'image (lire le crédit, observer les détails)
-// → assez court pour ne pas s'ennuyer et garder le rythme magazine voyage
 const AUTOPLAY_MS = 5000;
+// Durée du fondu enchaîné : 700 ms (assez fluide, pas trop lent).
+const FADE_MS = 700;
 
 export default function PhotoCarousel({
   photos,
   heightClass = 'h-64 sm:h-80',
   autoplay = true,
 }) {
-  const ref = useRef(null);
   const [current, setCurrent] = useState(0);
   const [paused, setPaused] = useState(false);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const handler = () => {
-      const i = Math.round(el.scrollLeft / el.clientWidth);
-      setCurrent(i);
-    };
-    el.addEventListener('scroll', handler, { passive: true });
-    return () => el.removeEventListener('scroll', handler);
-  }, []);
+  const touchStartX = useRef(null);
 
   // Respecte la préférence système "réduire les animations"
   const reducedMotion =
@@ -43,19 +34,37 @@ export default function PhotoCarousel({
     if (!autoplay || reducedMotion || !photos?.length || photos.length < 2)
       return;
     if (paused) return;
-    const el = ref.current;
-    if (!el) return;
     const id = setInterval(() => {
-      const next = (current + 1) % photos.length;
-      el.scrollTo({ left: next * el.clientWidth, behavior: 'smooth' });
+      setCurrent((c) => (c + 1) % photos.length);
     }, AUTOPLAY_MS);
     return () => clearInterval(id);
-  }, [autoplay, reducedMotion, paused, current, photos]);
+  }, [autoplay, reducedMotion, paused, photos]);
 
   function go(i) {
-    const el = ref.current;
-    if (!el) return;
-    el.scrollTo({ left: i * el.clientWidth, behavior: 'smooth' });
+    if (!photos?.length) return;
+    let next = i;
+    if (next < 0) next = photos.length - 1;
+    if (next >= photos.length) next = 0;
+    setCurrent(next);
+  }
+
+  function onTouchStart(e) {
+    touchStartX.current = e.touches[0]?.clientX ?? null;
+    setPaused(true);
+  }
+
+  function onTouchEnd(e) {
+    const start = touchStartX.current;
+    touchStartX.current = null;
+    // Reprise auto-play après un court délai (laisse à l'utilisateur le
+    // temps de revoir la photo qu'il vient d'amener)
+    setTimeout(() => setPaused(false), 800);
+    if (start == null) return;
+    const end = e.changedTouches[0]?.clientX ?? start;
+    const delta = end - start;
+    if (Math.abs(delta) > 50) {
+      go(delta > 0 ? current - 1 : current + 1);
+    }
   }
 
   if (!photos?.length) return null;
@@ -68,23 +77,28 @@ export default function PhotoCarousel({
     <div
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
-      onTouchStart={() => setPaused(true)}
-      onTouchEnd={() => setPaused(false)}
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
       className={`relative group rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 animate-pop-in ${
-        fillHeight ? 'h-full' : ''
+        fillHeight ? 'h-full' : heightClass
       }`}
     >
-      <div
-        ref={ref}
-        className={`flex overflow-x-auto snap-x snap-mandatory scrollbar-hide ${heightClass}`}
-      >
-        {photos.map((p, i) => (
+      {photos.map((p, i) => {
+        const isActive = i === current;
+        return (
           <a
             key={p.id || i}
             href={p.url}
             target="_blank"
             rel="noreferrer"
-            className="snap-center shrink-0 w-full relative block"
+            aria-hidden={!isActive}
+            tabIndex={isActive ? 0 : -1}
+            className={`absolute inset-0 block transition-opacity ease-in-out ${
+              isActive
+                ? 'opacity-100 z-10'
+                : 'opacity-0 z-0 pointer-events-none'
+            }`}
+            style={{ transitionDuration: `${FADE_MS}ms` }}
           >
             <img
               src={p.src?.large || p.src?.medium || p.src?.small}
@@ -112,30 +126,20 @@ export default function PhotoCarousel({
               </div>
             )}
           </a>
-        ))}
-      </div>
+        );
+      })}
 
       {/* Flèches (desktop, hover) */}
       {photos.length > 1 && (
         <>
-          <NavBtn
-            direction="left"
-            disabled={current === 0}
-            onClick={() => go(Math.max(0, current - 1))}
-          />
-          <NavBtn
-            direction="right"
-            disabled={current >= photos.length - 1}
-            onClick={() =>
-              go(Math.min(photos.length - 1, current + 1))
-            }
-          />
+          <NavBtn direction="left" onClick={() => go(current - 1)} />
+          <NavBtn direction="right" onClick={() => go(current + 1)} />
         </>
       )}
 
       {/* Dots */}
       {photos.length > 1 && (
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5">
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 z-20">
           {photos.map((_, i) => (
             <button
               key={i}
@@ -158,7 +162,7 @@ export default function PhotoCarousel({
   );
 }
 
-function NavBtn({ direction, disabled, onClick }) {
+function NavBtn({ direction, onClick }) {
   return (
     <button
       onClick={(e) => {
@@ -166,9 +170,8 @@ function NavBtn({ direction, disabled, onClick }) {
         e.stopPropagation();
         onClick();
       }}
-      disabled={disabled}
       aria-label={direction === 'left' ? 'Précédent' : 'Suivant'}
-      className={`hidden sm:grid place-items-center absolute top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-white/85 backdrop-blur text-slate-700 shadow opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-0 ${
+      className={`hidden sm:grid place-items-center absolute top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-white/85 backdrop-blur text-slate-700 shadow opacity-0 group-hover:opacity-100 transition-opacity z-20 ${
         direction === 'left' ? 'left-2' : 'right-2'
       } hover:bg-white`}
     >
