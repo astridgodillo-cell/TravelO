@@ -280,6 +280,7 @@ export async function generateItinerary(preferences, onProgress) {
 
 // 3 catégories appelées en PARALLÈLE pour obtenir ~45-50 lieux au total
 // (15-18 par catégorie) avec des descriptions évocatrices.
+// Un 4ème appel en parallèle récupère les villes principales (si destination = pays/région).
 const PLACE_CATEGORIES = ['incontournable', 'insolite', 'hors-sentiers'];
 
 export async function suggestPlaces({
@@ -290,22 +291,40 @@ export async function suggestPlaces({
   adults,
   childrenAges,
   onCategoryReady,
+  onCitiesReady,
 }) {
-  const results = await Promise.all(
+  const baseArgs = {
+    destination,
+    tripType,
+    startDate,
+    endDate,
+    adults,
+    childrenAges,
+  };
+
+  // Villes principales (4ème appel parallèle, indépendant)
+  const citiesPromise = (async () => {
+    try {
+      const data = await invoke({ mode: 'suggest-cities', ...baseArgs });
+      const cities = Array.isArray(data?.cities) ? data.cities : [];
+      onCitiesReady?.(cities);
+      return cities;
+    } catch (err) {
+      console.warn('[suggest-cities] échec', err);
+      onCitiesReady?.([]);
+      return [];
+    }
+  })();
+
+  const placesPromise = Promise.all(
     PLACE_CATEGORIES.map(async (category) => {
       try {
         const data = await invoke({
           mode: 'suggest-places',
-          destination,
-          tripType,
-          startDate,
-          endDate,
-          adults,
-          childrenAges,
+          ...baseArgs,
           category,
         });
         const places = Array.isArray(data?.places) ? data.places : [];
-        // Force la catégorie au cas où le LLM se trompe
         const normalized = places.map((p) => ({ ...p, category }));
         onCategoryReady?.(category, normalized);
         return normalized;
@@ -315,11 +334,16 @@ export async function suggestPlaces({
       }
     })
   );
-  const all = results.flat();
-  if (all.length === 0) {
-    throw new Error('Aucun lieu n\'a pu être suggéré. Réessayez.');
+
+  const [cities, placesGroups] = await Promise.all([
+    citiesPromise,
+    placesPromise,
+  ]);
+  const places = placesGroups.flat();
+  if (places.length === 0 && cities.length === 0) {
+    throw new Error('Aucune suggestion n\'a pu être générée. Réessayez.');
   }
-  return all;
+  return { places, cities };
 }
 
 export async function replanFromDay(itinerary, fromDayIndex, instructions) {

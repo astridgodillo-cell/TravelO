@@ -70,9 +70,12 @@ const INITIAL_VISIBLE_PER_CATEGORY = 9;
 export default function InspireMeFlow({ onSubmit, loading }) {
   const [phase, setPhase] = useState('form');
   const [form, setForm] = useState(DEFAULT_FORM);
+  const [cities, setCities] = useState([]);
+  const [citiesReady, setCitiesReady] = useState(false);
   const [places, setPlaces] = useState([]);
   const [readyCategories, setReadyCategories] = useState(new Set());
   const [selected, setSelected] = useState(new Set());
+  const [selectedCities, setSelectedCities] = useState(new Set());
   const [photoMap, setPhotoMap] = useState({});
   const [expanded, setExpanded] = useState(new Set());
   const [error, setError] = useState(null);
@@ -112,9 +115,12 @@ export default function InspireMeFlow({ onSubmit, loading }) {
       return;
     }
     setError(null);
+    setCities([]);
+    setCitiesReady(false);
     setPlaces([]);
     setReadyCategories(new Set());
     setSelected(new Set());
+    setSelectedCities(new Set());
     setPhotoMap({});
     setExpanded(new Set());
     setPhase('selecting');
@@ -126,11 +132,15 @@ export default function InspireMeFlow({ onSubmit, loading }) {
         endDate: form.endDate,
         adults: form.adults,
         childrenAges: form.childrenAges,
-        // Chaque catégorie s'affiche dès qu'elle est prête (streaming)
+        // Streaming : chaque résultat s'affiche dès qu'il arrive
+        onCitiesReady: (newCities) => {
+          setCities(newCities);
+          setCitiesReady(true);
+          loadPhotosFor(newCities);
+        },
         onCategoryReady: (category, newPlaces) => {
           setPlaces((prev) => [...prev, ...newPlaces]);
           setReadyCategories((prev) => new Set(prev).add(category));
-          // Photos en parallèle, sans bloquer l'affichage
           loadPhotosFor(newPlaces);
         },
       });
@@ -180,18 +190,40 @@ export default function InspireMeFlow({ onSubmit, loading }) {
 
   function backToForm() {
     setPhase('form');
+    setCities([]);
+    setCitiesReady(false);
     setPlaces([]);
     setReadyCategories(new Set());
     setSelected(new Set());
+    setSelectedCities(new Set());
     setPhotoMap({});
     setExpanded(new Set());
   }
 
+  function toggleSelectCity(id) {
+    setSelectedCities((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   function buildPreferences() {
     const selectedPlaces = places.filter((p) => selected.has(p.id));
-    const mustInclude = selectedPlaces
+    const selectedCityList = cities.filter((c) => selectedCities.has(c.id));
+    const cityChunk = selectedCityList
+      .map(
+        (c) =>
+          `${c.name} (${c.suggested_days || 2} jour${(c.suggested_days || 2) > 1 ? 's' : ''})`
+      )
+      .join(', ');
+    const placeChunk = selectedPlaces
       .map((p) => `${p.name}${p.location ? ` (${p.location})` : ''}`)
       .join(', ');
+    const mustInclude = [cityChunk && `Villes : ${cityChunk}`, placeChunk]
+      .filter(Boolean)
+      .join(' — ');
 
     const isRoadTrip = ROAD_TRIP_TYPES.has(form.tripType);
 
@@ -223,12 +255,16 @@ export default function InspireMeFlow({ onSubmit, loading }) {
   }
 
   function handleGenerate() {
-    if (selected.size === 0) {
-      alert('Sélectionnez au moins un lieu avant de générer l\'itinéraire.');
+    if (selected.size === 0 && selectedCities.size === 0) {
+      alert(
+        'Sélectionnez au moins une ville ou un lieu avant de générer l\'itinéraire.'
+      );
       return;
     }
     onSubmit(buildPreferences());
   }
+
+  const totalSelected = selected.size + selectedCities.size;
 
   const placesByCategory = useMemo(() => {
     const groups = { incontournable: [], insolite: [], 'hors-sentiers': [] };
@@ -447,6 +483,48 @@ export default function InspireMeFlow({ onSubmit, loading }) {
         </div>
       </div>
 
+      {/* Villes principales (en premier si destination = pays/région) */}
+      {!citiesReady && (
+        <section className="space-y-3">
+          <div className="flex flex-wrap items-baseline gap-3">
+            <h3 className="text-xl font-semibold bg-gradient-to-r from-sky-500 to-brand-600 bg-clip-text text-transparent">
+              🏙️ Villes principales
+            </h3>
+            <p className="text-xs text-slate-500">
+              Les villes que les tour-opérateurs incluent presque toujours
+            </p>
+          </div>
+          <CategorySkeleton color="from-sky-500 to-brand-600" />
+        </section>
+      )}
+
+      {citiesReady && cities.length > 0 && (
+        <section className="space-y-3">
+          <div className="flex flex-wrap items-baseline gap-3">
+            <h3 className="text-xl font-semibold bg-gradient-to-r from-sky-500 to-brand-600 bg-clip-text text-transparent">
+              🏙️ Villes principales
+            </h3>
+            <p className="text-xs text-slate-500">
+              Les villes que les tour-opérateurs incluent presque toujours
+            </p>
+            <span className="text-xs text-slate-400 ml-auto">
+              {cities.length} villes
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {cities.map((city) => (
+              <CityCard
+                key={city.id}
+                city={city}
+                photoUrl={photoMap[city.id]}
+                selected={selectedCities.has(city.id)}
+                onToggle={() => toggleSelectCity(city.id)}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
       {CATEGORIES.map((cat) => {
         const list = placesByCategory[cat.id] || [];
         const isReady = readyCategories.has(cat.id);
@@ -519,17 +597,24 @@ export default function InspireMeFlow({ onSubmit, loading }) {
       {/* Sticky bottom bar */}
       <div className="sticky bottom-4 z-10">
         <div className="card flex flex-wrap items-center justify-between gap-3 shadow-glow border-brand-200">
-          <div className="text-sm">
+          <div className="text-sm text-slate-700">
             <span className="font-semibold text-brand-700">
-              {selected.size}
+              {totalSelected}
             </span>{' '}
-            lieu{selected.size > 1 ? 'x' : ''} sélectionné
-            {selected.size > 1 ? 's' : ''} sur {places.length}
+            sélection{totalSelected > 1 ? 's' : ''}
+            {selectedCities.size > 0 && (
+              <span className="text-slate-500">
+                {' '}
+                ({selectedCities.size} ville
+                {selectedCities.size > 1 ? 's' : ''}, {selected.size} lieu
+                {selected.size > 1 ? 'x' : ''})
+              </span>
+            )}
           </div>
           <button
             type="button"
             onClick={handleGenerate}
-            disabled={loading || selected.size === 0}
+            disabled={loading || totalSelected === 0}
             className="btn-pop text-base px-6 py-3"
           >
             {loading
@@ -539,6 +624,66 @@ export default function InspireMeFlow({ onSubmit, loading }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function CityCard({ city, photoUrl, selected, onToggle }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={selected}
+      className={`text-left w-full overflow-hidden rounded-2xl border bg-white transition-all flex flex-col ${
+        selected
+          ? 'border-brand-600 ring-2 ring-brand-500 shadow-glow'
+          : 'border-slate-200 hover:border-slate-300 hover:shadow-md'
+      }`}
+    >
+      <div className="relative h-44 bg-slate-100">
+        {photoUrl ? (
+          <img
+            src={photoUrl}
+            alt={city.name}
+            className="w-full h-full object-cover"
+            loading="lazy"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-slate-300 text-3xl animate-pulse">
+            🏙️
+          </div>
+        )}
+        <div className="absolute top-2 right-2 h-8 w-8 rounded-full flex items-center justify-center text-base shadow-pop transition-colors bg-white/80 backdrop-blur text-slate-400">
+          {selected ? (
+            <span className="h-8 w-8 -m-px rounded-full bg-brand-600 text-white flex items-center justify-center">
+              ✓
+            </span>
+          ) : (
+            <span>+</span>
+          )}
+        </div>
+        {city.suggested_days && (
+          <span className="absolute top-2 left-2 chip bg-black/60 text-white backdrop-blur">
+            {city.suggested_days} jour{city.suggested_days > 1 ? 's' : ''}
+          </span>
+        )}
+        <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/75 via-black/30 to-transparent pointer-events-none" />
+        <div className="absolute bottom-2 left-3 right-3 text-white">
+          <h4 className="font-bold leading-tight drop-shadow text-lg">
+            {city.name}
+          </h4>
+        </div>
+      </div>
+      <div className="p-4 space-y-2 flex-1 flex flex-col">
+        <p className="text-sm font-semibold text-slate-900 leading-snug">
+          {city.hook}
+        </p>
+        {city.why && (
+          <p className="text-xs text-slate-500 italic leading-relaxed">
+            {city.why}
+          </p>
+        )}
+      </div>
+    </button>
   );
 }
 

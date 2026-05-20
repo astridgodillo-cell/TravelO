@@ -610,6 +610,69 @@ Contraintes :
 - id : slug ASCII unique en minuscules, ex: "kinkaku-ji-kyoto"`;
 }
 
+function buildSuggestCitiesPrompt(
+  destination: string,
+  tripType: string,
+  startDate: string,
+  endDate: string,
+  adults: number,
+  childrenAges: number[]
+): string {
+  const days = computeDays(startDate, endDate);
+  const children = Array.isArray(childrenAges) && childrenAges.length
+    ? `${childrenAges.length} enfant(s) (âges : ${childrenAges.join(', ')} ans)`
+    : '0 enfant';
+
+  return `Tu es l'expert voyage TravelO. L'utilisateur veut visiter "${destination}". Tu vas lui proposer les VILLES PRINCIPALES à inclure dans son voyage — celles que les grands tours-opérateurs (Voyageurs du Monde, Kuoni, Asia, Marco Vasco, etc.) mettent presque systématiquement dans leurs circuits.
+
+Contexte voyage :
+- Destination : ${destination}
+- Période : ${startDate} au ${endDate} (${days} jours)
+- Mode de voyage : ${tripType}
+- Participants : ${adults} adulte(s), ${children}
+
+RÈGLE CRITIQUE — quand renvoyer des villes :
+- Si la destination est un PAYS ou une RÉGION large (ex: Japon, Italie, Corse, Andalousie, Patagonie) → renvoie 4 à 8 villes incontournables des circuits classiques.
+- Si la destination est UNE SEULE VILLE (ex: Lisbonne, Tokyo, Marrakech) → renvoie un tableau VIDE [].
+- Si la destination est un mix (ex: "Paris-Côte d'Azur"), prends les villes mentionnées + 1-2 ajouts classiques.
+
+STYLE :
+Pour chaque ville :
+- "hook" : 1 phrase courte (10-15 mots) qui résume pourquoi cette ville est dans tous les circuits, avec un détail concret (un monument, un quartier, une ambiance)
+- "why" : 1 phrase qui explique pourquoi les tours-opérateurs l'incluent quasi-systématiquement (pas plus de 25 mots)
+- "suggested_days" : nombre de jours réaliste à y consacrer (1-4)
+
+EXEMPLE (à ne PAS copier, juste pour le ton) :
+{
+  "name": "Kyoto",
+  "hook": "L'ancienne capitale impériale, 1 600 temples et un labyrinthe de ruelles à lanternes",
+  "why": "Présente dans 95% des circuits Japon : concentre les sites UNESCO les plus emblématiques.",
+  "suggested_days": 3
+}
+
+Schéma JSON STRICT (UNIQUEMENT ce JSON, pas de texte autour) :
+{
+  "cities": [
+    {
+      "id": "slug-en-minuscules",
+      "name": "Nom de la ville",
+      "coordinates": { "lat": number, "lng": number },
+      "hook": "1 phrase 10-15 mots avec un détail concret",
+      "why": "Pourquoi les TO l'incluent quasi-toujours, max 25 mots",
+      "suggested_days": 1 | 2 | 3 | 4,
+      "photo_query": "expression COURTE (2-4 mots) optimisée Unsplash/Pexels, ex 'Kyoto temples Japan'"
+    }
+  ]
+}
+
+Contraintes :
+- ${days <= 4 ? '4 à 5 villes max (voyage court)' : days <= 10 ? '5 à 7 villes' : '6 à 8 villes (voyage long)'}
+- Ordonnées par ordre de PRIORITÉ (la plus incontournable en premier)
+- coordinates précises
+- Adapter au mode "${tripType}" : trek/vélo → villes étapes accessibles ; croisière → ports
+- Si destination = une seule ville, renvoie : { "cities": [] }`;
+}
+
 function buildRegenerateActivityPrompt(
   itinerary: any,
   dayIndex: number,
@@ -1303,6 +1366,38 @@ Deno.serve(async (req) => {
       const parsed = await parseOrRepair(text, callExpansionSafe);
       return jsonResponse({
         specialties: parsed?.specialties || [],
+        usage,
+        model: modelUsed,
+      });
+    }
+
+    if (mode === 'suggest-cities') {
+      const {
+        destination,
+        tripType,
+        startDate,
+        endDate,
+        adults,
+        childrenAges,
+      } = body;
+      if (!destination || !startDate || !endDate) {
+        return jsonResponse(
+          { error: 'destination, startDate, endDate requis' },
+          400
+        );
+      }
+      const prompt = buildSuggestCitiesPrompt(
+        destination,
+        tripType || 'itinerant',
+        startDate,
+        endDate,
+        adults || 2,
+        childrenAges || []
+      );
+      const { text, usage, modelUsed } = await callMain(prompt, 3000);
+      const parsed = await parseOrRepair(text, callMainSafe);
+      return jsonResponse({
+        cities: parsed?.cities || [],
         usage,
         model: modelUsed,
       });
