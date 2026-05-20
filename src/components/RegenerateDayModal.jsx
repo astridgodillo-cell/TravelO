@@ -29,7 +29,7 @@ export default function RegenerateDayModal({ open, day, onClose, onSubmit, loadi
               Régénérer {day?.label} — {day?.location}
             </h3>
             <p className="text-sm text-slate-500">
-              Décrivez ce que vous souhaitez changer ; Claude réécrit juste cette
+              Décrivez ce que vous souhaitez changer ; nous réécrivons juste cette
               journée en gardant la cohérence avec le reste du voyage.
             </p>
           </div>

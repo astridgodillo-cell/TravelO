@@ -3,19 +3,19 @@ export default function GeneratingLoader({ progress }) {
   const current = progress?.current ?? 0;
   const total = progress?.total ?? 0;
 
-  let title = 'Claude rédige votre itinéraire';
+  let title = 'Un instant, nous préparons votre voyage…';
   let detail = 'Préparation…';
   let percent = null;
 
   if (phase === 'generating') {
-    detail = 'Génération en cours — petits voyages traités en un seul appel.';
+    detail = 'Nous composons votre itinéraire complet, c\'est bientôt prêt.';
   } else if (phase === 'planning') {
-    title = 'Étape 1/2 — Planification globale';
+    title = 'Étape 1/2 — Nous traçons les grandes lignes';
     detail =
-      'Claude trace les grandes étapes du voyage, les lieux et la cohérence du trajet.';
+      'On dessine l\'ossature du voyage : les étapes, les lieux et la cohérence du trajet.';
   } else if (phase === 'expanding') {
-    title = 'Étape 2/2 — Détail journée par journée';
-    detail = `Génération des journées (${current}/${total}) — en parallèle pour aller plus vite.`;
+    title = 'Étape 2/2 — Nous détaillons chaque journée';
+    detail = `Rédaction des journées (${current}/${total}) — en parallèle pour aller plus vite.`;
     percent = total > 0 ? Math.round((current / total) * 100) : 0;
   } else if (phase === 'assembling') {
     title = 'Finalisation';

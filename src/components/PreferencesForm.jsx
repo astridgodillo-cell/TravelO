@@ -266,7 +266,7 @@ export default function PreferencesForm({ onSubmit, loading }) {
           Planifions votre voyage
         </h2>
         <p className="text-sm text-slate-500 mt-1">
-          Remplissez les champs ci-dessous — Claude rédige ensuite votre
+          Remplissez les champs ci-dessous — nous rédigeons ensuite votre
           itinéraire jour-par-jour comme un tour-opérateur.
         </p>
       </div>
@@ -401,8 +401,8 @@ export default function PreferencesForm({ onSubmit, loading }) {
           <div className="sm:col-span-2 text-xs text-slate-500 self-end pb-2">
             🛋️ Une journée off = pas de gros trajet (on reste au même endroit
             que la veille), activités très light ou optionnelles, surtout du
-            repos. Idéal pour souffler au milieu d'un long voyage. Claude les
-            répartit équilibrement dans l'itinéraire.
+            repos. Idéal pour souffler au milieu d'un long voyage. Nous les
+            répartissons équilibrement dans l'itinéraire.
           </div>
         </div>
       </Section>
@@ -569,7 +569,7 @@ export default function PreferencesForm({ onSubmit, loading }) {
 
       <Section title="Activités spécifiques">
         <p className="text-xs text-slate-500 -mt-2">
-          Cochez tout ce qui vous tente. Claude essaiera d'intégrer ces activités
+          Cochez tout ce qui vous tente. Nous essaierons d'intégrer ces activités
           quand le lieu et la saison s'y prêtent.
         </p>
         <div className="flex flex-wrap gap-2">
@@ -595,7 +595,7 @@ export default function PreferencesForm({ onSubmit, loading }) {
 
       <Section title="Hébergement nocturne souhaité">
         <p className="text-xs text-slate-500 -mt-2">
-          Cochez tout ce qui vous convient — Claude alternera selon les étapes.
+          Cochez tout ce qui vous convient — nous alternerons selon les étapes.
         </p>
         <div className="flex flex-wrap gap-2">
           {NIGHT_STAY_OPTIONS.map((opt) => {

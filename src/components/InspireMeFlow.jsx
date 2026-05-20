@@ -285,7 +285,7 @@ export default function InspireMeFlow({ onSubmit, loading }) {
           </h2>
           <p className="text-sm text-slate-500 mt-1">
             Dites-nous juste où, quand et comment vous voulez voyager.
-            L'IA vous propose ensuite une sélection de lieux à découvrir
+            Nous vous proposons ensuite une sélection de lieux à découvrir
             — vous choisissez ce qui vous plaît, et on construit
             l'itinéraire.
           </p>
@@ -466,7 +466,7 @@ export default function InspireMeFlow({ onSubmit, loading }) {
                 </>
               ) : (
                 <>
-                  L'IA explore {form.destination} en 3 axes en parallèle…
+                  Nous explorons {form.destination} en 3 axes en parallèle…
                   ({readyCategories.size}/{CATEGORIES.length} catégories
                   prêtes — vous pouvez déjà sélectionner ce qui est affiché)
                 </>
@@ -694,7 +694,7 @@ function CategorySkeleton({ color }) {
         <div
           className={`h-4 w-4 rounded-full bg-gradient-to-r ${color} animate-pulse`}
         />
-        <span>L'IA rédige les descriptions…</span>
+        <span>Nous rédigeons les descriptions…</span>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {[0, 1, 2].map((i) => (
