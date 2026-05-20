@@ -409,6 +409,40 @@ function Planning({
   );
 }
 
+// Extrait le nom de lieu présumé d'un titre de moment :
+// dernier groupe de mots capitalisés à la fin (ex: "Marché de Toyosu" → "Toyosu",
+// "vallée de Todoroki" → "Todoroki", "Crépuscule à Shibuya" → "Shibuya").
+function extractLocationFromTitle(title) {
+  if (!title || typeof title !== 'string') return null;
+  // Cherche un mot capitalisé en fin de phrase (avec éventuels traits d'union
+  // ou apostrophes), possiblement précédé d'autres mots capitalisés.
+  const m = title.match(/([A-ZÀ-Ý][\wÀ-ÿ\-']*(?:[\s-][A-ZÀ-Ý][\wÀ-ÿ\-']*)*)\s*\.?\s*$/);
+  return m?.[1] || null;
+}
+
+// Construit un titre de jour à partir des lieux extraits des moments,
+// pour les itinéraires anciens qui n'ont pas de day_title.
+function buildFallbackDayTitle(day) {
+  const moments = [day.morning, day.noon, day.afternoon, day.evening];
+  const locs = [];
+  for (const m of moments) {
+    const loc = extractLocationFromTitle(m?.title);
+    if (
+      loc &&
+      loc.length < 30 &&
+      // Évite de répéter la ville principale (qui est déjà dans le header)
+      loc.toLowerCase() !== (day.location || '').toLowerCase() &&
+      !locs.some((existing) => existing.toLowerCase() === loc.toLowerCase())
+    ) {
+      locs.push(loc);
+    }
+  }
+  if (locs.length >= 2) {
+    return `${day.location} : ${locs.slice(0, 3).join(', ')}`;
+  }
+  return day.morning?.title || null;
+}
+
 function DayCard({
   day,
   dayIndex,
@@ -427,10 +461,13 @@ function DayCard({
   canRegenerate,
   canEditActivities,
 }) {
-  // Fallback titre accrocheur : day_title (nouveau schéma) → titre du matin
-  // (pour les anciens itinéraires sans day_title)
+  // Titre du jour :
+  // 1. day_title (nouveau schéma) si présent
+  // 2. Sinon, on tente de construire un titre à partir des lieux extraits
+  //    des titres morning/noon/afternoon/evening (anciens itinéraires)
+  // 3. Sinon fallback minimal sur morning.title puis location
   const dayTitle =
-    day.day_title || day.morning?.title || `Journée à ${day.location}`;
+    day.day_title || buildFallbackDayTitle(day) || `Journée à ${day.location}`;
   const accomLink = bestAccommodationLink(day.accommodation, {
     location: day.location,
     checkin: day.date,

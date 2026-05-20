@@ -261,7 +261,7 @@ const FULL_DAY_SCHEMA = `{
   "date": "YYYY-MM-DD",
   "weekday": "lundi",
   "location": "Ville / région",
-  "day_title": "Titre accrocheur de la journée entière, 5 à 10 mots, évocateur style magazine voyage (ex: 'Kyoto poétique : du Pavillon d'Or au chemin des philosophes')",
+  "day_title": "Titre accrocheur 8-14 mots qui RÉSUME L'ENSEMBLE DE LA JOURNÉE en mentionnant 2-3 lieux-clés + ambiance/fil rouge (ex: 'Tokyo en contrastes : marché de Toyosu à l'aube, néons de Shibuya à minuit'). PAS juste le matin.",
   "is_off_day": boolean,
   "coordinates": { "lat": number, "lng": number },
   "weather": { "temperature_c": number, "emoji": string, "description": string },
@@ -344,7 +344,17 @@ ${FULL_SCHEMA}
 Contraintes :
 - days contient EXACTEMENT duration_days entrées.
 - coordinates obligatoire chaque jour.
-- day_title obligatoire pour CHAQUE jour : 5-10 mots, accrocheur, résume la journée entière (pas juste le matin). Style magazine voyage. Évite "Visite de X" et autres tournures plates. Préfère un titre qui mêle lieu + ambiance/promesse. Ex : "Kyoto poétique : du Pavillon d'Or au chemin des philosophes" / "Au cœur des Alpes japonaises en Shinkansen" / "Bains thermaux et lanternes à Kanazawa".
+- day_title obligatoire pour CHAQUE jour. RÈGLE CRITIQUE : il doit
+  (1) mentionner 2 à 3 LIEUX-CLÉS visités entre le matin, l'après-midi ET le soir (pas seulement le matin)
+  (2) capturer l'ambiance/contraste/fil rouge de la journée
+  (3) faire 8 à 14 mots, style magazine voyage haut de gamme, donner TERRIBLEMENT envie
+  Modèle : [accroche/ambiance] : [2-3 lieux phares]
+  ✅ "Tokyo en contrastes : marché de Toyosu à l'aube, néons de Shibuya à minuit"
+  ✅ "Kyoto poétique : Pavillon d'Or, Gion et chemin des philosophes"
+  ✅ "De la mer au volcan : ports d'Otaru, fumerolles de Showa-Shinzan, ryokan de Noboribetsu"
+  ❌ "Visite de Tokyo" (générique)
+  ❌ "Éveil des sens au marché de Toyosu" (ne couvre que le matin, oublie Todoroki et Shibuya)
+  ❌ "Belle journée à Kyoto" (creux, pas de lieux)
 - emoji météo : ☀️ 🌤️ ⛅ 🌧️ ❄️ 🌫️ 🌩️
 - day_total_eur = trips + accommodation + activities + meals + service_stops du jour.
 - grand_total_eur = somme des day_total_eur.
@@ -447,7 +457,7 @@ ${FULL_DAY_SCHEMA}
 Contraintes :
 - Garde EXACTEMENT le label, la date, le weekday et le location indiqués.
 - coordinates obligatoire (utilise les coordonnées du plan ou affine).
-- day_title obligatoire : 5-10 mots, accrocheur style magazine voyage, qui résume la JOURNÉE ENTIÈRE (pas juste le matin). Ex : "Kyoto poétique : du Pavillon d'Or au chemin des philosophes".
+- day_title obligatoire : 8-14 mots, style magazine voyage, qui RÉSUME LA JOURNÉE ENTIÈRE en mentionnant 2 à 3 LIEUX-CLÉS répartis sur matin/après-midi/soir + ambiance/fil rouge. Pas seulement le matin. Modèle : [accroche/ambiance] : [2-3 lieux phares]. Ex : "Tokyo en contrastes : marché de Toyosu à l'aube, néons de Shibuya à minuit".
 - day_total_eur = somme trips + accommodation + activities + meals + service_stops.`;
 }
 
