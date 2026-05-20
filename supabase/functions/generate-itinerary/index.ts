@@ -557,16 +557,27 @@ Contexte voyage :
 OBJECTIF : 15 à 18 lieux ${c.label} de ${destination}, vraiment différents les uns des autres, qui donnent toutes envie de partir.
 
 STYLE D'ÉCRITURE — RÈGLE CRITIQUE :
-Tu écris dans le style d'un magazine de voyage haut de gamme (Condé Nast Traveller, Géo, Le Routard). Chaque description doit :
-- Faire APPEL AUX SENS : ce qu'on voit, entend, sent, goûte, ressent
-- Utiliser des détails CONCRETS et VISUELS (couleurs, textures, sons, lumière, ambiance)
-- Avoir une accroche qui DONNE ENVIE — pas de phrases plates comme "lieu très intéressant"
-- Faire 2 à 3 phrases (40-70 mots), denses, évocatrices, jamais génériques
-- Inclure un détail singulier qui ne s'invente pas (un moment précis, un produit local, une heure idéale, une vue particulière)
+Pour CHAQUE lieu, tu produis DEUX TEXTES distincts :
 
-EXEMPLE DU STYLE ATTENDU (à ne PAS copier, c'est juste pour le ton) :
-✅ "À l'aube, quand la brume du lac s'effiloche entre les pins, le toit pointu du sanctuaire émerge en silhouette noire. On entre pieds nus sur les tatamis chauds, l'odeur du cèdre se mêle à celle de l'encens. C'est l'heure où les moines récitent les sutras — un quart d'heure suspendu hors du temps."
-❌ "Un sanctuaire célèbre dans la forêt, idéal pour la méditation."
+1. "hook" : UNE accroche courte et frappante (8 à 14 mots, UNE seule phrase).
+   - Doit donner envie en un clin d'œil, comme un titre de magazine
+   - Concrète, sensorielle, jamais générique
+   ✅ "Un sanctuaire d'or qui flamboie au-dessus d'un étang miroir"
+   ✅ "Un train à vapeur qui s'enfonce dans 41 tunnels et 21 ponts"
+   ✅ "Le marché aux poissons le plus dingue du monde, dès 5h du matin"
+   ❌ "Un beau sanctuaire bouddhiste"
+   ❌ "Une expérience culinaire intéressante"
+
+2. "short_description" : 2 phrases (30-50 mots) qui DÉTAILLENT la promesse du hook.
+   - Faire APPEL AUX SENS (ce qu'on voit, entend, sent, ressent)
+   - Détails concrets, jamais de phrases plates
+   - Un détail singulier qui ne s'invente pas
+
+EXEMPLE COMPLET (à ne PAS copier, c'est juste pour le ton) :
+{
+  "hook": "Un sanctuaire d'or qui flamboie au-dessus d'un étang miroir",
+  "short_description": "À l'aube, la brume s'effiloche entre les pins et le pavillon doré se reflète à la perfection dans l'eau noire. L'odeur de cèdre se mêle à celle de l'encens des premiers visiteurs."
+}
 
 Schéma JSON STRICT (renvoie UNIQUEMENT ce JSON, pas de texte autour, pas de markdown) :
 {
@@ -578,7 +589,8 @@ Schéma JSON STRICT (renvoie UNIQUEMENT ce JSON, pas de texte autour, pas de mar
       "type": "ville" | "village" | "site" | "musée" | "plage" | "rando" | "parc" | "panorama" | "experience" | "gastronomie",
       "location": "Ville ou région où se trouve le lieu",
       "coordinates": { "lat": number, "lng": number },
-      "short_description": "2-3 phrases évocatrices façon magazine voyage, 40-70 mots, faisant appel aux sens",
+      "hook": "Accroche courte et frappante, 8-14 mots, une seule phrase",
+      "short_description": "2 phrases (30-50 mots) qui détaillent et donnent les sensations concrètes",
       "suggested_duration": "1h" | "2h" | "Demi-journée" | "1 jour" | "1-2 jours",
       "best_season": "Toute l'année" | "Printemps-été" | "Été" | "Automne" | "Hiver" | "Avril-octobre",
       "photo_query": "expression COURTE (2-4 mots) optimisée pour trouver une photo sur Unsplash/Pexels"

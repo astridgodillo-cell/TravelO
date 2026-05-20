@@ -572,51 +572,86 @@ function CategorySkeleton({ color }) {
 }
 
 function PlaceCard({ place, photoUrl, selected, onToggle }) {
+  const [expanded, setExpanded] = useState(false);
+  const hook = place.hook || place.short_description;
+  const hasDetail =
+    place.short_description &&
+    place.short_description.trim() !== (place.hook || '').trim();
+
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      className={`text-left w-full overflow-hidden rounded-2xl border bg-white transition-all flex flex-col ${
+    <div
+      className={`relative overflow-hidden rounded-2xl border bg-white transition-all flex flex-col ${
         selected
           ? 'border-brand-600 ring-2 ring-brand-500 shadow-glow'
           : 'border-slate-200 hover:border-slate-300 hover:shadow-md'
       }`}
     >
-      <div className="relative h-48 bg-slate-100">
-        {photoUrl ? (
-          <img
-            src={photoUrl}
-            alt={place.name}
-            className="w-full h-full object-cover"
-            loading="lazy"
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center text-slate-300 text-3xl animate-pulse">
-            📷
-          </div>
-        )}
-        {selected && (
-          <div className="absolute top-2 right-2 h-8 w-8 rounded-full bg-brand-600 text-white flex items-center justify-center text-base shadow-pop">
-            ✓
-          </div>
-        )}
-        <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/75 via-black/30 to-transparent pointer-events-none" />
-        <div className="absolute bottom-2 left-3 right-3 text-white">
-          <h4 className="font-semibold leading-tight drop-shadow text-base">
-            {place.name}
-          </h4>
-          {place.location && (
-            <p className="text-xs text-white/80 drop-shadow">
-              📍 {place.location}
-            </p>
+      {/* Zone de sélection : photo + titre */}
+      <button
+        type="button"
+        onClick={onToggle}
+        className="text-left w-full"
+        aria-pressed={selected}
+      >
+        <div className="relative h-44 bg-slate-100">
+          {photoUrl ? (
+            <img
+              src={photoUrl}
+              alt={place.name}
+              className="w-full h-full object-cover"
+              loading="lazy"
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-slate-300 text-3xl animate-pulse">
+              📷
+            </div>
           )}
+          <div className="absolute top-2 right-2 h-8 w-8 rounded-full flex items-center justify-center text-base shadow-pop transition-colors bg-white/80 backdrop-blur text-slate-400">
+            {selected ? (
+              <span className="h-8 w-8 -m-px rounded-full bg-brand-600 text-white flex items-center justify-center">
+                ✓
+              </span>
+            ) : (
+              <span>+</span>
+            )}
+          </div>
+          <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/75 via-black/30 to-transparent pointer-events-none" />
+          <div className="absolute bottom-2 left-3 right-3 text-white">
+            <h4 className="font-bold leading-tight drop-shadow text-base">
+              {place.name}
+            </h4>
+            {place.location && (
+              <p className="text-xs text-white/85 drop-shadow">
+                📍 {place.location}
+              </p>
+            )}
+          </div>
         </div>
-      </div>
+      </button>
+
+      {/* Hook + description dépliable */}
       <div className="p-4 space-y-3 flex-1 flex flex-col">
-        <p className="text-sm text-slate-700 leading-relaxed line-clamp-5 flex-1">
-          {place.short_description}
+        <p className="text-sm font-semibold text-slate-900 leading-snug">
+          {hook}
         </p>
-        <div className="flex flex-wrap gap-1.5 pt-1 border-t border-slate-100">
+
+        {expanded && hasDetail && (
+          <p className="text-sm text-slate-600 leading-relaxed">
+            {place.short_description}
+          </p>
+        )}
+
+        {hasDetail && (
+          <button
+            type="button"
+            onClick={() => setExpanded((e) => !e)}
+            className="text-xs text-brand-600 hover:text-brand-700 font-medium self-start hover:underline"
+          >
+            {expanded ? '↑ Réduire' : '↓ Lire la suite'}
+          </button>
+        )}
+
+        <div className="flex flex-wrap gap-1.5 pt-2 mt-auto border-t border-slate-100">
           {place.suggested_duration && (
             <span className="chip bg-slate-100 text-slate-700">
               ⏱ {place.suggested_duration}
@@ -634,7 +669,7 @@ function PlaceCard({ place, photoUrl, selected, onToggle }) {
           )}
         </div>
       </div>
-    </button>
+    </div>
   );
 }
 
