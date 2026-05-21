@@ -819,121 +819,263 @@ Contraintes :
 }
 
 // ============================================================
-// MODE "local-activities" : découverte d'activités autour d'un point
-// (radius, types, météo, enfants) — ne crée PAS d'itinéraire.
+// MODE "local-activities" : découverte d'activités autour d'un point.
+// Architecture : Google Places (source de vérité, lieux RÉELS) + LLM
+// pour enrichir (hook, description). Le LLM ne peut JAMAIS inventer
+// de lieu — il reçoit une liste fermée et l'enrichit.
 // ============================================================
-const ACTIVITY_TYPES_BRIEF: Record<string, string> = {
-  insolite: 'expériences originales / hors guides classiques',
-  culture: 'musées, monuments, sites historiques, galeries',
-  nature: 'parcs, jardins, balades en pleine nature, forêts, grottes',
-  baignade:
-    'lieux pour se baigner : plages, lacs, rivières baignables, cascades, piscines naturelles, sources chaudes',
-  sport: 'sport et activités physiques (kayak, escalade, vélo, etc.)',
-  aventure:
-    'sensations fortes : parapente, accrobranche, saut élastique, karting, escape game, via ferrata',
-  panorama:
-    'points de vue, belvédères, miradors, sommets accessibles, spots couchers de soleil',
-  gastronomie: 'restaurants typiques, marchés, dégustations, cours de cuisine',
-  famille:
-    'parcs d\'attractions, mini-golf, ateliers enfants, plaines de jeux, lieux family-friendly',
-  animalier:
-    'zoos, aquariums, fermes pédagogiques, observation faune sauvage, parcs animaliers',
-  festival:
-    'événements de SAISON : concerts, marchés saisonniers, fêtes locales, expos temporaires actuellement en cours',
-  'bien-etre': 'spa, thermes, sauna, yoga, retraites',
-  spirituel:
-    'monastères, abbayes, lieux de méditation, sites sacrés, pèlerinages',
-  'vie-nocturne': 'bars, concerts, clubs, événements du soir',
-  shopping: 'boutiques uniques, marchés, créateurs locaux',
-  romantique: 'idées en couple : panoramas, dîners intimes, croisières',
+
+// Mapping type → requêtes Google Places (en français).
+// Plusieurs queries par type pour bien couvrir le spectre.
+const PLACES_QUERIES_BY_TYPE: Record<string, string[]> = {
+  insolite: ['lieu insolite', 'curiosité touristique', 'attraction originale'],
+  culture: ['musée', 'monument historique', 'château'],
+  nature: ['parc nature', 'forêt promenade', 'jardin botanique', 'réserve naturelle'],
+  baignade: ['plage', 'lac baignade', 'cascade baignade', 'rivière baignade', 'piscine naturelle'],
+  sport: ['kayak location', 'escalade salle', 'centre sportif', 'location vélo'],
+  aventure: ['accrobranche', 'parapente', 'escape game', 'karting', 'paintball'],
+  panorama: ['belvédère', 'point de vue', 'panorama'],
+  gastronomie: ['restaurant gastronomique', 'marché local', 'cave dégustation', 'cours de cuisine'],
+  famille: ['parc attractions', 'mini-golf', 'aire de jeux', 'ferme pédagogique'],
+  animalier: ['zoo', 'aquarium', 'parc animalier', 'ferme pédagogique'],
+  festival: ['festival', 'événement culturel', 'concert'],
+  'bien-etre': ['spa', 'thermes', 'centre bien-être', 'sauna'],
+  spirituel: ['abbaye', 'monastère', 'sanctuaire', 'lieu de pèlerinage'],
+  'vie-nocturne': ['bar à cocktails', 'boîte de nuit', 'pub'],
+  shopping: ['marché artisan', 'boutique créateur', 'galerie commerciale'],
+  romantique: ['restaurant romantique', 'spot coucher de soleil', 'hôtel charme'],
 };
 
-function buildLocalActivitiesPrompt(args: {
-  location: string;
+// Distance haversine en km entre deux coordonnées
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+// Géocodage : "Ventabren" → { lat, lng }. Utilise Places Text Search
+// avec maxResultCount=1, on prend les coordonnées du premier match.
+async function geocodePlace(
+  query: string
+): Promise<{ lat: number; lng: number; formattedAddress: string } | null> {
+  if (!GOOGLE_PLACES_API_KEY) return null;
+  try {
+    const res = await fetch(
+      'https://places.googleapis.com/v1/places:searchText',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'X-Goog-Api-Key': GOOGLE_PLACES_API_KEY,
+          'X-Goog-FieldMask': 'places.location,places.formattedAddress',
+        },
+        body: JSON.stringify({
+          textQuery: query,
+          languageCode: 'fr',
+          maxResultCount: 1,
+        }),
+      }
+    );
+    if (!res.ok) {
+      console.warn('[geocode] failed', res.status, await res.text());
+      return null;
+    }
+    const data = await res.json();
+    const p = data?.places?.[0];
+    if (!p?.location) return null;
+    return {
+      lat: p.location.latitude,
+      lng: p.location.longitude,
+      formattedAddress: p.formattedAddress || query,
+    };
+  } catch (e) {
+    console.warn('[geocode] crash', e);
+    return null;
+  }
+}
+
+// Cherche des lieux RÉELS via Google Places dans un rayon donné.
+// Renvoie un tableau dédupliqué, filtré par distance, trié par popularité.
+async function searchRealPlaces(args: {
+  centerLat: number;
+  centerLng: number;
   radiusKm: number;
   types: string[];
+  excludeIds: string[];
+  withKids: boolean;
+}): Promise<any[]> {
+  if (!GOOGLE_PLACES_API_KEY) return [];
+  const { centerLat, centerLng, radiusKm, types, excludeIds, withKids } = args;
+
+  // Choisit les queries selon les types demandés. Sans type sélectionné :
+  // requêtes génériques attraction touristique + nature.
+  let queries: string[] = [];
+  if (types.length === 0) {
+    queries = ['attraction touristique', 'lieu à visiter', 'point d\'intérêt'];
+  } else {
+    for (const t of types) {
+      const qs = PLACES_QUERIES_BY_TYPE[t];
+      if (qs) queries.push(...qs);
+    }
+  }
+  // Cap à 8 queries pour limiter le coût Google Places.
+  // 1 query ≈ 1 cent → 8 queries ≈ 0.08€. Acceptable.
+  queries = Array.from(new Set(queries)).slice(0, 8);
+
+  // L'API Google Places accepte un rayon ≤ 50km pour locationBias.circle
+  const radiusMeters = Math.min(radiusKm * 1000, 50000);
+
+  const allResults = await Promise.all(
+    queries.map(async (q) => {
+      try {
+        const res = await fetch(
+          'https://places.googleapis.com/v1/places:searchText',
+          {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              'X-Goog-Api-Key': GOOGLE_PLACES_API_KEY,
+              'X-Goog-FieldMask':
+                'places.id,places.displayName,places.formattedAddress,places.location,places.types,places.primaryType,places.rating,places.userRatingCount,places.websiteUri,places.googleMapsUri,places.editorialSummary,places.priceLevel,places.goodForChildren',
+            },
+            body: JSON.stringify({
+              textQuery: q,
+              languageCode: 'fr',
+              maxResultCount: 10,
+              locationBias: {
+                circle: {
+                  center: { latitude: centerLat, longitude: centerLng },
+                  radius: radiusMeters,
+                },
+              },
+            }),
+          }
+        );
+        if (!res.ok) {
+          console.warn(`[places] "${q}" ${res.status}`, await res.text());
+          return [];
+        }
+        const data = await res.json();
+        return data?.places || [];
+      } catch (e) {
+        console.warn(`[places] "${q}" crash`, e);
+        return [];
+      }
+    })
+  );
+
+  // Dedupe par place.id, calcule la distance, filtre par rayon, exclut les
+  // ids déjà vus.
+  const seen = new Set<string>(excludeIds);
+  const merged: any[] = [];
+  for (const arr of allResults) {
+    for (const p of arr) {
+      if (!p.id || seen.has(p.id)) continue;
+      const lat = p.location?.latitude;
+      const lng = p.location?.longitude;
+      if (typeof lat !== 'number' || typeof lng !== 'number') continue;
+      const distance = haversineKm(centerLat, centerLng, lat, lng);
+      if (distance > radiusKm) continue;
+      seen.add(p.id);
+      // Filtre "avec enfants" : ignore les lieux explicitement non-children-friendly
+      if (withKids && p.goodForChildren === false) continue;
+      merged.push({ ...p, _distance_km: Math.round(distance) });
+    }
+  }
+
+  // Tri : score = rating × log10(reviews+1). Favorise les lieux populaires
+  // ET bien notés. Un lieu noté 4.5/5 avec 1000 avis bat un 5/5 avec 2 avis.
+  merged.sort((a, b) => {
+    const sA = (a.rating || 3) * Math.log10((a.userRatingCount || 1) + 1);
+    const sB = (b.rating || 3) * Math.log10((b.userRatingCount || 1) + 1);
+    return sB - sA;
+  });
+
+  // On garde 10 max — pas besoin de plus pour l'enrichissement LLM.
+  return merged.slice(0, 10);
+}
+
+// Prompt d'enrichissement : le LLM reçoit une liste fermée et écrit hook
+// + description pour chaque lieu. Interdit d'en ajouter ou en retirer.
+function buildEnrichRealActivitiesPrompt(args: {
+  places: any[];
+  location: string;
   rainyOnly: boolean;
   withKids: boolean;
-  exclude: string[];
 }): string {
-  const { location, radiusKm, types, rainyOnly, withKids, exclude } = args;
-  const typesList = types.length
-    ? types
-        .map((t) => `  - ${t} : ${ACTIVITY_TYPES_BRIEF[t] || t}`)
-        .join('\n')
-    : '  (tous types confondus)';
+  const { places, location, rainyOnly, withKids } = args;
 
-  const filterBlock = [
-    rainyOnly
-      ? '⚠️ TEMPS DE PLUIE : indoor=true OBLIGATOIRE pour CHAQUE activité (sauf si elle reste agréable sous la pluie : thermes en plein air, forêt enchantée, etc.). Évite tout ce qui devient pénible mouillé.'
-      : '',
-    withKids
-      ? '👨‍👩‍👧 AVEC ENFANTS : chaque activité doit être adaptée aux enfants (durée raisonnable, intérêt pour eux, pas de risque).'
-      : '',
+  const filters = [
+    rainyOnly && 'priorité aux lieux INDOOR (pluie)',
+    withKids && 'priorité aux lieux adaptés ENFANTS',
   ]
     .filter(Boolean)
-    .join('\n');
+    .join(' ; ');
 
-  const excludeBlock = exclude.length
-    ? `\n⛔ NE PROPOSE PAS les activités suivantes (déjà vues par l'utilisateur) : ${exclude.join(', ')}.`
-    : '';
+  const placesList = places
+    .map((p, i) => {
+      const summary = p.editorialSummary?.text || '';
+      const cats = (p.types || []).slice(0, 3).join(', ');
+      const rating = p.rating
+        ? `Note Google : ${p.rating}/5 (${p.userRatingCount || 0} avis)`
+        : 'Pas encore noté sur Google';
+      return `LIEU ${i} :
+  Nom : ${p.displayName?.text || 'Sans nom'}
+  Adresse : ${p.formattedAddress || '?'}
+  Catégories Google : ${cats || p.primaryType || '?'}
+  Distance : ${p._distance_km} km
+  ${rating}
+  ${summary ? `Description officielle Google : ${summary}` : ''}`;
+    })
+    .join('\n\n');
 
-  return `Tu es l'expert voyage TravelO. Un utilisateur cherche des activités à faire AUTOUR de lui pour s'occuper aujourd'hui ou demain. Tu vas lui proposer 10 activités situées dans un rayon de ${radiusKm} km autour de "${location}".
+  return `Tu reçois une liste de ${places.length} lieux RÉELS et VÉRIFIÉS situés autour de "${location}". Ces lieux EXISTENT — leurs noms et adresses viennent de Google Maps.
 
-Position de l'utilisateur : ${location}
-Rayon de recherche : ${radiusKm} km
+⚠️ INTERDICTION ABSOLUE :
+- Tu ne PEUX PAS inventer de lieu.
+- Tu ne PEUX PAS retirer un lieu.
+- Tu ne PEUX PAS changer un nom.
+- Tu dois produire EXACTEMENT ${places.length} entrées, dans le MÊME ORDRE, avec "index" qui correspond à l'index du lieu (0 à ${places.length - 1}).
 
-Types d'activités souhaitées :
-${typesList}
+Filtres demandés : ${filters || 'aucun filtre particulier'}
 
-${filterBlock}${excludeBlock}
+LIEUX À ENRICHIR :
+${placesList}
 
-STYLE D'ÉCRITURE :
-Pour chaque activité, produis :
-- "title" : nom clair et identifiable, comme dans Google Maps (ex: "Grotte de Lacave", "Atelier verrier de Biot")
-- "hook" : 1 phrase courte (10-15 mots) qui donne envie d'un coup d'œil
-- "description" : 2-3 phrases (40-70 mots) qui décrivent l'expérience sensoriellement, avec un détail concret qui ne s'invente pas
-
-EXEMPLE (à NE PAS copier — juste pour le ton) :
-{
-  "title": "Gouffre de Padirac",
-  "hook": "Descendez à 103 m sous terre pour glisser en barque sur une rivière émeraude",
-  "description": "L'ascenseur plonge dans la pénombre, puis une barque vous emporte sur une eau translucide entre des draperies calcaires. Une heure hors du temps, à 13°C constants, dans le silence des galeries souterraines."
-}
+POUR CHAQUE LIEU, produis :
+- "index" : index du lieu dans la liste reçue (0, 1, 2…)
+- "type" : choisis dans cette liste celui qui correspond le mieux à la catégorie Google :
+  insolite | culture | nature | baignade | sport | aventure | panorama | gastronomie | famille | animalier | festival | bien-etre | spirituel | vie-nocturne | shopping | romantique
+- "hook" : 1 phrase courte (10-15 mots), donne envie au premier regard. Concret, sensoriel.
+- "description" : 2-3 phrases (40-70 mots). Si tu CONNAIS spécifiquement ce lieu, sois sensoriel et précis. Si tu ne le connais pas, reste GÉNÉRIQUE mais juste (ex: "Lieu très apprécié de la région, idéal pour une pause." ou "Restaurant bien noté, réputé pour sa cuisine locale.") — JAMAIS de détail inventé.
+- "indoor" : true si majoritairement intérieur (musée, restaurant, spa, grotte), false sinon
+- "best_time" : "matin" | "après-midi" | "soir" | "toute la journée"
+- "duration" : "30 min" | "1h" | "2h" | "Demi-journée" | "Journée"
+- "price_note" : déduis du type ("gratuit", "5-15 €", "20-40 €", "40-80 €"…)
 
 Schéma JSON STRICT (uniquement ce JSON, pas de markdown, pas de texte autour) :
 {
   "activities": [
     {
-      "id": "slug-ascii-unique-en-minuscules",
-      "title": "Nom exact et trouvable sur Google Maps",
-      "type": "insolite" | "culture" | "nature" | "baignade" | "sport" | "aventure" | "panorama" | "gastronomie" | "famille" | "animalier" | "festival" | "bien-etre" | "spirituel" | "vie-nocturne" | "shopping" | "romantique",
-      "hook": "Accroche 10-15 mots",
-      "description": "2-3 phrases, 40-70 mots, sensorielle et concrète",
-      "address": "Adresse postale lisible (ville + département/région)",
-      "distance_km": number,
-      "coordinates": { "lat": number, "lng": number },
+      "index": number,
+      "type": string,
+      "hook": string,
+      "description": string,
       "indoor": boolean,
-      "duration": "30 min" | "1h" | "2h" | "Demi-journée" | "Journée",
-      "price_eur_per_person": number,
-      "price_note": "gratuit" | "5-15 €" | "20-40 €" | etc.,
-      "best_time": "matin" | "après-midi" | "soir" | "toute la journée",
-      "booking_hint": "Site/plateforme où réserver si pertinent, sinon null",
-      "photo_query": "expression COURTE (2-4 mots) pour trouver une photo sur Unsplash, ex 'Gouffre Padirac Lot'"
+      "best_time": string,
+      "duration": string,
+      "price_note": string
     }
   ]
 }
 
-Contraintes :
-- EXACTEMENT 10 activités, vraiment différentes les unes des autres.
-- TOUTES dans un rayon RÉALISTE de ${radiusKm} km à vol d'oiseau autour de "${location}" — utilise tes connaissances géographiques pour rester proche.
-- distance_km : entier en kilomètres, distance à vol d'oiseau approximative. Doit être ≤ ${radiusKm}.
-- coordinates : lat/lng précis pour situer sur carte.
-- Variées : ne mets pas 10 musées même si l'utilisateur a coché "culture". Mélange les sous-genres et les distances.
-- indoor : true si l'activité se déroule à l'intérieur (musée, grotte, spa, restaurant). false si extérieur (rando, plage, festival open-air).
-- Adresse réaliste et identifiable (Google Maps doit pouvoir la trouver).
-- Pas de doublons. Pas d'activité fictive.
-- id : slug ASCII unique, ex: "gouffre-de-padirac".`;
+RAPPEL CRITIQUE : ${places.length} entrées EXACTEMENT, dans l'ordre, index 0 à ${places.length - 1}.`;
 }
 
 // ============================================================
@@ -1780,21 +1922,98 @@ Deno.serve(async (req) => {
       if (!location || typeof location !== 'string') {
         return jsonResponse({ error: 'Paramètre "location" requis.' }, 400);
       }
-      const prompt = buildLocalActivitiesPrompt({
-        location,
-        radiusKm: Number(radius_km) || 30,
+
+      // Pipeline anti-hallucination : Google Places source de vérité,
+      // LLM seulement pour enrichir (interdit d'inventer).
+      if (!GOOGLE_PLACES_API_KEY) {
+        return jsonResponse(
+          {
+            error:
+              'GOOGLE_PLACES_API_KEY non configuré côté serveur (requis pour ne pas inventer de lieux).',
+          },
+          500
+        );
+      }
+
+      // 1) Géocodage du lieu (texte → lat/lng)
+      const coords = await geocodePlace(location);
+      if (!coords) {
+        return jsonResponse(
+          {
+            error: `Impossible de localiser "${location}". Précise la ville ou la région.`,
+          },
+          400
+        );
+      }
+
+      // 2) Recherche de lieux RÉELS dans le rayon, filtrés par types
+      const radiusKm = Number(radius_km) || 30;
+      const places = await searchRealPlaces({
+        centerLat: coords.lat,
+        centerLng: coords.lng,
+        radiusKm,
         types: Array.isArray(types) ? types : [],
+        excludeIds: Array.isArray(exclude) ? exclude : [],
+        withKids: !!with_kids,
+      });
+
+      // 3) Si rien trouvé : on renvoie vide (préférable aux hallucinations)
+      if (places.length === 0) {
+        return jsonResponse({ activities: [], usage: null, model: null });
+      }
+
+      // 4) Enrichissement LLM (hook + description) — il ne peut RIEN inventer
+      const prompt = buildEnrichRealActivitiesPrompt({
+        places,
+        location,
         rainyOnly: !!rainy_only,
         withKids: !!with_kids,
-        exclude: Array.isArray(exclude) ? exclude : [],
       });
-      // Budget : 10 activités riches ~ 300 tokens chacune + structure ~ 5000 tokens
-      const { text, usage, modelUsed } = await callMain(prompt, 6000);
+      const { text, usage, modelUsed } = await callMain(prompt, 4000);
       const parsed = await parseOrRepair(text, callMainSafe);
+      const enrichments = Array.isArray(parsed?.activities)
+        ? parsed.activities
+        : [];
+
+      // 5) Fusion : on combine les données Google (sûres) + enrichissement LLM
+      const activities = places.map((p, i) => {
+        const enrich =
+          enrichments.find((e: any) => e.index === i) || enrichments[i] || {};
+        return {
+          id: p.id, // Place ID Google, stable et unique
+          title: p.displayName?.text || 'Lieu sans nom',
+          type: enrich.type || 'culture',
+          hook: enrich.hook || '',
+          description:
+            enrich.description ||
+            p.editorialSummary?.text ||
+            'Lieu référencé sur Google Maps.',
+          address: p.formattedAddress || '',
+          distance_km: p._distance_km,
+          coordinates: {
+            lat: p.location?.latitude,
+            lng: p.location?.longitude,
+          },
+          indoor: enrich.indoor ?? false,
+          duration: enrich.duration || '1-2h',
+          price_eur_per_person: 0,
+          price_note: enrich.price_note || '',
+          best_time: enrich.best_time || 'toute la journée',
+          booking_hint: null,
+          photo_query: p.displayName?.text || '',
+          // Données Google enrichies (vraies sources)
+          rating: p.rating || null,
+          user_ratings_count: p.userRatingCount || null,
+          website_url: p.websiteUri || null,
+          google_maps_url: p.googleMapsUri || null,
+        };
+      });
+
       return jsonResponse({
-        activities: parsed?.activities || [],
+        activities,
         usage,
         model: modelUsed,
+        geocoded: coords.formattedAddress,
       });
     }
 

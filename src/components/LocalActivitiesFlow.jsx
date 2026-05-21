@@ -41,6 +41,7 @@ export default function LocalActivitiesFlow() {
   const [gettingPosition, setGettingPosition] = useState(false);
 
   const [activities, setActivities] = useState([]);
+  const [hasSearched, setHasSearched] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(null);
@@ -115,7 +116,11 @@ export default function LocalActivitiesFlow() {
     else setLoading(true);
     setError(null);
     try {
-      const exclude = append ? activities.map((a) => a.title) : [];
+      // On exclut par Place ID (stable Google Places) plutôt que par titre :
+      // garantit qu'on ne revoit pas le même lieu même si le LLM varie le nom.
+      const exclude = append
+        ? activities.map((a) => a.id).filter(Boolean)
+        : [];
       const { activities: newOnes } = await suggestLocalActivities({
         location,
         radiusKm: radius,
@@ -130,6 +135,7 @@ export default function LocalActivitiesFlow() {
         setActivities(newOnes);
         setSelected({});
         setWishlistAdded({});
+        setHasSearched(true);
       }
     } catch (e) {
       setError(e.message || 'Erreur lors de la recherche.');
@@ -413,6 +419,22 @@ export default function LocalActivitiesFlow() {
           <p className="text-xs text-slate-500 mt-1">~15 secondes</p>
         </div>
       )}
+
+      {/* Aucun résultat : on l'indique clairement plutôt que de cacher.
+          C'est mieux que d'inventer (cf. retour utilisateur). */}
+      {!loading && hasSearched && activities.length === 0 && (
+        <div className="card text-center py-10">
+          <div className="text-3xl mb-3">🔍</div>
+          <p className="text-slate-700 font-medium">
+            Aucune activité réelle trouvée dans ce rayon.
+          </p>
+          <p className="text-sm text-slate-500 mt-2 max-w-md mx-auto">
+            Essaie d'élargir le rayon, de changer les types d'activités ou de préciser
+            une ville plus connue à proximité. On préfère ne rien afficher que de
+            t'inventer des lieux qui n'existent pas.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -447,6 +469,17 @@ function ActivityCard({
             {typeof a.distance_km === 'number' && (
               <span className="text-[10px] text-slate-500">
                 · {a.distance_km} km
+              </span>
+            )}
+            {a.rating && (
+              <span
+                className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] text-amber-800 font-medium"
+                title={`${a.user_ratings_count || 0} avis Google`}
+              >
+                ⭐ {a.rating}
+                {a.user_ratings_count
+                  ? ` (${formatCount(a.user_ratings_count)})`
+                  : ''}
               </span>
             )}
           </div>
@@ -539,21 +572,22 @@ function ActivityCard({
 }
 
 // === Helpers liens externes ===
-// Google Maps : priorité aux coordonnées (plus précis), sinon recherche
-// texte avec titre + adresse.
+// Priorité : URL Google Places officielle si dispo (renvoyée par Places API),
+// sinon fallback recherche.
 function buildMapsUrl(a) {
+  if (a.google_maps_url) return a.google_maps_url;
   if (a.coordinates?.lat && a.coordinates?.lng) {
     const q = encodeURIComponent(a.title || '');
-    return `https://www.google.com/maps/search/?api=1&query=${q}&query_place_id=&center=${a.coordinates.lat},${a.coordinates.lng}`;
+    return `https://www.google.com/maps/search/?api=1&query=${q}&center=${a.coordinates.lat},${a.coordinates.lng}`;
   }
   const q = encodeURIComponent(`${a.title || ''} ${a.address || ''}`.trim());
   return `https://www.google.com/maps/search/?api=1&query=${q}`;
 }
 
-// Recherche Google : "<titre> <adresse> site officiel" — le premier résultat
-// est le site officiel du lieu dans la grande majorité des cas. Plus fiable
-// que de demander au LLM de produire des URLs (risque d'hallucination).
+// Site officiel : si Google Places nous a donné le vrai site (websiteUri),
+// on l'utilise. Sinon fallback recherche Google.
 function buildSiteSearchUrl(a) {
+  if (a.website_url) return a.website_url;
   const q = encodeURIComponent(
     `${a.title || ''} ${a.address || ''} site officiel`.trim()
   );
@@ -567,4 +601,10 @@ function buildBookingUrl(a) {
     `${a.title || ''} ${a.booking_hint || 'réservation billetterie'}`.trim()
   );
   return `https://www.google.com/search?q=${q}`;
+}
+
+// Format compact des grands nombres d'avis : 1234 → "1.2k"
+function formatCount(n) {
+  if (n >= 1000) return (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k';
+  return String(n);
 }
