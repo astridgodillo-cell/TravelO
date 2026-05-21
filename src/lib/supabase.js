@@ -56,6 +56,83 @@ export async function getMyProfile() {
   return supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
 }
 
+// Patch sur les champs éditables par le user lui-même.
+// Le trigger SQL protect_admin_fields empêche déjà toute modification
+// de role/status/subscription_tier côté DB, donc on peut passer
+// n'importe quel patch sans risque.
+export async function updateMyProfile(patch) {
+  const user = await getCurrentUser();
+  if (!user) throw new Error('Utilisateur non connecté');
+  return supabase
+    .from('profiles')
+    .update(patch)
+    .eq('id', user.id)
+    .select()
+    .single();
+}
+
+// ----- TRAVELERS (carnet de voyageurs récurrents) -----
+export async function listTravelers() {
+  const user = await getCurrentUser();
+  if (!user) return { data: [], error: null };
+  return supabase
+    .from('travelers')
+    .select('*')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: true });
+}
+
+export async function saveTraveler(traveler) {
+  const user = await getCurrentUser();
+  if (!user) throw new Error('Utilisateur non connecté');
+  return supabase
+    .from('travelers')
+    .insert({ ...traveler, user_id: user.id })
+    .select()
+    .single();
+}
+
+export async function updateTraveler(id, patch) {
+  return supabase
+    .from('travelers')
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single();
+}
+
+export async function deleteTraveler(id) {
+  return supabase.from('travelers').delete().eq('id', id);
+}
+
+// Définir un persona par défaut : on désactive tous les autres puis on active celui-là.
+// L'index unique partiel garantit qu'il n'y a jamais plus d'un is_default=true par user.
+export async function setDefaultTemplate(id) {
+  const user = await getCurrentUser();
+  if (!user) throw new Error('Utilisateur non connecté');
+  const { error: clearErr } = await supabase
+    .from('preference_templates')
+    .update({ is_default: false })
+    .eq('user_id', user.id)
+    .eq('is_default', true);
+  if (clearErr) return { data: null, error: clearErr };
+  return supabase
+    .from('preference_templates')
+    .update({ is_default: true })
+    .eq('id', id)
+    .select()
+    .single();
+}
+
+export async function updateTemplate(id, patch) {
+  return supabase
+    .from('preference_templates')
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single();
+}
+
 // ----- ITINERARIES -----
 export async function saveItinerary(payload) {
   const user = await getCurrentUser();

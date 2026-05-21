@@ -2,6 +2,7 @@ import { useState } from 'react';
 import PreferencesForm from '../components/PreferencesForm';
 import InspireMeFlow from '../components/InspireMeFlow';
 import GeneratingLoader from '../components/GeneratingLoader';
+import PrefillBanner from '../components/PrefillBanner';
 import { generateItinerary } from '../lib/ai';
 import { saveItinerary } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
@@ -29,8 +30,17 @@ export default function NewItineraryPage() {
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(null);
   const [error, setError] = useState(null);
+  // Données venant du profil pour préremplissage. Stocké séparément pour
+  // pouvoir aussi enrichir le payload envoyé au LLM (voyageurs, lieux…).
+  const [prefillPrefs, setPrefillPrefs] = useState(null);
+  const [profileExtras, setProfileExtras] = useState(null);
   const { user, isApproved } = useAuth();
   const navigate = useNavigate();
+
+  function handlePrefill({ preferences, travelers, personalInfo, visitedPlaces, wishlistPlaces }) {
+    setPrefillPrefs(preferences);
+    setProfileExtras({ travelers, personalInfo, visitedPlaces, wishlistPlaces });
+  }
 
   async function handleGenerate(prefs) {
     if (!user) {
@@ -46,7 +56,21 @@ export default function NewItineraryPage() {
     setError(null);
     setProgress(null);
     try {
-      const itinerary = await generateItinerary(prefs, (p) => setProgress(p));
+      // Enrichit le payload avec les données profil pour que l'Edge Function
+      // puisse les injecter dans le prompt LLM. Le formulaire ne les expose
+      // pas (UX), mais on les transmet en sous-marin pour adapter l'itinéraire.
+      const enrichedPrefs = profileExtras
+        ? {
+            ...prefs,
+            _profileExtras: {
+              travelers: profileExtras.travelers || [],
+              personalInfo: profileExtras.personalInfo || {},
+              visitedPlaces: profileExtras.visitedPlaces || [],
+              wishlistPlaces: profileExtras.wishlistPlaces || [],
+            },
+          }
+        : prefs;
+      const itinerary = await generateItinerary(enrichedPrefs, (p) => setProgress(p));
 
       // Auto-save : tous les itinéraires générés sont automatiquement
       // sauvegardés dans "Mes voyages". L'utilisateur peut ensuite les
@@ -116,7 +140,14 @@ export default function NewItineraryPage() {
       )}
 
       {!loading && mode === 'expert' && (
-        <PreferencesForm onSubmit={handleGenerate} loading={loading} />
+        <>
+          <PrefillBanner onPrefill={handlePrefill} />
+          <PreferencesForm
+            onSubmit={handleGenerate}
+            loading={loading}
+            initialValues={prefillPrefs}
+          />
+        </>
       )}
 
       {!loading && mode === 'inspire' && (

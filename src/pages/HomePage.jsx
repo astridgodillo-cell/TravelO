@@ -2,7 +2,9 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 export default function HomePage() {
-  const { user, isApproved, loading } = useAuth();
+  const { user, profile, isApproved, loading } = useAuth();
+  const showOnboardingBanner =
+    user && isApproved && profile && !profile.onboarding_completed;
 
   let primaryCta;
   let secondaryCta = null;
@@ -43,6 +45,23 @@ export default function HomePage() {
 
   return (
     <div className="space-y-16">
+      {showOnboardingBanner && (
+        <div className="rounded-2xl border-2 border-brand-300 bg-gradient-to-r from-brand-50 to-coral-50 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 animate-fade-up">
+          <div className="min-w-0">
+            <h3 className="font-semibold text-slate-900">
+              👋 Bienvenue ! Configure ton profil en 3 étapes
+            </h3>
+            <p className="text-sm text-slate-600 mt-0.5">
+              Tes futurs itinéraires seront pré-remplis automatiquement (préférences,
+              voyageurs, contraintes…).
+            </p>
+          </div>
+          <Link to="/bienvenue" className="btn-primary shrink-0">
+            Commencer →
+          </Link>
+        </div>
+      )}
+
       {/* Hero coloré */}
       <section className="relative overflow-hidden rounded-3xl bg-hero-gradient text-white px-6 sm:px-12 py-16 sm:py-20 shadow-glow animate-fade-up text-center">
         <div className="absolute -top-20 -left-20 w-80 h-80 rounded-full bg-white/10 blur-3xl pointer-events-none" />

@@ -240,6 +240,77 @@ Ferries acceptés : ${p.okWithFerry === false ? 'NON' : 'OUI si nécessaire'}`
       ? `\nJours off / repos : ${offDays} jours sur ${expectedDays}, à RÉPARTIR ÉQUILIBREMENT dans l'itinéraire. Un jour off : reste au même endroit que la veille (pas de trajet), activités minimales/optionnelles, pas d'excursion payante, repas tranquille. anchor_theme commence par "Journée libre" ou "Repos à <lieu>". is_off_day = true.`
       : '';
 
+  // === Données de profil utilisateur (injectées via _profileExtras) ===
+  // Voyageurs : régimes, allergies, mobilité, langues
+  const extras = p._profileExtras || {};
+  const travelers = Array.isArray(extras.travelers) ? extras.travelers : [];
+  const personalInfo = extras.personalInfo || {};
+  const visited = Array.isArray(extras.visitedPlaces) ? extras.visitedPlaces : [];
+  const wishlist = Array.isArray(extras.wishlistPlaces) ? extras.wishlistPlaces : [];
+
+  const allDietary = new Set<string>();
+  const allAllergies: string[] = [];
+  const mobilityNotes: string[] = [];
+  const allLanguages = new Set<string>();
+
+  if (Array.isArray(personalInfo.dietary)) {
+    for (const d of personalInfo.dietary) allDietary.add(d);
+  }
+  if (personalInfo.allergies) allAllergies.push(`utilisateur : ${personalInfo.allergies}`);
+  if (personalInfo.mobility) mobilityNotes.push(`utilisateur : ${personalInfo.mobility}`);
+  if (Array.isArray(personalInfo.languages)) {
+    for (const l of personalInfo.languages) allLanguages.add(l);
+  }
+
+  for (const t of travelers) {
+    if (Array.isArray(t.dietary)) for (const d of t.dietary) allDietary.add(d);
+    if (t.allergies) allAllergies.push(`${t.name} : ${t.allergies}`);
+    if (t.mobility) mobilityNotes.push(`${t.name} : ${t.mobility}`);
+    if (Array.isArray(t.languages)) for (const l of t.languages) allLanguages.add(l);
+  }
+
+  let constraintsBlock = '';
+  if (allDietary.size) {
+    constraintsBlock += `\nRégime(s) alimentaire(s) du groupe : ${[...allDietary].join(', ')} — adapte les suggestions de restaurants et de spécialités culinaires en conséquence (évite ce qui n'est pas compatible).`;
+  }
+  if (allAllergies.length) {
+    constraintsBlock += `\nAllergies / contraintes médicales : ${allAllergies.join(' ; ')} — signale dans practical_tips et évite les activités/repas à risque.`;
+  }
+  if (mobilityNotes.length) {
+    constraintsBlock += `\nMobilité : ${mobilityNotes.join(' ; ')} — privilégie hébergements et activités accessibles, évite les randonnées difficiles, escaliers nombreux, dénivelés importants.`;
+  }
+  if (allLanguages.size) {
+    constraintsBlock += `\nLangues parlées par le groupe : ${[...allLanguages].join(', ')} — utile pour calibrer les "local_phrases" (privilégie une langue locale que le groupe ne parle pas).`;
+  }
+
+  let travelersBlock = '';
+  if (travelers.length) {
+    const lines = travelers.map((t: any) => {
+      const age = t.birth_year ? new Date().getFullYear() - t.birth_year : null;
+      const parts = [t.name];
+      if (t.relation) parts.push(`(${t.relation}${age !== null ? `, ${age} ans` : ''})`);
+      else if (age !== null) parts.push(`(${age} ans)`);
+      return `  - ${parts.join(' ')}`;
+    });
+    travelersBlock = `\nVoyageurs supplémentaires (en plus de l'utilisateur principal) :\n${lines.join('\n')}`;
+  }
+
+  let visitedBlock = '';
+  if (visited.length) {
+    const names = visited.map((v: any) => v.name).filter(Boolean);
+    if (names.length) {
+      visitedBlock = `\nLieux DÉJÀ VISITÉS par le voyageur (à ÉVITER dans l'itinéraire sauf si listés dans mustInclude) : ${names.join(', ')}.`;
+    }
+  }
+
+  let wishlistBlock = '';
+  if (wishlist.length) {
+    const names = wishlist.map((w: any) => w.name).filter(Boolean);
+    if (names.length) {
+      wishlistBlock = `\nWISHLIST du voyageur (lieux qu'il rêve de visiter — INTÈGRE-LES en priorité si la destination/itinéraire s'y prête géographiquement) : ${names.join(', ')}.`;
+    }
+  }
+
   return `Destination(s) : ${p.destinations}
 Période : du ${p.startDate} au ${p.endDate} (durée = ${expectedDays} jours inclusifs, à respecter EXACTEMENT — ne change AUCUNE date)
 Départ : ${p.departureLocation}
@@ -248,10 +319,10 @@ Arrivée finale : ${p.returnLocation || p.departureLocation}${
       ? ' (aller-simple)'
       : ' (aller-retour)'
   }
-Participants : ${p.adults} adulte(s), ${children}
+Participants : ${p.adults} adulte(s), ${children}${travelersBlock}
 Type de voyage : ${p.tripType}${vehicleBlock}
 Centres d'intérêt : ${(p.interests || []).join(', ')}${specificActivities}
-Niveau de budget : ${p.budget}${practicalBlock}${offBlock}
+Niveau de budget : ${p.budget}${practicalBlock}${offBlock}${constraintsBlock}${visitedBlock}${wishlistBlock}
 Étapes IMPÉRATIVES : ${p.mustInclude || '(aucune)'}
 À éviter : ${p.toAvoid || '(aucun)'}`;
 }

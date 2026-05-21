@@ -74,6 +74,11 @@ export default function Navbar() {
             Mes listes
           </NavLink>
         )}
+        {user && (
+          <NavLink to="/profil" className={cls}>
+            Mon profil
+          </NavLink>
+        )}
         {isAdmin && (
           <NavLink to="/admin" className={cls}>
             Admin
