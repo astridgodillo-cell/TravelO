@@ -5,8 +5,7 @@ import { fetchPhotosFor } from '../lib/photos';
 const TRIP_TYPES = [
   { id: 'itinerant', label: 'Itinérant' },
   { id: 'roadtrip-voiture', label: '🚗 Road trip voiture' },
-  { id: 'roadtrip-van', label: '🚐 Road trip van' },
-  { id: 'roadtrip-camping-car', label: '🚍 Road trip camping-car' },
+  { id: 'roadtrip-van', label: '🚐 Road trip van / camping-car' },
   { id: 'avion-voiture', label: '✈️ Avion + voiture' },
   { id: 'avion-citybreak', label: '✈️ Avion + city break' },
   { id: 'train-international', label: '🚄 Train international' },

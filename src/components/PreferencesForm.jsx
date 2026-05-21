@@ -4,6 +4,8 @@ import {
   TRIP_TYPES,
   MOTORIZED_TRIP_TYPES,
   ROAD_TRIP_TYPES,
+  SCHEDULED_TRIP_TYPES,
+  normalizeTripType,
   INTERESTS,
   SPECIFIC_ACTIVITIES,
   BUDGET_LEVELS,
@@ -40,6 +42,26 @@ const DEFAULTS = {
   cooking: 'restaurants',
   needsServicePoints: false,
   okWithFerry: true,
+  // Horaires & points d'entrée/sortie (avion, train international, croisière…)
+  // Quand l'utilisateur arrive en transport longue distance, l'IA cale J1 avec
+  // l'heure d'arrivée + installation, et le jour final avec la marge avant
+  // l'heure de départ.
+  hasFixedSchedule: false,        // forcer l'affichage de la section
+  arrivalGateway: '',             // ex : "Aéroport Suvarnabhumi (Bangkok)"
+  arrivalTime: '',                // "HH:MM" — heure locale d'arrivée à destination J1
+  departureGateway: '',           // ex : "Gare de Madrid Atocha" (vide = identique à arrivalGateway)
+  departureTime: '',              // "HH:MM" — heure du transport retour
+  scheduledTransport: '',         // 'avion-intl' | 'avion-domestique' | 'train' | 'ferry' | 'croisiere' | ''
+};
+
+// Marge conseillée avant l'heure de départ (utilisée pour info dans l'UI ; le
+// calage exact est laissé à l'IA selon le contexte).
+const DEPARTURE_BUFFER_HINT = {
+  'avion-intl': '~3 h à l\'aéroport',
+  'avion-domestique': '~1 h 30 à l\'aéroport',
+  train: '~30-45 min en gare',
+  ferry: '~1 h au port',
+  croisiere: '~2 h avant embarquement',
 };
 
 function computeTotalDays(start, end) {
@@ -60,13 +82,31 @@ export default function PreferencesForm({ onSubmit, loading, initialValues }) {
   useEffect(() => {
     if (initialValues) setValues((v) => ({ ...DEFAULTS, ...v, ...initialValues }));
   }, [initialValues]);
+  // Normalise les ids legacy (roadtrip-camping-car → roadtrip-van) au cas
+  // où on charge un template historique.
+  const tripType = normalizeTripType(values.tripType);
   // Road trip "classique" : van/CC/voiture perso → besoin des options
   // aires de service, ferry, cuisine, etc.
-  const isRoadTrip = ROAD_TRIP_TYPES.has(values.tripType);
+  const isRoadTrip = ROAD_TRIP_TYPES.has(tripType);
   // Tout type avec véhicule (road trip OU avion+voiture de location)
   // → besoin de la section "Véhicule"
-  const isMotorized = MOTORIZED_TRIP_TYPES.has(values.tripType);
-  const isRental = values.tripType === 'avion-voiture';
+  const isMotorized = MOTORIZED_TRIP_TYPES.has(tripType);
+  const isRental = tripType === 'avion-voiture';
+  // Trip avec horaire impératif (avion, train intl, croisière) → section
+  // "Horaires d'arrivée et de départ" dépliée par défaut. L'utilisateur peut
+  // aussi forcer son affichage manuellement (ferry, vol charter non listé…).
+  const showSchedule =
+    SCHEDULED_TRIP_TYPES.has(tripType) || values.hasFixedSchedule;
+  // Pré-remplissage du select transport si on connaît le type de trip
+  const defaultScheduledTransport =
+    tripType === 'avion-voiture' || tripType === 'avion-citybreak'
+      ? 'avion-intl'
+      : tripType === 'train-international'
+        ? 'train'
+        : tripType === 'croisiere'
+          ? 'croisiere'
+          : '';
+  const effectiveTransport = values.scheduledTransport || defaultScheduledTransport;
   const totalDays = computeTotalDays(values.startDate, values.endDate);
   const maxOffDays = Math.max(0, totalDays - 2); // au moins 1 jour de voyage à l'aller et 1 au retour
 
@@ -276,6 +316,105 @@ export default function PreferencesForm({ onSubmit, loading, initialValues }) {
             );
           })}
         </div>
+      </Section>
+
+      <Section title="Horaires d'arrivée et de départ">
+        {!SCHEDULED_TRIP_TYPES.has(tripType) && (
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={values.hasFixedSchedule}
+              onChange={(e) => update('hasFixedSchedule', e.target.checked)}
+            />
+            J'ai des horaires d'arrivée et de départ contraints (vol, train,
+            ferry, croisière…)
+          </label>
+        )}
+        {showSchedule && (
+          <>
+            <p className="text-xs text-slate-500 -mt-2">
+              Renseignez ces horaires si vous arrivez en avion / train longue
+              distance / croisière. L'IA calera la journée d'arrivée avec le
+              temps d'installation, et le dernier jour avec la marge nécessaire
+              avant le départ (
+              {DEPARTURE_BUFFER_HINT[effectiveTransport] ||
+                'marge adaptée au type de transport'}
+              ).
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="md:col-span-2">
+                <label className="label">Type de transport contraint</label>
+                <select
+                  className="input"
+                  value={effectiveTransport}
+                  onChange={(e) => update('scheduledTransport', e.target.value)}
+                >
+                  <option value="">— Sélectionnez —</option>
+                  <option value="avion-intl">Vol international</option>
+                  <option value="avion-domestique">Vol domestique</option>
+                  <option value="train">Train (TGV, Eurostar…)</option>
+                  <option value="ferry">Ferry / bateau</option>
+                  <option value="croisiere">Croisière</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="label">
+                  Aéroport / gare / port d'arrivée
+                  <span className="text-slate-400 font-normal">
+                    {' '}
+                    (optionnel — par défaut, lieu de destination)
+                  </span>
+                </label>
+                <input
+                  className="input"
+                  placeholder="Ex : Aéroport Suvarnabhumi (Bangkok)"
+                  value={values.arrivalGateway}
+                  onChange={(e) => update('arrivalGateway', e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="label">
+                  Heure d'arrivée à destination (J1)
+                </label>
+                <input
+                  type="time"
+                  className="input"
+                  value={values.arrivalTime}
+                  onChange={(e) => update('arrivalTime', e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="label">
+                  Aéroport / gare / port du retour
+                  <span className="text-slate-400 font-normal">
+                    {' '}
+                    (vide = identique à l'arrivée)
+                  </span>
+                </label>
+                <input
+                  className="input"
+                  placeholder="Identique à l'arrivée"
+                  value={values.departureGateway}
+                  onChange={(e) => update('departureGateway', e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="label">
+                  Heure de départ du retour (dernier jour)
+                </label>
+                <input
+                  type="time"
+                  className="input"
+                  value={values.departureTime}
+                  onChange={(e) => update('departureTime', e.target.value)}
+                />
+              </div>
+            </div>
+          </>
+        )}
       </Section>
 
       <Section title="Rythme du voyage">

@@ -81,6 +81,9 @@ const CORS_HEADERS = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
+// Note : depuis la v2 du formulaire, 'roadtrip-van' couvre van ET camping-car.
+// On garde 'roadtrip-camping-car' dans les sets pour les itinéraires/templates
+// historiques (créés avant la fusion).
 const ROAD_TRIP_TYPES = new Set([
   'roadtrip-voiture',
   'roadtrip-van',
@@ -93,6 +96,23 @@ const VEHICLE_TYPES = new Set([
   'roadtrip-camping-car',
   'avion-voiture',
 ]);
+
+// Types de voyage avec horaire impératif d'arrivée/départ.
+const SCHEDULED_TRIP_TYPES = new Set([
+  'avion-voiture',
+  'avion-citybreak',
+  'train-international',
+  'croisiere',
+]);
+
+// Marge avant l'heure de départ selon le type de transport.
+const DEPARTURE_BUFFER: Record<string, string> = {
+  'avion-intl': '~3 heures à l\'aéroport',
+  'avion-domestique': '~1 h 30 à l\'aéroport',
+  train: '~30-45 minutes en gare',
+  ferry: '~1 heure au port',
+  croisiere: '~2 heures avant embarquement',
+};
 
 const SYSTEM_PROMPT = `Tu es l'expert voyage TravelO, un agent de tour-opérateur francophone, méticuleux et passionné. Tu rédiges des itinéraires comme un programme vendu par une grande agence : tu donnes envie de partir.
 
@@ -160,7 +180,7 @@ COHÉRENCE GÉOGRAPHIQUE (RÈGLE STRICTE) :
 
 TYPES DE VOYAGE — RÈGLES SPÉCIFIQUES :
 - itinerant : voyage moyennement structuré, mix de transports selon le contexte.
-- roadtrip-voiture / roadtrip-van / roadtrip-camping-car : véhicule PERSONNEL du voyageur, départ direct du domicile (cf. règles road trip ci-dessous).
+- roadtrip-voiture / roadtrip-van (qui couvre van ET camping-car) : véhicule PERSONNEL du voyageur, départ direct du domicile (cf. règles road trip ci-dessous). roadtrip-camping-car (ancien id, encore présent dans certains itinéraires) = équivalent à roadtrip-van.
 - avion-voiture : vol aller depuis lieu de départ vers la destination, puis VOITURE DE LOCATION sur place. Journée 1 = arrivée vol + récupération voiture. Ajoute le coût de la location dans budget (~40-70 €/jour selon catégorie, + caution + assurance ~150 € amortie). Trajets locaux en voiture (carburant à compter). Dernière journée = restitution voiture + vol retour.
 - avion-citybreak : vol aller-retour + visite à PIED et transports en commun sur place. AUCUNE voiture. Hôtels en centre-ville. Plus court généralement (3-7 jours). Ajoute le coût des vols et des transports en commun.
 - train-international : Eurostar / TGV / ICE / nuit-train pour rejoindre une destination étrangère (Londres, Barcelone, Berlin, etc.). Pas de voiture, transports en commun sur place. Coût du billet aller-retour explicité dans le 1er et le dernier trip.
@@ -177,6 +197,30 @@ MODE ROAD TRIP — règles supplémentaires :
 - Si "Prévoir aires de service" : insère vidange/eau/électricité tous les 2-3 jours.
 - Si cuisine van/mix : suggère marchés/supermarchés, budget repas réduit (10-15 €/jour/personne maison, 25-40 € mix).
 - Indique particularités routières : routes étroites, hauteur sous tunnel, sections difficiles grand gabarit.
+
+HORAIRES IMPÉRATIFS D'ARRIVÉE ET DE DÉPART (vol, train longue distance, croisière, ferry) :
+Quand le bloc "Horaires impératifs" apparaît dans les préférences, tu DOIS caler la première et la dernière journée en conséquence.
+
+JOUR 1 (arrivée) :
+- Si l'aéroport / gare / port d'arrivée est précisé ET diffère de la destination principale, prévois EXPLICITEMENT le transfert (taxi, train, navette, voiture de location) dans les "trips" du jour 1, avec durée et coût réalistes.
+- Après l'heure d'arrivée, prévois ~1-2 heures de récupération bagages + transfert + check-in / installation avant toute activité.
+- Pour un vol >5 fuseaux horaires : J1 = arrivée + check-in + repas tranquille + balade légère uniquement. PAS d'excursion lourde, PAS de musée fermant tôt. Mentionne le décalage horaire dans la description du jour.
+- Pour un vol court (Europe, ≤3 fuseaux) ou un train : possible de prévoir une activité légère l'après-midi/soir si l'heure d'arrivée le permet.
+- Si l'heure d'arrivée est avant 10h : journée presque complète possible (après installation).
+- Si l'heure d'arrivée est après 18h : uniquement check-in + dîner sur place.
+
+DERNIER JOUR (départ) :
+- Marge OBLIGATOIRE avant l'heure de départ, selon le type de transport :
+  * Vol international : 3 heures avant départ à l'aéroport (donc activités terminées 3h30 avant le décollage, en comptant le transfert)
+  * Vol domestique : 1 h 30 avant à l'aéroport
+  * Train (TGV, Eurostar, ICE) : 30-45 minutes en gare
+  * Ferry : 1 heure au port
+  * Croisière : 2 heures avant embarquement
+- Ajoute le TRANSFERT vers le point de départ (aéroport / gare / port) dans les trips du dernier jour, avec durée réaliste.
+- Si l'heure de départ est tôt (avant 10h) : dernière journée = check-out + transfert uniquement, programme la veille au soir pour profiter.
+- Si l'heure de départ est en fin de journée (après 18h) : journée complète possible, mais terminer toutes les activités avec la marge précisée.
+
+Le champ "headline" du summary peut mentionner les horaires si pertinent. Les jours concernés (J1 et dernier jour) doivent avoir une description qui rend visible cette contrainte horaire ("Arrivée vers 14h, le temps de poser les bagages..." / "Dernier matin à Kyoto avant le transfert vers Kansai pour le vol de 19h35.").
 
 NIVEAU DE BUDGET :
 - économique : auberges/campings, repas simples, activités gratuites/peu chères
@@ -321,6 +365,39 @@ Ferries acceptés : ${p.okWithFerry === false ? 'NON' : 'OUI si nécessaire'}`
     }
   }
 
+  // === Horaires impératifs (vol, train intl, croisière, ferry) ===
+  // Bloc injecté UNIQUEMENT si l'utilisateur a renseigné au moins une heure
+  // ou un point d'entrée. L'IA cale alors J1 (installation) et J_final
+  // (marge avant départ) selon le type de transport.
+  const scheduleAuto =
+    SCHEDULED_TRIP_TYPES.has(p.tripType) || Boolean(p.hasFixedSchedule);
+  const hasAnyScheduleField =
+    Boolean(p.arrivalTime) ||
+    Boolean(p.departureTime) ||
+    Boolean(p.arrivalGateway) ||
+    Boolean(p.departureGateway) ||
+    Boolean(p.scheduledTransport);
+  let scheduleBlock = '';
+  if (scheduleAuto && hasAnyScheduleField) {
+    const transport = p.scheduledTransport || inferTransport(p.tripType);
+    const buffer = DEPARTURE_BUFFER[transport] || 'marge adaptée au type de transport';
+    const arrivalGw = p.arrivalGateway || '(non précisé — supposer la ville de destination)';
+    const departureGw =
+      p.departureGateway || p.arrivalGateway || '(identique au point d\'arrivée)';
+    const arrivalT = p.arrivalTime || '(non précisée)';
+    const departureT = p.departureTime || '(non précisée)';
+    scheduleBlock = `
+Horaires impératifs (contrainte FORTE — utilise ces valeurs pour caler J1 et le dernier jour) :
+  - Type de transport : ${transport || '(non précisé)'}
+  - Point d'arrivée (aéroport / gare / port) : ${arrivalGw}
+  - Heure d'arrivée à destination (J1) : ${arrivalT}
+  - Point de départ retour : ${departureGw}
+  - Heure de départ du transport (dernier jour) : ${departureT}
+  - Marge OBLIGATOIRE avant le départ : ${buffer}
+  ⇒ Sur J1 : prévois récupération bagages + transfert depuis ${arrivalGw} (s'il diffère de la destination) + check-in / installation (1-2 h) avant toute activité. Si arrivée après 18h : check-in + dîner uniquement. Si vol >5 fuseaux : J1 reste très léger (décalage horaire).
+  ⇒ Sur le dernier jour : termine toutes les activités avec la marge ci-dessus + transfert vers ${departureGw}. Si heure de départ tôt (avant 10h) : check-out + transfert uniquement. Programme les visites importantes la veille au soir.`;
+  }
+
   return `Destination(s) : ${p.destinations}
 Période : du ${p.startDate} au ${p.endDate} (durée = ${expectedDays} jours inclusifs, à respecter EXACTEMENT — ne change AUCUNE date)
 Départ : ${p.departureLocation}
@@ -330,11 +407,23 @@ Arrivée finale : ${p.returnLocation || p.departureLocation}${
       : ' (aller-retour)'
   }
 Participants : ${p.adults} adulte(s), ${children}${travelersBlock}
-Type de voyage : ${p.tripType}${vehicleBlock}
+Type de voyage : ${p.tripType}${vehicleBlock}${scheduleBlock}
 Centres d'intérêt : ${(p.interests || []).join(', ')}${specificActivities}
 Niveau de budget : ${p.budget}${practicalBlock}${offBlock}${constraintsBlock}${visitedBlock}${wishlistBlock}
 Étapes IMPÉRATIVES : ${p.mustInclude || '(aucune)'}
 À éviter : ${p.toAvoid || '(aucun)'}`;
+}
+
+// Déduit le type de transport (avion-intl / train / croisiere) depuis le
+// tripType quand l'utilisateur n'a pas explicitement sélectionné dans le
+// formulaire. Utilisé uniquement pour calibrer la marge de départ.
+function inferTransport(tripType: string): string {
+  if (tripType === 'avion-voiture' || tripType === 'avion-citybreak') {
+    return 'avion-intl';
+  }
+  if (tripType === 'train-international') return 'train';
+  if (tripType === 'croisiere') return 'croisiere';
+  return '';
 }
 
 const FULL_DAY_SCHEMA = `{

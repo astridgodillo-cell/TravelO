@@ -5,8 +5,7 @@
 export const TRIP_TYPES = [
   { id: 'itinerant', label: 'Itinérant' },
   { id: 'roadtrip-voiture', label: '🚗 Road trip voiture' },
-  { id: 'roadtrip-van', label: '🚐 Road trip van' },
-  { id: 'roadtrip-camping-car', label: '🚍 Road trip camping-car' },
+  { id: 'roadtrip-van', label: '🚐 Road trip van / camping-car' },
   { id: 'avion-voiture', label: '✈️ Avion + voiture de location' },
   { id: 'avion-citybreak', label: '✈️ Avion + city break (à pied / TC)' },
   { id: 'train-international', label: '🚄 Train international' },
@@ -17,6 +16,9 @@ export const TRIP_TYPES = [
   { id: 'sejour-fixe', label: '🏖️ Séjour fixe' },
 ];
 
+// L'ancien id 'roadtrip-camping-car' a été fusionné dans 'roadtrip-van'.
+// On le garde dans les sets pour que les itinéraires/templates historiques
+// (créés avant la fusion) continuent à être reconnus comme road trips.
 export const MOTORIZED_TRIP_TYPES = new Set([
   'roadtrip-voiture',
   'roadtrip-van',
@@ -29,6 +31,24 @@ export const ROAD_TRIP_TYPES = new Set([
   'roadtrip-van',
   'roadtrip-camping-car',
 ]);
+
+// Types de voyage où le voyageur a typiquement un horaire impératif
+// d'arrivée et de départ (vol, train international, croisière). Pour ces
+// trips, on demande l'heure d'arrivée à destination et l'heure limite de
+// départ → l'IA calibre les marges (installation J1, marge avant départ).
+export const SCHEDULED_TRIP_TYPES = new Set([
+  'avion-voiture',
+  'avion-citybreak',
+  'train-international',
+  'croisiere',
+]);
+
+// Mapping pour normaliser l'id de trip type au cas où on lirait un
+// itinéraire/template enregistré avant la fusion.
+export function normalizeTripType(id) {
+  if (id === 'roadtrip-camping-car') return 'roadtrip-van';
+  return id;
+}
 
 export const INTERESTS = [
   'nature',
