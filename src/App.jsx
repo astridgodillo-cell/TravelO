@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, useLocation } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -19,10 +19,18 @@ import ProfilePage from './pages/ProfilePage';
 import OnboardingPage from './pages/OnboardingPage';
 
 export default function App() {
+  const { pathname } = useLocation();
+  // La home utilise un layout full-bleed (hero immersif, sections internes
+  // gèrent elles-mêmes leur max-width). Les autres pages restent dans le
+  // container max-w-6xl historique.
+  const fullBleed = pathname === '/';
+  const mainClass = fullBleed
+    ? 'flex-1 w-full'
+    : 'flex-1 mx-auto w-full max-w-6xl px-4 py-6 sm:py-8';
   return (
     <div className="flex min-h-full flex-col">
       <Navbar />
-      <main className="flex-1 mx-auto w-full max-w-6xl px-4 py-6 sm:py-8">
+      <main className={mainClass}>
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route

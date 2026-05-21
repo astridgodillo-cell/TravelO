@@ -156,8 +156,12 @@ function DefaultPreferencesTab({ profile, onUpdated }) {
         }
       }
       // 2) Infos personnelles (régime, langues) sur le profil.
+      //    On marque aussi l'onboarding comme terminé : l'utilisateur a
+      //    configuré son profil ici → le bandeau de bienvenue n'a plus
+      //    de raison d'apparaître.
       const { data: updatedProfile } = await updateMyProfile({
         personal_info: personalInfo,
+        onboarding_completed: true,
       });
       if (updatedProfile) onUpdated(updatedProfile);
       setSavedAt(new Date());
@@ -258,6 +262,7 @@ function DefaultPreferencesTab({ profile, onUpdated }) {
  * TAB 2 : PERSONAS (profils de voyage multiples)
  * ============================================================ */
 function PersonasTab() {
+  const { refreshProfile } = useAuth();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null); // { id?, name, preferences }
@@ -283,6 +288,9 @@ function PersonasTab() {
     } else {
       await saveTemplate(editing.name, editing.preferences);
     }
+    // Configurer un persona = onboarding terminé.
+    await updateMyProfile({ onboarding_completed: true });
+    refreshProfile?.();
     setEditing(null);
     reload();
   }
@@ -451,6 +459,7 @@ function summarizePrefs(p) {
 const RELATIONS = ['conjoint·e', 'enfant', 'parent', 'ami·e', 'autre'];
 
 function TravelersTab() {
+  const { refreshProfile } = useAuth();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null);
@@ -491,6 +500,9 @@ function TravelersTab() {
     } else {
       await saveTraveler(clean);
     }
+    // Ajouter un voyageur = onboarding terminé.
+    await updateMyProfile({ onboarding_completed: true });
+    refreshProfile?.();
     setEditing(null);
     reload();
   }
@@ -749,7 +761,10 @@ function PlaceListTab({ title, help, field, profile, onUpdated }) {
   async function handleSave() {
     setSaving(true);
     try {
-      const { data } = await updateMyProfile({ [field]: items });
+      const { data } = await updateMyProfile({
+        [field]: items,
+        onboarding_completed: true,
+      });
       if (data) onUpdated(data);
       setSavedAt(new Date());
     } finally {
