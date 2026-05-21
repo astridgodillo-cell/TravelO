@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import TemplatePicker from './TemplatePicker';
+import Icon from './Icon';
 import {
   TRIP_TYPES,
   MOTORIZED_TRIP_TYPES,
@@ -305,12 +306,13 @@ export default function PreferencesForm({ onSubmit, loading, initialValues }) {
                 key={t.id}
                 type="button"
                 onClick={() => update('tripType', t.id)}
-                className={`rounded-full border px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm transition-colors ${
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm transition-colors ${
                   active
                     ? 'border-brand-600 bg-brand-600 text-white'
                     : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
                 }`}
               >
+                {t.icon && <Icon name={t.icon} className="h-3.5 w-3.5 sm:h-4 sm:w-4" />}
                 {t.label}
               </button>
             );

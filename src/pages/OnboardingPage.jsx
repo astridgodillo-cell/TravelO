@@ -111,12 +111,15 @@ export default function OnboardingPage() {
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900">
-          Bienvenue sur TravelO 👋
+        <div className="text-[10px] sm:text-xs uppercase tracking-[0.2em] font-semibold text-coral-600">
+          Premiers pas
+        </div>
+        <h1 className="mt-2 text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
+          Bienvenue sur TravelO
         </h1>
-        <p className="text-sm text-slate-500 mt-1">
-          On va configurer ton profil en 3 étapes pour que tes futurs itinéraires
-          soient pré-remplis tout seuls. Tu peux passer chaque étape ou tout faire plus tard.
+        <p className="mt-1.5 text-sm sm:text-base text-slate-600 max-w-2xl">
+          Configurons votre profil en 3 étapes pour que vos futurs itinéraires
+          soient pré-remplis tout seuls. Vous pouvez passer chaque étape ou tout faire plus tard.
         </p>
       </div>
 

@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { getAppConfig, setAppConfig } from '../lib/supabase';
 
 const OPTIONS = [
-  { id: 'gemini', label: '🟢 Gemini', short: 'Gemini' },
-  { id: 'deepseek', label: '🔵 DeepSeek', short: 'DeepSeek' },
-  { id: 'claude', label: '🟠 Claude', short: 'Claude' },
+  { id: 'gemini', label: 'Gemini', dot: 'bg-emerald-500' },
+  { id: 'deepseek', label: 'DeepSeek', dot: 'bg-blue-500' },
+  { id: 'claude', label: 'Claude', dot: 'bg-orange-500' },
 ];
 
 const COLORS = {
@@ -70,9 +70,14 @@ export default function BackendQuickSwitch() {
         onClick={() => setOpen((o) => !o)}
         disabled={busy}
         title="Backend LLM actif (admin)"
-        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${color} disabled:opacity-50`}
+        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${color} disabled:opacity-50`}
       >
-        {busy ? '⏳' : opt.label}
+        {busy ? (
+          <span className="inline-block h-2 w-2 rounded-full bg-slate-400 animate-pulse" />
+        ) : (
+          <span className={`inline-block h-2 w-2 rounded-full ${opt.dot}`} />
+        )}
+        {opt.label}
         <svg
           width="10"
           height="10"
@@ -97,14 +102,28 @@ export default function BackendQuickSwitch() {
             <button
               key={o.id}
               onClick={() => change(o.id)}
-              className={`block w-full text-left px-3 py-2 text-sm transition-colors ${
+              className={`flex w-full items-center gap-2 text-left px-3 py-2 text-sm transition-colors ${
                 o.id === current
                   ? 'bg-brand-50 text-brand-700 font-medium'
                   : 'text-slate-700 hover:bg-slate-50'
               }`}
             >
-              {o.label}
-              {o.id === current && <span className="float-right">✓</span>}
+              <span className={`inline-block h-2 w-2 rounded-full ${o.dot}`} />
+              <span className="flex-1">{o.label}</span>
+              {o.id === current && (
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <polyline points="4 12 9 17 20 6" />
+                </svg>
+              )}
             </button>
           ))}
           <div className="px-3 py-2 text-[10px] text-slate-400 border-t border-slate-100">

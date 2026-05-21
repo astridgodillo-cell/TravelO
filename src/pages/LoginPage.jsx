@@ -24,9 +24,18 @@ export default function LoginPage() {
 
   return (
     <div className="mx-auto max-w-md">
+      <div className="text-center mb-6">
+        <div className="text-[10px] sm:text-xs uppercase tracking-[0.2em] font-semibold text-brand-700">
+          Espace voyageur
+        </div>
+        <h1 className="mt-2 text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
+          Connexion
+        </h1>
+        <p className="mt-1.5 text-sm text-slate-600">
+          Retrouvez vos itinéraires, modèles et préférences.
+        </p>
+      </div>
       <div className="card space-y-4">
-        <h1 className="text-xl font-semibold text-slate-900">Connexion</h1>
-
         <GoogleAuthButton redirectPath={from} />
 
         <div className="relative my-2 flex items-center gap-2 sm:gap-3 text-[11px] sm:text-xs text-slate-400">

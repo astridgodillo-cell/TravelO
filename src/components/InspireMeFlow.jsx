@@ -1,19 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
 import { suggestPlaces } from '../lib/ai';
 import { fetchPhotosFor } from '../lib/photos';
+import Icon from './Icon';
 
 const TRIP_TYPES = [
-  { id: 'itinerant', label: 'Itinérant' },
-  { id: 'roadtrip-voiture', label: '🚗 Road trip voiture' },
-  { id: 'roadtrip-van', label: '🚐 Road trip van / camping-car' },
-  { id: 'avion-voiture', label: '✈️ Avion + voiture' },
-  { id: 'avion-citybreak', label: '✈️ Avion + city break' },
-  { id: 'train-international', label: '🚄 Train international' },
-  { id: 'circuit-train', label: '🚉 Circuit train' },
-  { id: 'velo', label: '🚴 Vélo / cyclotourisme' },
-  { id: 'trek', label: '🥾 Trek itinérant' },
-  { id: 'croisiere', label: '🛳️ Croisière' },
-  { id: 'sejour-fixe', label: '🏖️ Séjour fixe' },
+  { id: 'itinerant', label: 'Itinérant', icon: 'route' },
+  { id: 'roadtrip-voiture', label: 'Road trip voiture', icon: 'car' },
+  { id: 'roadtrip-van', label: 'Road trip van / camping-car', icon: 'van' },
+  { id: 'avion-voiture', label: 'Avion + voiture', icon: 'plane-car' },
+  { id: 'avion-citybreak', label: 'Avion + city break', icon: 'plane-walk' },
+  { id: 'train-international', label: 'Train international', icon: 'train' },
+  { id: 'circuit-train', label: 'Circuit train', icon: 'train-circle' },
+  { id: 'velo', label: 'Vélo / cyclotourisme', icon: 'bike' },
+  { id: 'trek', label: 'Trek itinérant', icon: 'hiking' },
+  { id: 'croisiere', label: 'Croisière', icon: 'ship' },
+  { id: 'sejour-fixe', label: 'Séjour fixe', icon: 'beach' },
 ];
 
 const CATEGORIES = [
@@ -362,12 +363,13 @@ export default function InspireMeFlow({ onSubmit, loading }) {
                   key={t.id}
                   type="button"
                   onClick={() => update('tripType', t.id)}
-                  className={`rounded-full border px-4 py-2 text-sm transition-colors ${
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm transition-colors ${
                     active
                       ? 'border-brand-600 bg-brand-600 text-white'
                       : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
                   }`}
                 >
+                  {t.icon && <Icon name={t.icon} className="h-4 w-4" />}
                   {t.label}
                 </button>
               );

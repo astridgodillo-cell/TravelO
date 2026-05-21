@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import Icon from './Icon';
 import { listTemplates, listTravelers, getMyProfile } from '../lib/supabase';
 
 // Propose à l'utilisateur de préremplir le formulaire depuis son profil.
@@ -48,24 +49,30 @@ export default function PrefillBanner({ onPrefill, onDismiss }) {
     );
   if (personas.length === 0 && travelers.length === 0 && !hasPersonalInfo) {
     return (
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 flex items-center justify-between gap-3">
-        <span>
-          💡 Astuce : configure ton{' '}
-          <Link to="/profil" className="text-brand-700 hover:underline font-medium">
-            profil
-          </Link>{' '}
-          pour préremplir automatiquement ce formulaire à l'avenir.
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 flex items-center justify-between gap-3">
+        <span className="inline-flex items-center gap-2">
+          <Icon name="bulb" className="h-4 w-4 text-sunset-600 shrink-0" />
+          <span>
+            Astuce : configurez votre{' '}
+            <Link
+              to="/profil"
+              className="text-brand-700 hover:underline font-medium"
+            >
+              profil
+            </Link>{' '}
+            pour préremplir automatiquement ce formulaire à l'avenir.
+          </span>
         </span>
         <button
           type="button"
-          className="text-slate-400 hover:text-slate-600 text-xs"
+          className="text-slate-400 hover:text-slate-600 shrink-0"
           onClick={() => {
             setDismissed(true);
             onDismiss?.();
           }}
           aria-label="Fermer"
         >
-          ✕
+          <Icon name="close" className="h-4 w-4" />
         </button>
       </div>
     );
@@ -87,27 +94,31 @@ export default function PrefillBanner({ onPrefill, onDismiss }) {
   }
 
   return (
-    <div className="rounded-lg border border-brand-200 bg-brand-50 p-4 space-y-3">
+    <div className="rounded-2xl border border-brand-200 bg-brand-50 p-4 space-y-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="font-semibold text-brand-900">
-            ✨ Préremplir depuis ton profil ?
+          <div className="text-[10px] uppercase tracking-[0.2em] font-semibold text-brand-700 inline-flex items-center gap-1.5">
+            <Icon name="sparkles" className="h-3.5 w-3.5" />
+            Préremplissage
+          </div>
+          <h3 className="mt-1 font-semibold text-brand-900">
+            Préremplir depuis votre profil&nbsp;?
           </h3>
           <p className="text-sm text-brand-800 mt-0.5">
-            On peut récupérer tes préférences enregistrées, tes voyageurs et tes
-            contraintes pour gagner du temps.
+            Récupérez vos préférences, voyageurs et contraintes enregistrés
+            pour gagner du temps.
           </p>
         </div>
         <button
           type="button"
-          className="text-brand-500 hover:text-brand-700 text-sm shrink-0"
+          className="text-brand-500 hover:text-brand-700 shrink-0"
           onClick={() => {
             setDismissed(true);
             onDismiss?.();
           }}
           aria-label="Fermer"
         >
-          ✕
+          <Icon name="close" className="h-4 w-4" />
         </button>
       </div>
 

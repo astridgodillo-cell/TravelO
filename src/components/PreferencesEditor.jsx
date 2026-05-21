@@ -2,6 +2,7 @@
 // à un trip). Utilisé par ProfilePage (persona par défaut + personas) et
 // par OnboardingWizard. La version "trip" complète reste dans PreferencesForm.
 
+import Icon from './Icon';
 import {
   TRIP_TYPES,
   MOTORIZED_TRIP_TYPES,
@@ -270,7 +271,7 @@ function ChipMultiSelect({ options, selected, onToggle, small, capitalize }) {
             key={opt.id}
             type="button"
             onClick={() => onToggle(opt.id)}
-            className={`rounded-full border transition-colors ${sizeCls} ${
+            className={`inline-flex items-center gap-1.5 rounded-full border transition-colors ${sizeCls} ${
               capitalize ? 'capitalize' : ''
             } ${
               active
@@ -278,6 +279,7 @@ function ChipMultiSelect({ options, selected, onToggle, small, capitalize }) {
                 : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100'
             }`}
           >
+            {opt.icon && <Icon name={opt.icon} className={small ? 'h-3.5 w-3.5' : 'h-4 w-4'} />}
             {opt.label}
           </button>
         );

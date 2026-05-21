@@ -41,12 +41,17 @@ export default function PublicItineraryPage() {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-brand-100 bg-brand-50 p-4 text-sm text-brand-800 print:hidden">
-        📣 Vous consultez un itinéraire <strong>partagé publiquement</strong>.{' '}
-        <Link to="/nouveau" className="underline">
-          Créez le vôtre
-        </Link>
-        .
+      <div className="rounded-2xl border border-brand-100 bg-brand-50 p-4 text-sm text-brand-800 print:hidden">
+        <div className="text-[10px] uppercase tracking-[0.2em] font-semibold text-brand-600">
+          Itinéraire partagé
+        </div>
+        <div className="mt-1">
+          Vous consultez un voyage <strong>partagé publiquement</strong>.{' '}
+          <Link to="/nouveau" className="underline">
+            Créez le vôtre
+          </Link>
+          .
+        </div>
       </div>
       <ItineraryView itinerary={trip.itinerary} />
     </div>

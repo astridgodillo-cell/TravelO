@@ -4,6 +4,8 @@ import InspireMeFlow from '../components/InspireMeFlow';
 import LocalActivitiesFlow from '../components/LocalActivitiesFlow';
 import GeneratingLoader from '../components/GeneratingLoader';
 import PrefillBanner from '../components/PrefillBanner';
+import PageHeader from '../components/PageHeader';
+import Icon from '../components/Icon';
 import { generateItinerary } from '../lib/ai';
 import { saveItinerary } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
@@ -13,21 +15,21 @@ const MODES = [
   {
     id: 'expert',
     label: 'J\'ai mon plan en tête',
-    emoji: '🗺️',
+    icon: 'map',
     description:
       'Formulaire détaillé : vous précisez tout (étapes, activités, hébergement, budget…).',
   },
   {
     id: 'inspire',
     label: 'Inspire-moi',
-    emoji: '✨',
+    icon: 'sparkles',
     description:
       'Vous tapez juste une destination. On vous propose des lieux à visiter, vous choisissez, on construit l\'itinéraire.',
   },
   {
     id: 'local',
     label: 'Activités autour de moi',
-    emoji: '🧭',
+    icon: 'compass',
     description:
       'On vous propose 10 activités à proximité (filtres : rayon, types, temps de pluie…). À ajouter en wishlist ou pour bâtir une journée.',
   },
@@ -114,6 +116,15 @@ export default function NewItineraryPage() {
   return (
     <div className="space-y-6">
       {!loading && (
+        <PageHeader
+          eyebrow="Nouveau voyage"
+          eyebrowColor="coral"
+          title="Composons votre prochain itinéraire"
+          description="Choisissez votre méthode : un plan déjà en tête, une inspiration à creuser, ou une journée à improviser autour de vous."
+        />
+      )}
+
+      {!loading && (
         <div className="card">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {MODES.map((m) => {
@@ -129,8 +140,16 @@ export default function NewItineraryPage() {
                       : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-md'
                   }`}
                 >
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-2xl">{m.emoji}</span>
+                  <div className="flex items-center gap-2.5 mb-1.5">
+                    <span
+                      className={`inline-grid place-items-center h-9 w-9 rounded-xl ${
+                        active
+                          ? 'bg-brand-600 text-white'
+                          : 'bg-slate-900 text-white'
+                      }`}
+                    >
+                      <Icon name={m.icon} className="h-4 w-4" />
+                    </span>
                     <span
                       className={`font-semibold ${
                         active ? 'text-brand-700' : 'text-slate-900'
@@ -139,7 +158,9 @@ export default function NewItineraryPage() {
                       {m.label}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-600">{m.description}</p>
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    {m.description}
+                  </p>
                 </button>
               );
             })}

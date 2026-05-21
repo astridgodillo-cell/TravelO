@@ -9,6 +9,7 @@ import EditActivityModal from './EditActivityModal';
 import DayPhotos from './DayPhotos';
 import DaySpecialties from './DaySpecialties';
 import ItineraryTable from './ItineraryTable';
+import Icon from './Icon';
 import {
   bestAccommodationLink,
   googleMapsDirections,
@@ -150,8 +151,9 @@ export default function ItineraryView({
         <div className="relative">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="max-w-2xl">
-              <span className="inline-block text-xs uppercase tracking-widest text-white/80 mb-2 print:text-slate-500">
-                ✨ Itinéraire sur mesure
+              <span className="inline-flex items-center gap-1.5 text-xs uppercase tracking-widest text-white/80 mb-2 print:text-slate-500">
+                <Icon name="sparkles" className="h-3.5 w-3.5" />
+                Itinéraire sur mesure
               </span>
               <h1 className="text-3xl sm:text-4xl font-bold leading-tight">
                 {summary?.destinations}
@@ -176,21 +178,21 @@ export default function ItineraryView({
           </div>
 
           <div className="mt-6 flex flex-wrap gap-2">
-            <HeroChip icon="📅" label={`${summary?.duration_days} jours`} />
+            <HeroChip icon="calendar" label={`${summary?.duration_days} jours`} />
             <HeroChip
-              icon="👥"
+              icon="users"
               label={`${adults} adulte(s)${children ? ` + ${children} enfant(s)` : ''}`}
             />
-            <HeroChip icon="🎯" label={summary?.trip_type} />
-            <HeroChip icon="💎" label={summary?.budget_level} />
+            <HeroChip icon="target" label={summary?.trip_type} />
+            <HeroChip icon="diamond" label={summary?.budget_level} />
             {summary?.total_distance_km != null && (
               <HeroChip
-                icon="🛣️"
+                icon="road"
                 label={`${summary.total_distance_km.toLocaleString('fr-FR')} km`}
               />
             )}
             {summary?.vehicle_summary && (
-              <HeroChip icon="🚐" label={summary.vehicle_summary} />
+              <HeroChip icon="van" label={summary.vehicle_summary} />
             )}
           </div>
 
@@ -212,17 +214,19 @@ export default function ItineraryView({
                 rel="noreferrer"
                 className="inline-flex items-center gap-2 rounded-full bg-white text-slate-900 px-4 py-2 text-sm font-semibold shadow hover:bg-slate-100 transition"
               >
-                🗺️ Ouvrir tout l'itinéraire dans Google Maps
+                <Icon name="map" className="h-4 w-4" />
+                Ouvrir tout l'itinéraire dans Google Maps
               </a>
             </div>
           )}
 
           {aiCostEur != null && (
             <div
-              className="mt-4 text-xs text-white/70 print:text-slate-500"
+              className="mt-4 inline-flex items-center gap-1.5 text-xs text-white/70 print:text-slate-500"
               title={`${metadata.call_count || 0} appels IA · ${(metadata.total_input_tokens || 0).toLocaleString('fr-FR')} tokens entrée + ${(metadata.total_output_tokens || 0).toLocaleString('fr-FR')} tokens sortie · modèle(s) : ${(metadata.models_used || []).join(', ') || '?'}`}
             >
-              💸 Coût IA de génération : {formatAiCost(aiCostEur)}
+              <Icon name="wallet" className="h-3.5 w-3.5" />
+              Coût IA de génération : {formatAiCost(aiCostEur)}
               {metadata.call_count > 1 && (
                 <span className="opacity-70 ml-1">
                   ({metadata.call_count} appels)
@@ -1421,7 +1425,9 @@ function HeroChip({ icon, label }) {
   if (!label) return null;
   return (
     <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 backdrop-blur px-3 py-1.5 text-sm font-medium text-white print:bg-slate-100 print:text-slate-700 capitalize">
-      <span aria-hidden>{icon}</span>
+      {icon && (
+        <Icon name={icon} className="h-3.5 w-3.5 opacity-90" strokeWidth={2} />
+      )}
       <span>{label}</span>
     </span>
   );

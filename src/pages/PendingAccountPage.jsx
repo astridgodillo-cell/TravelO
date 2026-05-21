@@ -50,10 +50,17 @@ export default function PendingAccountPage() {
 
   return (
     <div className="mx-auto max-w-xl space-y-4">
+      <div className="text-center mb-2">
+        <div className="text-[10px] sm:text-xs uppercase tracking-[0.2em] font-semibold text-sunset-600">
+          Statut du compte
+        </div>
+      </div>
       <div
-        className={`rounded-lg border p-6 ${toneClasses[message.tone]}`}
+        className={`rounded-2xl border p-6 ${toneClasses[message.tone]}`}
       >
-        <h1 className="text-xl font-semibold">{message.title}</h1>
+        <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
+          {message.title}
+        </h1>
         <p className="mt-3 text-sm leading-relaxed">{message.body}</p>
       </div>
 

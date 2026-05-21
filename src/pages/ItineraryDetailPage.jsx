@@ -148,15 +148,18 @@ export default function ItineraryDetailPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 print:hidden">
+      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 print:hidden">
         <div className="min-w-0">
           <Link
             to="/mes-voyages"
-            className="text-sm text-brand-700 hover:underline"
+            className="inline-flex items-center gap-1 text-sm text-brand-700 hover:underline"
           >
             ← Mes voyages
           </Link>
-          <h1 className="text-xl sm:text-2xl font-semibold text-slate-900 break-words">
+          <div className="mt-2 text-[10px] sm:text-xs uppercase tracking-[0.2em] font-semibold text-coral-600">
+            Itinéraire
+          </div>
+          <h1 className="mt-1 text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 break-words">
             {trip.title}
           </h1>
         </div>

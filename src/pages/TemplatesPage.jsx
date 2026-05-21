@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { listTemplateItineraries } from '../lib/supabase';
+import PageHeader from '../components/PageHeader';
 
 export default function TemplatesPage() {
   const [templates, setTemplates] = useState([]);
@@ -36,15 +37,13 @@ export default function TemplatesPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-slate-900">
-          📘 Modèles de voyage
-        </h1>
-        <p className="text-sm text-slate-500 mt-1">
-          Inspirez-vous de ces itinéraires proposés par l'équipe TravelO pour
-          créer le vôtre.
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Modèles"
+        eyebrowColor="coral"
+        title="Inspirez-vous de modèles de voyage"
+        description="Des itinéraires proposés par l'équipe TravelO pour construire le vôtre."
+        banner="https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?auto=format&fit=crop&w=2000&q=80"
+      />
 
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">

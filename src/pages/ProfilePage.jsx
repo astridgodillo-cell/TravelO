@@ -21,13 +21,15 @@ import {
   PROFILE_PREF_DEFAULTS,
 } from '../lib/preferenceOptions';
 import PreferencesEditor from '../components/PreferencesEditor';
+import PageHeader from '../components/PageHeader';
+import Icon from '../components/Icon';
 
 const TABS = [
-  { id: 'preferences', label: 'Mes préférences', emoji: '⚙️' },
-  { id: 'personas', label: 'Profils de voyage', emoji: '🎭' },
-  { id: 'travelers', label: 'Mes voyageurs', emoji: '👥' },
-  { id: 'visited', label: 'Lieux visités', emoji: '✅' },
-  { id: 'wishlist', label: 'Wishlist', emoji: '⭐' },
+  { id: 'preferences', label: 'Mes préférences', icon: 'sliders' },
+  { id: 'personas', label: 'Profils de voyage', icon: 'mask' },
+  { id: 'travelers', label: 'Mes voyageurs', icon: 'users' },
+  { id: 'visited', label: 'Lieux visités', icon: 'check-circle' },
+  { id: 'wishlist', label: 'Wishlist', icon: 'star' },
 ];
 
 export default function ProfilePage() {
@@ -56,27 +58,27 @@ export default function ProfilePage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-slate-900">Mon profil</h1>
-        <p className="text-sm text-slate-500 mt-1">
-          Configurez vos préférences pour gagner du temps à chaque nouvel itinéraire.
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Votre espace"
+        eyebrowColor="brand"
+        title="Mon profil"
+        description="Configurez vos préférences pour gagner du temps à chaque nouvel itinéraire."
+      />
 
       {/* Tabs */}
-      <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-1">
+      <div className="flex flex-wrap gap-1 sm:gap-2 border-b border-slate-200 pb-1">
         {TABS.map((t) => (
           <button
             key={t.id}
             type="button"
             onClick={() => setTab(t.id)}
-            className={`rounded-t-md px-3 py-2 text-sm font-medium transition-colors ${
+            className={`inline-flex items-center gap-1.5 rounded-t-md px-3 py-2 text-sm font-medium transition-colors ${
               tab === t.id
                 ? 'bg-brand-50 text-brand-700 border-b-2 border-brand-600 -mb-[1px]'
                 : 'text-slate-600 hover:bg-slate-100'
             }`}
           >
-            <span className="mr-1">{t.emoji}</span>
+            <Icon name={t.icon} className="h-4 w-4" />
             {t.label}
           </button>
         ))}

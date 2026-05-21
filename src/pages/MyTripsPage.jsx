@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { listItineraries, deleteItinerary } from '../lib/supabase';
+import PageHeader from '../components/PageHeader';
+import Icon from '../components/Icon';
 
 export default function MyTripsPage() {
   const [items, setItems] = useState([]);
@@ -80,12 +82,19 @@ export default function MyTripsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold text-slate-900">Mes voyages</h1>
-        <Link to="/nouveau" className="btn-primary">
-          + Nouvel itinéraire
-        </Link>
-      </div>
+      <PageHeader
+        eyebrow="Mes voyages"
+        eyebrowColor="brand"
+        title="Vos itinéraires"
+        description="Retrouvez, modifiez, partagez ou supprimez les voyages que vous avez générés."
+        banner="https://images.unsplash.com/photo-1488646953014-85cb44e25828?auto=format&fit=crop&w=2000&q=80"
+        action={
+          <Link to="/nouveau" className="btn-primary inline-flex items-center gap-1.5">
+            <Icon name="plus" className="h-4 w-4" />
+            Nouvel itinéraire
+          </Link>
+        }
+      />
 
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
@@ -135,13 +144,14 @@ export default function MyTripsPage() {
               <button
                 onClick={handleDeleteSelected}
                 disabled={!someSelected || deleting}
-                className="btn text-sm bg-red-600 text-white hover:bg-red-700"
+                className="btn text-sm bg-red-600 text-white hover:bg-red-700 inline-flex items-center gap-1.5"
               >
+                <Icon name="trash" className="h-4 w-4" />
                 {deleting
                   ? 'Suppression…'
                   : someSelected
-                    ? `🗑️ Supprimer (${selected.size})`
-                    : '🗑️ Supprimer'}
+                    ? `Supprimer (${selected.size})`
+                    : 'Supprimer'}
               </button>
             </div>
           </div>

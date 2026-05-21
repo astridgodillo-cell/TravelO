@@ -5,6 +5,8 @@ import {
   updatePackingList,
   deletePackingList,
 } from '../lib/supabase';
+import PageHeader from '../components/PageHeader';
+import Icon from '../components/Icon';
 
 export default function MyListsPage() {
   const [lists, setLists] = useState([]);
@@ -90,21 +92,23 @@ export default function MyListsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Mes listes</h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Listes d'affaires personnelles à ne pas oublier (ex. "Van été",
-            "Camping rando"). Vous pourrez les attacher à n'importe quel
-            itinéraire dans l'onglet "Pratique".
-          </p>
-        </div>
-        {!editing && (
-          <button onClick={startNew} className="btn-primary">
-            + Nouvelle liste
-          </button>
-        )}
-      </div>
+      <PageHeader
+        eyebrow="Préparatifs"
+        eyebrowColor="sunset"
+        title="Mes listes d'affaires"
+        description="Vos check-lists personnelles (« Van été », « Camping rando »…). Attachables à n'importe quel itinéraire depuis l'onglet Pratique."
+        action={
+          !editing && (
+            <button
+              onClick={startNew}
+              className="btn-primary inline-flex items-center gap-1.5"
+            >
+              <Icon name="plus" className="h-4 w-4" />
+              Nouvelle liste
+            </button>
+          )
+        }
+      />
 
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">

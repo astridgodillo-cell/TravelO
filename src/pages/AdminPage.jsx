@@ -9,6 +9,8 @@ import {
   setAppConfig,
 } from '../lib/supabase';
 import { costEur } from '../lib/ai';
+import PageHeader from '../components/PageHeader';
+import Icon from '../components/Icon';
 
 const STATUS_FILTERS = [
   { id: 'all', label: 'Tous' },
@@ -28,14 +30,14 @@ const STATUS_BADGES = {
 const TIER_OPTIONS = ['free', 'pro', 'illimited'];
 
 const BACKEND_OPTIONS = [
-  { id: 'gemini', label: '🟢 Gemini 2.5 Flash', hint: 'Le moins cher après DeepSeek. Quota élevé. Recommandé par défaut.' },
-  { id: 'deepseek', label: '🔵 DeepSeek Chat', hint: 'Le moins cher (~5× moins que Claude). Qualité narrative légèrement inférieure.' },
-  { id: 'claude', label: '🟠 Claude Sonnet + Haiku', hint: 'Meilleure qualité narrative. Plus cher, quotas plus stricts.' },
+  { id: 'gemini', label: 'Gemini 2.5 Flash', dot: 'bg-emerald-500', hint: 'Le moins cher après DeepSeek. Quota élevé. Recommandé par défaut.' },
+  { id: 'deepseek', label: 'DeepSeek Chat', dot: 'bg-blue-500', hint: 'Le moins cher (~5× moins que Claude). Qualité narrative légèrement inférieure.' },
+  { id: 'claude', label: 'Claude Sonnet + Haiku', dot: 'bg-orange-500', hint: 'Meilleure qualité narrative. Plus cher, quotas plus stricts.' },
 ];
 
 const TABS = [
-  { id: 'users', label: '👥 Utilisateurs' },
-  { id: 'trips', label: '✈️ Tous les itinéraires' },
+  { id: 'users', label: 'Utilisateurs', icon: 'users' },
+  { id: 'trips', label: 'Tous les itinéraires', icon: 'plane' },
 ];
 
 export default function AdminPage() {
@@ -123,18 +125,18 @@ export default function AdminPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-slate-900">Administration</h1>
-        <p className="text-sm text-slate-500">
-          Tableau de bord, gestion des utilisateurs, backend LLM et bibliothèque
-          de modèles.
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Administration"
+        eyebrowColor="slate"
+        title="Tableau de bord admin"
+        description="Gestion des utilisateurs, backend LLM, bibliothèque de modèles et stats globales."
+      />
 
       {/* Paramètres globaux : choix du backend LLM */}
       <section className="card">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-3">
-          ⚙️ Backend LLM utilisé par tous les utilisateurs
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-3 inline-flex items-center gap-1.5">
+          <Icon name="settings" className="h-4 w-4" />
+          Backend LLM utilisé par tous les utilisateurs
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
           {BACKEND_OPTIONS.map((b) => {
@@ -150,13 +152,15 @@ export default function AdminPage() {
                     : 'border-slate-200 bg-white hover:bg-slate-50'
                 }`}
               >
-                <div className="text-sm font-semibold text-slate-900">
+                <div className="inline-flex items-center gap-2 text-sm font-semibold text-slate-900">
+                  <span className={`h-2 w-2 rounded-full ${b.dot}`} />
                   {b.label}
                 </div>
                 <div className="text-xs text-slate-500 mt-1">{b.hint}</div>
                 {active && (
-                  <div className="text-xs text-brand-700 mt-1 font-medium">
-                    ✓ Actif
+                  <div className="text-xs text-brand-700 mt-1 font-medium inline-flex items-center gap-1">
+                    <Icon name="check" className="h-3 w-3" />
+                    Actif
                   </div>
                 )}
               </button>
@@ -234,12 +238,13 @@ export default function AdminPage() {
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-t-md border-b-2 transition-colors whitespace-nowrap shrink-0 ${
+              className={`inline-flex items-center gap-1.5 px-3 sm:px-4 py-2 text-sm font-medium rounded-t-md border-b-2 transition-colors whitespace-nowrap shrink-0 ${
                 tab === t.id
                   ? 'border-brand-600 text-brand-700'
                   : 'border-transparent text-slate-500 hover:text-slate-800'
               }`}
             >
+              <Icon name={t.icon} className="h-4 w-4" />
               {t.label}
             </button>
           ))}
@@ -486,7 +491,8 @@ function AllTripsTab({ trips, loading }) {
                   <td className="px-4 py-3 space-x-1">
                     {t.is_template && (
                       <span className="chip bg-purple-100 text-purple-700">
-                        📘 Modèle
+                        <Icon name="book" className="inline h-3 w-3 mr-1" />
+                        Modèle
                       </span>
                     )}
                     {t.is_public && (
