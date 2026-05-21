@@ -859,76 +859,115 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
-// Géocodage : "Ventabren" → { lat, lng }. Utilise Places Text Search.
-// Tolérant : essaye plusieurs variantes pour gérer les formats courants
-// (code postal entre parenthèses, virgules, etc.).
+// Géocodage : "Ventabren" → { lat, lng }. Essaie d'abord Google Places
+// avec plusieurs variantes du texte, puis Nominatim (OSM, gratuit) en
+// fallback si Google échoue. Garantit qu'on trouve presque toujours.
 async function geocodePlace(
   query: string
 ): Promise<{ lat: number; lng: number; formattedAddress: string } | null> {
-  if (!GOOGLE_PLACES_API_KEY) return null;
-
-  // Génère plusieurs variantes à tenter, de la plus fidèle à la plus permissive
-  const variants: string[] = [];
   const original = query.trim();
-  variants.push(original);
+  if (!original) return null;
 
-  // Nettoyage : retire le contenu entre parenthèses (ex: "Ventabren (13122)" → "Ventabren")
-  // Google Places gère mal les parens autour des codes postaux.
-  const noParens = original.replace(/\s*\([^)]*\)\s*/g, ' ').replace(/\s+/g, ' ').trim();
+  // Génère un panel de variantes à essayer, de la plus fidèle à la plus permissive
+  const variants: string[] = [original];
+
+  // Nettoyage parenthèses : "Ventabren (13122)" → "Ventabren"
+  const noParens = original
+    .replace(/\s*\([^)]*\)\s*/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   if (noParens && noParens !== original) variants.push(noParens);
 
-  // Si on a un code postal français (5 chiffres) collé ou seul, on l'extrait
-  // et on construit une requête "VILLE, CODE_POSTAL France" qui marche mieux.
+  // Détection code postal français → on essaie aussi "VILLE CP France"
+  // ET le nom de ville SEUL (sans CP)
   const postalMatch = original.match(/\b(\d{5})\b/);
-  const wordsOnly = original.replace(/\b\d{5}\b/g, '').replace(/[(),]/g, ' ').replace(/\s+/g, ' ').trim();
+  const wordsOnly = original
+    .replace(/\b\d{5}\b/g, '')
+    .replace(/[(),]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (wordsOnly && wordsOnly !== noParens) variants.push(wordsOnly);
   if (postalMatch && wordsOnly) {
     variants.push(`${wordsOnly} ${postalMatch[1]} France`);
+    variants.push(`${wordsOnly}, France`);
   }
-
-  // Ajoute "France" en fallback si pas déjà mentionné
   if (!/france/i.test(noParens) && noParens) {
     variants.push(`${noParens}, France`);
   }
 
-  // Dédoublonne
-  const tried = new Set<string>();
-  for (const variant of variants) {
-    if (!variant || tried.has(variant)) continue;
-    tried.add(variant);
-    try {
-      const res = await fetch(
-        'https://places.googleapis.com/v1/places:searchText',
-        {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            'X-Goog-Api-Key': GOOGLE_PLACES_API_KEY,
-            'X-Goog-FieldMask': 'places.location,places.formattedAddress',
-          },
-          body: JSON.stringify({
-            textQuery: variant,
-            languageCode: 'fr',
-            maxResultCount: 1,
-          }),
+  // === Tentative 1 : Google Places (si clé disponible) ===
+  if (GOOGLE_PLACES_API_KEY) {
+    const tried = new Set<string>();
+    for (const variant of variants) {
+      if (!variant || tried.has(variant)) continue;
+      tried.add(variant);
+      try {
+        const res = await fetch(
+          'https://places.googleapis.com/v1/places:searchText',
+          {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              'X-Goog-Api-Key': GOOGLE_PLACES_API_KEY,
+              'X-Goog-FieldMask': 'places.location,places.formattedAddress',
+            },
+            body: JSON.stringify({
+              textQuery: variant,
+              languageCode: 'fr',
+              maxResultCount: 1,
+            }),
+          }
+        );
+        if (!res.ok) {
+          const txt = await res.text();
+          console.warn(`[geocode google] "${variant}" → ${res.status} ${txt.slice(0, 200)}`);
+          continue;
         }
-      );
+        const data = await res.json();
+        const p = data?.places?.[0];
+        if (p?.location) {
+          return {
+            lat: p.location.latitude,
+            lng: p.location.longitude,
+            formattedAddress: p.formattedAddress || variant,
+          };
+        }
+      } catch (e) {
+        console.warn(`[geocode google] "${variant}" crash`, e);
+      }
+    }
+  }
+
+  // === Tentative 2 : Nominatim (OSM, gratuit, sans clé) ===
+  // Limite : 1 req/s. On essaie séquentiellement les 2-3 variantes les plus
+  // probables seulement pour rester sous la limite.
+  const nominatimVariants = Array.from(new Set([noParens || original, wordsOnly].filter(Boolean))).slice(0, 2);
+  for (const variant of nominatimVariants) {
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
+        variant
+      )}&format=json&limit=1&accept-language=fr&addressdetails=1`;
+      const res = await fetch(url, {
+        headers: { 'User-Agent': 'TravelO/1.0 (travelo.app)' },
+      });
       if (!res.ok) {
-        console.warn(`[geocode] "${variant}" → ${res.status}`);
+        console.warn(`[geocode nominatim] "${variant}" → ${res.status}`);
         continue;
       }
       const data = await res.json();
-      const p = data?.places?.[0];
-      if (p?.location) {
+      const first = Array.isArray(data) ? data[0] : null;
+      if (first?.lat && first?.lon) {
         return {
-          lat: p.location.latitude,
-          lng: p.location.longitude,
-          formattedAddress: p.formattedAddress || variant,
+          lat: parseFloat(first.lat),
+          lng: parseFloat(first.lon),
+          formattedAddress: first.display_name || variant,
         };
       }
     } catch (e) {
-      console.warn(`[geocode] "${variant}" crash`, e);
+      console.warn(`[geocode nominatim] "${variant}" crash`, e);
     }
   }
+
   return null;
 }
 
@@ -1947,48 +1986,88 @@ Deno.serve(async (req) => {
       if (!query || typeof query !== 'string' || query.trim().length < 3) {
         return jsonResponse({ predictions: [] });
       }
-      if (!GOOGLE_PLACES_API_KEY) {
-        return jsonResponse({ predictions: [] });
-      }
-      try {
-        const res = await fetch(
-          'https://places.googleapis.com/v1/places:autocomplete',
-          {
-            method: 'POST',
-            headers: {
-              'content-type': 'application/json',
-              'X-Goog-Api-Key': GOOGLE_PLACES_API_KEY,
-            },
-            body: JSON.stringify({
-              input: query,
-              languageCode: 'fr',
-              // sessionToken groupe les touches d'une même saisie en
-              // une seule session billable (~$2.83/1000 sessions).
-              sessionToken: session_token || undefined,
-            }),
+
+      // === Tentative 1 : Google Places Autocomplete ===
+      let predictions: any[] = [];
+      if (GOOGLE_PLACES_API_KEY) {
+        try {
+          const res = await fetch(
+            'https://places.googleapis.com/v1/places:autocomplete',
+            {
+              method: 'POST',
+              headers: {
+                'content-type': 'application/json',
+                'X-Goog-Api-Key': GOOGLE_PLACES_API_KEY,
+              },
+              body: JSON.stringify({
+                input: query,
+                languageCode: 'fr',
+                sessionToken: session_token || undefined,
+              }),
+            }
+          );
+          if (res.ok) {
+            const data = await res.json();
+            predictions = (data?.suggestions || [])
+              .filter((s: any) => s.placePrediction)
+              .slice(0, 6)
+              .map((s: any) => ({
+                place_id: s.placePrediction.placeId,
+                text: s.placePrediction.text?.text || '',
+                main_text:
+                  s.placePrediction.structuredFormat?.mainText?.text || '',
+                secondary_text:
+                  s.placePrediction.structuredFormat?.secondaryText?.text || '',
+                source: 'google',
+              }));
+          } else {
+            const txt = await res.text();
+            console.warn(`[autocomplete google] ${res.status} ${txt.slice(0, 200)}`);
           }
-        );
-        if (!res.ok) {
-          console.warn('[autocomplete]', res.status, await res.text());
-          return jsonResponse({ predictions: [] });
+        } catch (e) {
+          console.warn('[autocomplete google] crash', e);
         }
-        const data = await res.json();
-        const predictions = (data?.suggestions || [])
-          .filter((s: any) => s.placePrediction)
-          .slice(0, 6)
-          .map((s: any) => ({
-            place_id: s.placePrediction.placeId,
-            text: s.placePrediction.text?.text || '',
-            main_text:
-              s.placePrediction.structuredFormat?.mainText?.text || '',
-            secondary_text:
-              s.placePrediction.structuredFormat?.secondaryText?.text || '',
-          }));
-        return jsonResponse({ predictions });
-      } catch (e) {
-        console.warn('[autocomplete] crash', e);
-        return jsonResponse({ predictions: [] });
       }
+
+      // === Tentative 2 : Nominatim fallback (gratuit, sans clé) ===
+      if (predictions.length === 0) {
+        try {
+          const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
+            query
+          )}&format=json&limit=6&accept-language=fr&addressdetails=1`;
+          const res = await fetch(url, {
+            headers: { 'User-Agent': 'TravelO/1.0 (travelo.app)' },
+          });
+          if (res.ok) {
+            const data = await res.json();
+            predictions = (Array.isArray(data) ? data : [])
+              .slice(0, 6)
+              .map((r: any) => {
+                const a = r.address || {};
+                const main =
+                  a.city || a.town || a.village || a.municipality ||
+                  a.county || r.name || (r.display_name || '').split(',')[0];
+                const secondaryParts = [
+                  a.state || a.region,
+                  a.country,
+                ].filter(Boolean);
+                return {
+                  place_id: r.place_id ? String(r.place_id) : null,
+                  text: r.display_name || main,
+                  main_text: main,
+                  secondary_text: secondaryParts.join(', '),
+                  source: 'nominatim',
+                };
+              });
+          } else {
+            console.warn(`[autocomplete nominatim] ${res.status}`);
+          }
+        } catch (e) {
+          console.warn('[autocomplete nominatim] crash', e);
+        }
+      }
+
+      return jsonResponse({ predictions });
     }
 
     if (mode === 'local-activities') {
