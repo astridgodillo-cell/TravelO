@@ -186,6 +186,16 @@ NIVEAU DE BUDGET :
 
 Réponds UNIQUEMENT avec un JSON valide. Pas de texte autour. Pas de markdown.`;
 
+const WEEKDAYS_FR = [
+  'dimanche',
+  'lundi',
+  'mardi',
+  'mercredi',
+  'jeudi',
+  'vendredi',
+  'samedi',
+];
+
 function computeDays(startDate: string, endDate: string): number {
   if (!startDate || !endDate) return 0;
   const start = new Date(startDate).getTime();
@@ -806,6 +816,169 @@ Contraintes :
 - Cohérence avec le lieu du jour (${day.location}) et la saison.
 - Pas de doublon avec les autres activités du jour.
 - Prix réalistes en euros.`;
+}
+
+// ============================================================
+// MODE "local-activities" : découverte d'activités autour d'un point
+// (radius, types, météo, enfants) — ne crée PAS d'itinéraire.
+// ============================================================
+const ACTIVITY_TYPES_BRIEF: Record<string, string> = {
+  insolite: 'expériences originales / hors guides classiques',
+  culture: 'musées, monuments, sites historiques, galeries',
+  nature: 'parcs, jardins, points de vue, balades en pleine air',
+  sport: 'sport et activités physiques (kayak, escalade, etc.)',
+  gastronomie: 'restaurants typiques, marchés, dégustations, cours',
+  famille: 'parcs d\'attractions, zoos, aquariums, ateliers enfants',
+  'bien-etre': 'spa, thermes, yoga, retraites',
+  'vie-nocturne': 'bars, concerts, clubs, événements du soir',
+  shopping: 'boutiques uniques, marchés, créateurs',
+  romantique: 'idées en couple : panoramas, dîners intimes, croisières',
+};
+
+function buildLocalActivitiesPrompt(args: {
+  location: string;
+  radiusKm: number;
+  types: string[];
+  rainyOnly: boolean;
+  withKids: boolean;
+  exclude: string[];
+}): string {
+  const { location, radiusKm, types, rainyOnly, withKids, exclude } = args;
+  const typesList = types.length
+    ? types
+        .map((t) => `  - ${t} : ${ACTIVITY_TYPES_BRIEF[t] || t}`)
+        .join('\n')
+    : '  (tous types confondus)';
+
+  const filterBlock = [
+    rainyOnly
+      ? '⚠️ TEMPS DE PLUIE : indoor=true OBLIGATOIRE pour CHAQUE activité (sauf si elle reste agréable sous la pluie : thermes en plein air, forêt enchantée, etc.). Évite tout ce qui devient pénible mouillé.'
+      : '',
+    withKids
+      ? '👨‍👩‍👧 AVEC ENFANTS : chaque activité doit être adaptée aux enfants (durée raisonnable, intérêt pour eux, pas de risque).'
+      : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  const excludeBlock = exclude.length
+    ? `\n⛔ NE PROPOSE PAS les activités suivantes (déjà vues par l'utilisateur) : ${exclude.join(', ')}.`
+    : '';
+
+  return `Tu es l'expert voyage TravelO. Un utilisateur cherche des activités à faire AUTOUR de lui pour s'occuper aujourd'hui ou demain. Tu vas lui proposer 10 activités situées dans un rayon de ${radiusKm} km autour de "${location}".
+
+Position de l'utilisateur : ${location}
+Rayon de recherche : ${radiusKm} km
+
+Types d'activités souhaitées :
+${typesList}
+
+${filterBlock}${excludeBlock}
+
+STYLE D'ÉCRITURE :
+Pour chaque activité, produis :
+- "title" : nom clair et identifiable, comme dans Google Maps (ex: "Grotte de Lacave", "Atelier verrier de Biot")
+- "hook" : 1 phrase courte (10-15 mots) qui donne envie d'un coup d'œil
+- "description" : 2-3 phrases (40-70 mots) qui décrivent l'expérience sensoriellement, avec un détail concret qui ne s'invente pas
+
+EXEMPLE (à NE PAS copier — juste pour le ton) :
+{
+  "title": "Gouffre de Padirac",
+  "hook": "Descendez à 103 m sous terre pour glisser en barque sur une rivière émeraude",
+  "description": "L'ascenseur plonge dans la pénombre, puis une barque vous emporte sur une eau translucide entre des draperies calcaires. Une heure hors du temps, à 13°C constants, dans le silence des galeries souterraines."
+}
+
+Schéma JSON STRICT (uniquement ce JSON, pas de markdown, pas de texte autour) :
+{
+  "activities": [
+    {
+      "id": "slug-ascii-unique-en-minuscules",
+      "title": "Nom exact et trouvable sur Google Maps",
+      "type": "insolite" | "culture" | "nature" | "sport" | "gastronomie" | "famille" | "bien-etre" | "vie-nocturne" | "shopping" | "romantique",
+      "hook": "Accroche 10-15 mots",
+      "description": "2-3 phrases, 40-70 mots, sensorielle et concrète",
+      "address": "Adresse postale lisible (ville + département/région)",
+      "distance_km": number,
+      "coordinates": { "lat": number, "lng": number },
+      "indoor": boolean,
+      "duration": "30 min" | "1h" | "2h" | "Demi-journée" | "Journée",
+      "price_eur_per_person": number,
+      "price_note": "gratuit" | "5-15 €" | "20-40 €" | etc.,
+      "best_time": "matin" | "après-midi" | "soir" | "toute la journée",
+      "booking_hint": "Site/plateforme où réserver si pertinent, sinon null",
+      "photo_query": "expression COURTE (2-4 mots) pour trouver une photo sur Unsplash, ex 'Gouffre Padirac Lot'"
+    }
+  ]
+}
+
+Contraintes :
+- EXACTEMENT 10 activités, vraiment différentes les unes des autres.
+- TOUTES dans un rayon RÉALISTE de ${radiusKm} km à vol d'oiseau autour de "${location}" — utilise tes connaissances géographiques pour rester proche.
+- distance_km : entier en kilomètres, distance à vol d'oiseau approximative. Doit être ≤ ${radiusKm}.
+- coordinates : lat/lng précis pour situer sur carte.
+- Variées : ne mets pas 10 musées même si l'utilisateur a coché "culture". Mélange les sous-genres et les distances.
+- indoor : true si l'activité se déroule à l'intérieur (musée, grotte, spa, restaurant). false si extérieur (rando, plage, festival open-air).
+- Adresse réaliste et identifiable (Google Maps doit pouvoir la trouver).
+- Pas de doublons. Pas d'activité fictive.
+- id : slug ASCII unique, ex: "gouffre-de-padirac".`;
+}
+
+// ============================================================
+// MODE "build-day-from-activities" : assemble une journée
+// à partir d'activités sélectionnées par l'utilisateur.
+// Réutilise FULL_DAY_SCHEMA pour s'intégrer aux itinéraires existants.
+// ============================================================
+function buildBuildDayPrompt(args: {
+  selectedActivities: any[];
+  location: string;
+  date: string;
+  withKids: boolean;
+  adults: number;
+  childrenAges: number[];
+}): string {
+  const { selectedActivities, location, date, withKids, adults, childrenAges } = args;
+  const dayWeekday = (() => {
+    try {
+      const d = new Date(date + 'T00:00:00Z');
+      return WEEKDAYS_FR[d.getUTCDay()];
+    } catch {
+      return '';
+    }
+  })();
+  const childrenLabel = childrenAges.length
+    ? `${childrenAges.length} enfant(s) (âges : ${childrenAges.join(', ')} ans)`
+    : '0 enfant';
+
+  return `Tu vas construire UNE journée complète à partir des activités que l'utilisateur a sélectionnées. La journée doit s'enchaîner logiquement (proximité géographique, horaires cohérents), inclure les repas et un peu de temps libre si besoin.
+
+Lieu de base : ${location}
+Date : ${date} (${dayWeekday})
+Participants : ${adults} adulte(s), ${childrenLabel}${withKids ? ' — adapter aux enfants' : ''}
+
+Activités sélectionnées par l'utilisateur (à TOUTES INCLURE dans la journée) :
+${selectedActivities
+  .map(
+    (a, i) =>
+      `  ${i + 1}. ${a.title} — ${a.address || a.location || ''} (${a.duration || 'durée variable'}, ${a.price_note || a.price_eur_per_person + '€'})\n     ${a.hook || a.description || ''}`
+  )
+  .join('\n')}
+
+Renvoie UNIQUEMENT le JSON d'UNE journée selon ce schéma EXACT (pas d'enveloppe, pas de tableau) :
+
+${FULL_DAY_SCHEMA}
+
+Contraintes :
+- label = "J1", date = "${date}", weekday = "${dayWeekday}", location = "${location}".
+- Les activités sélectionnées doivent apparaître dans le tableau "activities", ENRICHIES (immersive_description, schedule cohérent matin/après-midi/soir).
+- Réutilise les coordonnées et adresses fournies.
+- Construis morning / noon / afternoon / evening en répartissant les activités selon leur "best_time" et leur durée. Pas d'enchaînement absurde.
+- meals : prévoir le déjeuner et le dîner (style adapté au lieu, budget réaliste pour le groupe).
+- trips : si certaines activités sont éloignées (>10 km), liste les courts trajets entre elles.
+- accommodation : si nécessaire pour finir la journée (sinon mets type "Aucun (retour à domicile)" et price_eur = 0).
+- day_total_eur : somme cohérente.
+- coordinates : barycentre approximatif du lieu.
+- day_title : 8-14 mots, mentionne 2-3 activités phares, style magazine.
+- Style sensoriel, narratif, comme pour un itinéraire complet.`;
 }
 
 function buildReplanFromDayPrompt(
@@ -1580,6 +1753,72 @@ Deno.serve(async (req) => {
         );
       }
       return jsonResponse({ days, usage, model: modelUsed });
+    }
+
+    if (mode === 'local-activities') {
+      const {
+        location,
+        radius_km,
+        types,
+        rainy_only,
+        with_kids,
+        exclude,
+      } = body;
+      if (!location || typeof location !== 'string') {
+        return jsonResponse({ error: 'Paramètre "location" requis.' }, 400);
+      }
+      const prompt = buildLocalActivitiesPrompt({
+        location,
+        radiusKm: Number(radius_km) || 30,
+        types: Array.isArray(types) ? types : [],
+        rainyOnly: !!rainy_only,
+        withKids: !!with_kids,
+        exclude: Array.isArray(exclude) ? exclude : [],
+      });
+      // Budget : 10 activités riches ~ 300 tokens chacune + structure ~ 5000 tokens
+      const { text, usage, modelUsed } = await callMain(prompt, 6000);
+      const parsed = await parseOrRepair(text, callMainSafe);
+      return jsonResponse({
+        activities: parsed?.activities || [],
+        usage,
+        model: modelUsed,
+      });
+    }
+
+    if (mode === 'build-day-from-activities') {
+      const {
+        selected_activities,
+        location,
+        date,
+        with_kids,
+        adults,
+        children_ages,
+      } = body;
+      if (
+        !Array.isArray(selected_activities) ||
+        selected_activities.length === 0 ||
+        !location ||
+        !date
+      ) {
+        return jsonResponse(
+          {
+            error:
+              'Body invalide : selected_activities, location, date requis.',
+          },
+          400
+        );
+      }
+      const prompt = buildBuildDayPrompt({
+        selectedActivities: selected_activities,
+        location,
+        date,
+        withKids: !!with_kids,
+        adults: Number(adults) || 2,
+        childrenAges: Array.isArray(children_ages) ? children_ages : [],
+      });
+      const { text, usage, modelUsed } = await callMain(prompt, 8000);
+      const day = await parseOrRepair(text, callMainSafe);
+      return jsonResponse({ day, usage, model: modelUsed });
     }
 
     if (mode === 'fetch-photos') {

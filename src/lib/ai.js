@@ -346,6 +346,94 @@ export async function suggestPlaces({
   return { places, cities };
 }
 
+// Découverte d'activités locales (mode autour-de-moi).
+// `exclude` = liste de titres déjà affichés, pour ne pas les répéter
+// lors d'un "Charger plus".
+export async function suggestLocalActivities({
+  location,
+  radiusKm,
+  types,
+  rainyOnly,
+  withKids,
+  exclude,
+}) {
+  const data = await invoke({
+    mode: 'local-activities',
+    location,
+    radius_km: radiusKm,
+    types,
+    rainy_only: !!rainyOnly,
+    with_kids: !!withKids,
+    exclude: exclude || [],
+  });
+  return {
+    activities: Array.isArray(data?.activities) ? data.activities : [],
+    model: data?.model,
+    usage: data?.usage,
+  };
+}
+
+// Construit une journée complète à partir d'activités sélectionnées.
+// Renvoie un itinéraire 1-jour prêt à sauvegarder dans la base.
+export async function buildDayFromActivities({
+  selectedActivities,
+  location,
+  date,
+  withKids,
+  adults,
+  childrenAges,
+}) {
+  const data = await invoke({
+    mode: 'build-day-from-activities',
+    selected_activities: selectedActivities,
+    location,
+    date,
+    with_kids: !!withKids,
+    adults: adults || 2,
+    children_ages: childrenAges || [],
+  });
+  if (!data?.day) throw new Error('Réponse vide pour la journée construite.');
+  const meta = addUsageToMeta(emptyMeta(), data.model, data.usage);
+  // Force label/date/weekday cohérents avec ce que le user a demandé.
+  const d = new Date(date + 'T00:00:00Z');
+  const weekday = WEEKDAYS_FR[d.getUTCDay()];
+  const day = { ...data.day, label: 'J1', date, weekday };
+
+  // Calcule un budget_summary minimal à partir de l'unique jour
+  const budget = computeBudget([day], {
+    travellers: { adults: adults || 2, children_ages: childrenAges || [] },
+  });
+
+  const itinerary = {
+    summary: {
+      destinations: location,
+      start_date: date,
+      end_date: date,
+      duration_days: 1,
+      departure_location: location,
+      return_location: location,
+      is_round_trip: true,
+      travellers: {
+        adults: adults || 2,
+        children_ages: childrenAges || [],
+      },
+      trip_type: 'sejour-fixe',
+      interests: [],
+      budget_level: 'moyen',
+      vehicle_summary: null,
+      total_distance_km: budget.summaryPatch.total_distance_km || null,
+      headline:
+        day.day_title ||
+        `Une journée à ${location}`,
+    },
+    days: [day],
+    budget_summary: budget.budget_summary,
+    notes: {},
+    metadata: meta,
+  };
+  return itinerary;
+}
+
 export async function replanFromDay(itinerary, fromDayIndex, instructions) {
   const data = await invoke({
     mode: 'replan-from-day',

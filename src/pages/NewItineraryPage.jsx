@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import PreferencesForm from '../components/PreferencesForm';
 import InspireMeFlow from '../components/InspireMeFlow';
+import LocalActivitiesFlow from '../components/LocalActivitiesFlow';
 import GeneratingLoader from '../components/GeneratingLoader';
 import PrefillBanner from '../components/PrefillBanner';
 import { generateItinerary } from '../lib/ai';
@@ -22,6 +23,13 @@ const MODES = [
     emoji: '✨',
     description:
       'Vous tapez juste une destination. On vous propose des lieux à visiter, vous choisissez, on construit l\'itinéraire.',
+  },
+  {
+    id: 'local',
+    label: 'Activités autour de moi',
+    emoji: '🧭',
+    description:
+      'On vous propose 10 activités à proximité (filtres : rayon, types, temps de pluie…). À ajouter en wishlist ou pour bâtir une journée.',
   },
 ];
 
@@ -107,7 +115,7 @@ export default function NewItineraryPage() {
     <div className="space-y-6">
       {!loading && (
         <div className="card">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {MODES.map((m) => {
               const active = mode === m.id;
               return (
@@ -153,6 +161,8 @@ export default function NewItineraryPage() {
       {!loading && mode === 'inspire' && (
         <InspireMeFlow onSubmit={handleGenerate} loading={loading} />
       )}
+
+      {!loading && mode === 'local' && <LocalActivitiesFlow />}
 
       {loading && <GeneratingLoader progress={progress} />}
 
