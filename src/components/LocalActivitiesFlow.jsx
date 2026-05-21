@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   suggestLocalActivities,
   buildDayFromActivities,
+  getPlacePredictions,
 } from '../lib/ai';
 import {
   getMyProfile,
@@ -39,6 +40,74 @@ export default function LocalActivitiesFlow() {
   const [rainyOnly, setRainyOnly] = useState(false);
   const [withKids, setWithKids] = useState(false);
   const [gettingPosition, setGettingPosition] = useState(false);
+
+  // Autocomplete d'adresse : déclenche à partir de 3 lettres, debounce 300ms.
+  const [predictions, setPredictions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [activeSuggestion, setActiveSuggestion] = useState(-1);
+  // Session token Google Places : groupe les frappes d'une même saisie
+  // en une seule session billable. Régénéré après chaque sélection.
+  const sessionTokenRef = useRef(crypto.randomUUID());
+  // Drapeau pour ignorer le prochain debounce après une sélection
+  // (sinon le dropdown se réaffiche aussitôt avec le texte qu'on vient de poser).
+  const justPickedRef = useRef(false);
+  const wrapperRef = useRef(null);
+
+  // Debounce de l'autocomplete
+  useEffect(() => {
+    if (justPickedRef.current) {
+      justPickedRef.current = false;
+      return;
+    }
+    const q = location.trim();
+    if (q.length < 3) {
+      setPredictions([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      const preds = await getPlacePredictions(q, sessionTokenRef.current);
+      setPredictions(preds);
+      setShowSuggestions(preds.length > 0);
+      setActiveSuggestion(-1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [location]);
+
+  // Ferme le dropdown au clic en dehors
+  useEffect(() => {
+    function onClickOutside(e) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
+        setShowSuggestions(false);
+      }
+    }
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, []);
+
+  function pickSuggestion(p) {
+    justPickedRef.current = true;
+    setLocation(p.text || p.main_text);
+    setShowSuggestions(false);
+    setPredictions([]);
+    // Nouvelle session (Google : la session se termine quand l'utilisateur sélectionne)
+    sessionTokenRef.current = crypto.randomUUID();
+  }
+
+  function onLocationKeyDown(e) {
+    if (!showSuggestions || predictions.length === 0) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActiveSuggestion((i) => Math.min(i + 1, predictions.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActiveSuggestion((i) => Math.max(i - 1, -1));
+    } else if (e.key === 'Enter' && activeSuggestion >= 0) {
+      e.preventDefault();
+      pickSuggestion(predictions[activeSuggestion]);
+    } else if (e.key === 'Escape') {
+      setShowSuggestions(false);
+    }
+  }
 
   const [activities, setActivities] = useState([]);
   const [hasSearched, setHasSearched] = useState(false);
@@ -235,15 +304,50 @@ export default function LocalActivitiesFlow() {
           </p>
         </div>
 
-        <div>
+        <div ref={wrapperRef}>
           <label className="label">📍 Ma position</label>
-          <div className="flex gap-2">
-            <input
-              className="input flex-1"
-              placeholder="Ex : Aix-en-Provence  •  13122 Ventabren  •  Lyon 6ème  •  15 rue de Rivoli Paris"
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-            />
+          <div className="flex gap-2 relative">
+            <div className="flex-1 relative">
+              <input
+                className="input w-full"
+                placeholder="Tape une ville, un code postal, une adresse…"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                onFocus={() => predictions.length > 0 && setShowSuggestions(true)}
+                onKeyDown={onLocationKeyDown}
+                autoComplete="off"
+              />
+              {showSuggestions && predictions.length > 0 && (
+                <ul className="absolute left-0 right-0 top-full mt-1 z-30 bg-white border border-slate-200 rounded-lg shadow-lg max-h-64 overflow-auto">
+                  {predictions.map((p, i) => (
+                    <li
+                      key={p.place_id || p.text || i}
+                      onMouseDown={(e) => {
+                        // mouseDown plutôt que click : évite que l'input perde
+                        // le focus et déclenche le clic-extérieur avant la sélection.
+                        e.preventDefault();
+                        pickSuggestion(p);
+                      }}
+                      onMouseEnter={() => setActiveSuggestion(i)}
+                      className={`px-3 py-2 cursor-pointer text-sm ${
+                        i === activeSuggestion
+                          ? 'bg-brand-50 text-brand-900'
+                          : 'hover:bg-slate-50 text-slate-700'
+                      }`}
+                    >
+                      <div className="font-medium">
+                        📍 {p.main_text || p.text}
+                      </div>
+                      {p.secondary_text && (
+                        <div className="text-xs text-slate-500 mt-0.5">
+                          {p.secondary_text}
+                        </div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
             <button
               type="button"
               onClick={useMyPosition}
@@ -255,8 +359,7 @@ export default function LocalActivitiesFlow() {
             </button>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            Une ville, un code postal, une adresse, ou un lieu connu. Plus c'est
-            précis, mieux on cible. Évite les abréviations.
+            Tape 3 lettres minimum — on te propose des lieux au fur et à mesure.
           </p>
         </div>
 

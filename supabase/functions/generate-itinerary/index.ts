@@ -1942,6 +1942,55 @@ Deno.serve(async (req) => {
       return jsonResponse({ days, usage, model: modelUsed });
     }
 
+    if (mode === 'autocomplete-place') {
+      const { query, session_token } = body;
+      if (!query || typeof query !== 'string' || query.trim().length < 3) {
+        return jsonResponse({ predictions: [] });
+      }
+      if (!GOOGLE_PLACES_API_KEY) {
+        return jsonResponse({ predictions: [] });
+      }
+      try {
+        const res = await fetch(
+          'https://places.googleapis.com/v1/places:autocomplete',
+          {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              'X-Goog-Api-Key': GOOGLE_PLACES_API_KEY,
+            },
+            body: JSON.stringify({
+              input: query,
+              languageCode: 'fr',
+              // sessionToken groupe les touches d'une même saisie en
+              // une seule session billable (~$2.83/1000 sessions).
+              sessionToken: session_token || undefined,
+            }),
+          }
+        );
+        if (!res.ok) {
+          console.warn('[autocomplete]', res.status, await res.text());
+          return jsonResponse({ predictions: [] });
+        }
+        const data = await res.json();
+        const predictions = (data?.suggestions || [])
+          .filter((s: any) => s.placePrediction)
+          .slice(0, 6)
+          .map((s: any) => ({
+            place_id: s.placePrediction.placeId,
+            text: s.placePrediction.text?.text || '',
+            main_text:
+              s.placePrediction.structuredFormat?.mainText?.text || '',
+            secondary_text:
+              s.placePrediction.structuredFormat?.secondaryText?.text || '',
+          }));
+        return jsonResponse({ predictions });
+      } catch (e) {
+        console.warn('[autocomplete] crash', e);
+        return jsonResponse({ predictions: [] });
+      }
+    }
+
     if (mode === 'local-activities') {
       const {
         location,

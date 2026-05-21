@@ -346,6 +346,23 @@ export async function suggestPlaces({
   return { places, cities };
 }
 
+// Autocomplete d'adresses (Google Places). Renvoie [] si query < 3 chars.
+// sessionToken groupe les frappes d'une même saisie pour un billing unique.
+export async function getPlacePredictions(query, sessionToken) {
+  if (!query || query.trim().length < 3) return [];
+  try {
+    const data = await invoke({
+      mode: 'autocomplete-place',
+      query,
+      session_token: sessionToken,
+    });
+    return Array.isArray(data?.predictions) ? data.predictions : [];
+  } catch (e) {
+    console.warn('[autocomplete] failed', e);
+    return [];
+  }
+}
+
 // Découverte d'activités locales (mode autour-de-moi).
 // `exclude` = liste de titres déjà affichés, pour ne pas les répéter
 // lors d'un "Charger plus".
