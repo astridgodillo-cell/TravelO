@@ -223,10 +223,10 @@ function Hero({ user, isApproved, loading }) {
           Itinéraires détaillés à la carte
         </span>
 
-        <h1 className="mt-4 sm:mt-6 text-[2.25rem] leading-[1.05] sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight max-w-4xl drop-shadow-xl">
+        <h1 className="mt-4 sm:mt-6 text-3xl leading-[1.1] sm:text-5xl sm:leading-[1.05] md:text-6xl lg:text-7xl font-bold tracking-tight max-w-4xl drop-shadow-xl">
           Votre voyage,<br />
-          <span className="italic font-light text-white/95">
-            comme un tour-opérateur.
+          <span className="italic font-light text-white/95 whitespace-nowrap">
+            comme un tour&#8209;opérateur.
           </span>
         </h1>
 
