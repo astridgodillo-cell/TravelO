@@ -101,16 +101,16 @@ export default function Navbar() {
         </Link>
 
         {/* Desktop nav */}
-        <div className="hidden md:flex items-center gap-1">
+        <div className="hidden lg:flex items-center gap-1">
           <NavLinks />
         </div>
 
         {/* Desktop auth */}
-        <div className="hidden md:flex items-center gap-2">
+        <div className="hidden lg:flex items-center gap-2">
           {user ? (
             <>
               {isAdmin && <BackendQuickSwitch />}
-              <span className="hidden lg:flex flex-col items-end text-xs leading-tight">
+              <span className="hidden xl:flex flex-col items-end text-xs leading-tight">
                 <span className="text-slate-600 truncate max-w-[180px]">
                   {user.email}
                 </span>
@@ -141,7 +141,7 @@ export default function Navbar() {
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          className="md:hidden inline-flex items-center justify-center w-10 h-10 rounded-md text-slate-700 hover:bg-slate-100"
+          className="lg:hidden inline-flex items-center justify-center w-10 h-10 rounded-md text-slate-700 hover:bg-slate-100"
           aria-label={open ? 'Fermer le menu' : 'Ouvrir le menu'}
           aria-expanded={open}
         >
@@ -159,7 +159,7 @@ export default function Navbar() {
 
       {/* Mobile drawer */}
       {open && (
-        <div className="md:hidden border-t border-slate-200 bg-white">
+        <div className="lg:hidden border-t border-slate-200 bg-white">
           <div className="px-3 py-3 space-y-1">
             <NavLinks mobile />
           </div>

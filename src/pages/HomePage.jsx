@@ -101,9 +101,9 @@ export default function HomePage() {
     user && isApproved && !loading && !isProfileConfigured(profile);
 
   return (
-    <div className="space-y-24 sm:space-y-32 pb-16">
+    <div className="space-y-16 sm:space-y-24 lg:space-y-32 pb-12 sm:pb-16">
       {showOnboardingBanner && (
-        <div className="px-6 sm:px-10 pt-6">
+        <div className="px-4 sm:px-6 lg:px-10 pt-4 sm:pt-6">
           <div className="max-w-7xl mx-auto rounded-2xl border border-slate-200 bg-white/90 backdrop-blur p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shadow-sm">
             <div className="min-w-0">
               <h3 className="font-semibold text-slate-900">
@@ -186,7 +186,7 @@ function Hero({ user, isApproved, loading }) {
   }
 
   return (
-    <section className="relative h-[88vh] min-h-[560px] max-h-[820px] w-full overflow-hidden">
+    <section className="relative h-[78vh] min-h-[520px] sm:h-[82vh] sm:min-h-[600px] lg:h-[88vh] lg:max-h-[820px] w-full overflow-hidden">
       {/* Carrousel d'images en fond */}
       <div className="absolute inset-0">
         {HERO_PHOTOS.map((p, i) => (
@@ -212,48 +212,48 @@ function Hero({ user, isApproved, loading }) {
         ))}
 
         {/* Dégradé sombre + dégradé latéral pour lisibilité */}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/30 to-black/70" />
-        <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-black/10 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/30 to-black/75" />
+        <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-black/15 to-transparent" />
       </div>
 
       {/* Contenu */}
-      <div className="relative h-full max-w-7xl mx-auto px-6 sm:px-10 flex flex-col justify-end pb-20 sm:pb-24 text-white">
-        <span className="inline-flex w-fit items-center gap-2 text-[11px] uppercase tracking-[0.2em] bg-white/10 backdrop-blur-md border border-white/20 rounded-full px-4 py-1.5">
+      <div className="relative h-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-10 flex flex-col justify-end pb-12 sm:pb-16 lg:pb-24 text-white">
+        <span className="inline-flex w-fit items-center gap-2 text-[10px] sm:text-[11px] uppercase tracking-[0.2em] bg-white/10 backdrop-blur-md border border-white/20 rounded-full px-3 sm:px-4 py-1 sm:py-1.5">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
           Itinéraires détaillés à la carte
         </span>
 
-        <h1 className="mt-6 text-5xl sm:text-7xl font-bold tracking-tight leading-[1.05] max-w-4xl drop-shadow-xl">
+        <h1 className="mt-4 sm:mt-6 text-[2.25rem] leading-[1.05] sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight max-w-4xl drop-shadow-xl">
           Votre voyage,<br />
           <span className="italic font-light text-white/95">
             comme un tour-opérateur.
           </span>
         </h1>
 
-        <p className="mt-6 text-lg sm:text-xl text-white/90 max-w-2xl leading-relaxed">
+        <p className="mt-4 sm:mt-6 text-base sm:text-lg md:text-xl text-white/90 max-w-2xl leading-relaxed">
           TravelO compose pour vous un programme jour par jour&nbsp;: hébergements,
           restaurants, excursions, transports et budget — avec photos, spécialités
           locales et carte interactive.
         </p>
 
-        <div className="mt-10 flex flex-col sm:flex-row gap-3">
+        <div className="mt-6 sm:mt-8 lg:mt-10 flex flex-col sm:flex-row gap-2.5 sm:gap-3">
           {primaryCta}
           {secondaryCta}
         </div>
 
         {/* Indicateur de lieu courant + dots */}
-        <div className="mt-12 flex items-center justify-between gap-4">
-          <div className="text-sm tracking-wide text-white/80 font-medium">
+        <div className="mt-8 sm:mt-10 lg:mt-12 flex items-center justify-between gap-3 sm:gap-4">
+          <div className="text-xs sm:text-sm tracking-wide text-white/80 font-medium truncate">
             {HERO_PHOTOS[idx].place}
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
             {HERO_PHOTOS.map((_, i) => (
               <button
                 key={i}
                 aria-label={`Voir photo ${i + 1}`}
                 onClick={() => setIdx(i)}
                 className={`h-1 rounded-full transition-all ${
-                  i === idx ? 'w-8 bg-white' : 'w-3 bg-white/40 hover:bg-white/70'
+                  i === idx ? 'w-6 sm:w-8 bg-white' : 'w-2 sm:w-3 bg-white/40 hover:bg-white/70'
                 }`}
               />
             ))}
@@ -295,30 +295,30 @@ function HowItWorks() {
   ];
 
   return (
-    <section className="max-w-7xl mx-auto px-6 sm:px-10">
+    <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10">
       <div className="max-w-2xl">
         <div className="text-xs uppercase tracking-[0.2em] text-brand-700 font-semibold">
           Comment ça marche
         </div>
-        <h2 className="mt-3 text-3xl sm:text-4xl font-bold text-slate-900 tracking-tight">
+        <h2 className="mt-3 text-2xl sm:text-3xl lg:text-4xl font-bold text-slate-900 tracking-tight">
           Un voyage complet en trois étapes
         </h2>
-        <p className="mt-3 text-slate-600">
+        <p className="mt-3 text-sm sm:text-base text-slate-600">
           Plus de tableurs ni d'onglets ouverts. TravelO orchestre tout — vous gardez le
           contrôle créatif.
         </p>
       </div>
 
-      <div className="mt-12 grid md:grid-cols-3 gap-6">
+      <div className="mt-8 sm:mt-12 grid sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
         {steps.map((s) => (
           <div
             key={s.n}
-            className="relative rounded-2xl border border-slate-200 bg-white p-7 hover:border-brand-300 hover:shadow-pop transition-all"
+            className="relative rounded-2xl border border-slate-200 bg-white p-5 sm:p-7 hover:border-brand-300 hover:shadow-pop transition-all"
           >
-            <div className="text-5xl font-bold text-slate-100 tracking-tighter">
+            <div className="text-4xl sm:text-5xl font-bold text-slate-100 tracking-tighter">
               {s.n}
             </div>
-            <h3 className="mt-4 text-xl font-semibold text-slate-900">
+            <h3 className="mt-3 sm:mt-4 text-lg sm:text-xl font-semibold text-slate-900">
               {s.title}
             </h3>
             <p className="mt-2 text-sm text-slate-600 leading-relaxed">
@@ -336,23 +336,23 @@ function HowItWorks() {
 /* ------------------------------------------------------------------ */
 function Destinations() {
   return (
-    <section className="max-w-7xl mx-auto px-6 sm:px-10">
+    <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10">
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
         <div className="max-w-2xl">
           <div className="text-xs uppercase tracking-[0.2em] text-coral-600 font-semibold">
             Inspirations
           </div>
-          <h2 className="mt-3 text-3xl sm:text-4xl font-bold text-slate-900 tracking-tight">
+          <h2 className="mt-3 text-2xl sm:text-3xl lg:text-4xl font-bold text-slate-900 tracking-tight">
             Des destinations qui donnent envie de partir
           </h2>
-          <p className="mt-3 text-slate-600">
+          <p className="mt-3 text-sm sm:text-base text-slate-600">
             Quelques exemples — TravelO sait composer un programme sur n'importe
             quel coin du globe.
           </p>
         </div>
       </div>
 
-      <div className="mt-10 grid grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="mt-8 sm:mt-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
         {DESTINATIONS.map((d, i) => (
           <DestinationCard key={d.name} destination={d} featured={i === 0} />
         ))}
@@ -365,7 +365,9 @@ function DestinationCard({ destination, featured }) {
   return (
     <div
       className={`group relative overflow-hidden rounded-2xl cursor-pointer ${
-        featured ? 'lg:col-span-2 lg:row-span-2 aspect-[4/3]' : 'aspect-[4/5]'
+        featured
+          ? 'sm:col-span-2 lg:row-span-2 aspect-[16/10] sm:aspect-[16/10] lg:aspect-[4/3]'
+          : 'aspect-[4/3] sm:aspect-[4/5]'
       }`}
     >
       <img
@@ -375,11 +377,11 @@ function DestinationCard({ destination, featured }) {
         className="absolute inset-0 w-full h-full object-cover transition-transform duration-[1200ms] ease-out group-hover:scale-110"
       />
       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-      <div className="absolute bottom-0 left-0 right-0 p-5 sm:p-6 text-white">
-        <div className="text-xs uppercase tracking-widest text-white/70">
+      <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-5 lg:p-6 text-white">
+        <div className="text-[10px] sm:text-xs uppercase tracking-widest text-white/70">
           {destination.tagline}
         </div>
-        <div className="mt-1 text-2xl sm:text-3xl font-bold tracking-tight">
+        <div className="mt-1 text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight">
           {destination.name}
         </div>
       </div>
@@ -425,30 +427,30 @@ function Inclusions() {
   ];
 
   return (
-    <section className="max-w-7xl mx-auto px-6 sm:px-10">
+    <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10">
       <div className="max-w-2xl">
         <div className="text-xs uppercase tracking-[0.2em] text-sunset-600 font-semibold">
           Ce que vous obtenez
         </div>
-        <h2 className="mt-3 text-3xl sm:text-4xl font-bold text-slate-900 tracking-tight">
+        <h2 className="mt-3 text-2xl sm:text-3xl lg:text-4xl font-bold text-slate-900 tracking-tight">
           Un programme complet, prêt à partir
         </h2>
-        <p className="mt-3 text-slate-600">
+        <p className="mt-3 text-sm sm:text-base text-slate-600">
           Tout ce qu'un tour-opérateur vous remettrait, en quelques minutes et
           totalement personnalisable.
         </p>
       </div>
 
-      <div className="mt-12 grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+      <div className="mt-8 sm:mt-12 grid sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-5">
         {items.map((it) => (
           <div
             key={it.title}
-            className="rounded-2xl border border-slate-200 bg-white p-6 hover:border-slate-300 hover:shadow-sm transition-all"
+            className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 hover:border-slate-300 hover:shadow-sm transition-all"
           >
-            <div className="inline-grid place-items-center h-11 w-11 rounded-xl bg-slate-900 text-white">
+            <div className="inline-grid place-items-center h-10 w-10 sm:h-11 sm:w-11 rounded-xl bg-slate-900 text-white">
               <it.icon />
             </div>
-            <h3 className="mt-4 font-semibold text-slate-900">{it.title}</h3>
+            <h3 className="mt-3 sm:mt-4 font-semibold text-slate-900">{it.title}</h3>
             <p className="mt-1.5 text-sm text-slate-600 leading-relaxed">
               {it.desc}
             </p>
@@ -479,25 +481,25 @@ function FinalCTA({ user, isApproved }) {
     );
 
   return (
-    <section className="max-w-7xl mx-auto px-6 sm:px-10">
-      <div className="relative overflow-hidden rounded-3xl">
+    <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10">
+      <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl">
         <img
           src="https://images.unsplash.com/photo-1488646953014-85cb44e25828?auto=format&fit=crop&w=2000&q=80"
           alt=""
           loading="lazy"
           className="absolute inset-0 w-full h-full object-cover"
         />
-        <div className="absolute inset-0 bg-gradient-to-r from-slate-900/90 via-slate-900/70 to-slate-900/40" />
+        <div className="absolute inset-0 bg-gradient-to-r from-slate-900/90 via-slate-900/75 to-slate-900/40" />
 
-        <div className="relative px-8 sm:px-16 py-20 sm:py-28 text-white max-w-2xl">
-          <h2 className="text-4xl sm:text-5xl font-bold tracking-tight leading-tight">
+        <div className="relative px-6 sm:px-10 lg:px-16 py-14 sm:py-20 lg:py-28 text-white max-w-2xl">
+          <h2 className="text-2xl sm:text-4xl lg:text-5xl font-bold tracking-tight leading-tight">
             Prêt à composer votre prochain voyage&nbsp;?
           </h2>
-          <p className="mt-5 text-lg text-white/85 leading-relaxed">
+          <p className="mt-4 sm:mt-5 text-sm sm:text-base lg:text-lg text-white/85 leading-relaxed">
             Quelques minutes suffisent pour obtenir un itinéraire détaillé,
             modifiable et exportable. Aucun forfait, aucune carte bancaire requise.
           </p>
-          <div className="mt-8">{cta}</div>
+          <div className="mt-6 sm:mt-8">{cta}</div>
         </div>
       </div>
     </section>
