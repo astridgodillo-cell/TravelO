@@ -981,11 +981,9 @@ async function searchRealPlaces(args: {
   excludeIds: string[];
   withKids: boolean;
 }): Promise<any[]> {
-  if (!GOOGLE_PLACES_API_KEY) return [];
-  const { centerLat, centerLng, radiusKm, types, excludeIds, withKids } = args;
+  const { centerLat, centerLng, radiusKm, types, excludeIds } = args;
 
-  // Choisit les queries selon les types demandés. Sans type sélectionné :
-  // requêtes génériques attraction touristique + nature.
+  // Choisit les queries selon les types demandés
   let queries: string[] = [];
   if (types.length === 0) {
     queries = ['attraction touristique', 'lieu à visiter', 'point d\'intérêt'];
@@ -995,81 +993,167 @@ async function searchRealPlaces(args: {
       if (qs) queries.push(...qs);
     }
   }
-  // Cap à 8 queries pour limiter le coût Google Places.
-  // 1 query ≈ 1 cent → 8 queries ≈ 0.08€. Acceptable.
   queries = Array.from(new Set(queries)).slice(0, 8);
 
-  // L'API Google Places accepte un rayon ≤ 50km pour locationBias.circle
-  const radiusMeters = Math.min(radiusKm * 1000, 50000);
-
-  const allResults = await Promise.all(
-    queries.map(async (q) => {
-      try {
-        const res = await fetch(
-          'https://places.googleapis.com/v1/places:searchText',
-          {
-            method: 'POST',
-            headers: {
-              'content-type': 'application/json',
-              'X-Goog-Api-Key': GOOGLE_PLACES_API_KEY,
-              'X-Goog-FieldMask':
-                'places.id,places.displayName,places.formattedAddress,places.location,places.types,places.primaryType,places.rating,places.userRatingCount,places.websiteUri,places.googleMapsUri,places.editorialSummary,places.priceLevel,places.goodForChildren',
-            },
-            body: JSON.stringify({
-              textQuery: q,
-              languageCode: 'fr',
-              maxResultCount: 10,
-              locationBias: {
-                circle: {
-                  center: { latitude: centerLat, longitude: centerLng },
-                  radius: radiusMeters,
-                },
+  // === Tentative 1 : Google Places ===
+  // FieldMask volontairement réduit aux SKUs Basic+Advanced (pas
+  // editorialSummary/goodForChildren qui sont Preferred SKU et causent
+  // un 403 si non activé dans le projet Google Cloud).
+  let merged: any[] = [];
+  if (GOOGLE_PLACES_API_KEY) {
+    const radiusMeters = Math.min(radiusKm * 1000, 50000);
+    const allResults = await Promise.all(
+      queries.map(async (q) => {
+        try {
+          const res = await fetch(
+            'https://places.googleapis.com/v1/places:searchText',
+            {
+              method: 'POST',
+              headers: {
+                'content-type': 'application/json',
+                'X-Goog-Api-Key': GOOGLE_PLACES_API_KEY,
+                'X-Goog-FieldMask':
+                  'places.id,places.displayName,places.formattedAddress,places.location,places.types,places.primaryType,places.rating,places.userRatingCount,places.websiteUri,places.googleMapsUri',
               },
-            }),
+              body: JSON.stringify({
+                textQuery: q,
+                languageCode: 'fr',
+                maxResultCount: 10,
+                locationBias: {
+                  circle: {
+                    center: { latitude: centerLat, longitude: centerLng },
+                    radius: radiusMeters,
+                  },
+                },
+              }),
+            }
+          );
+          if (!res.ok) {
+            const txt = await res.text();
+            console.warn(`[places google] "${q}" ${res.status} ${txt.slice(0, 200)}`);
+            return [];
           }
-        );
-        if (!res.ok) {
-          console.warn(`[places] "${q}" ${res.status}`, await res.text());
+          const data = await res.json();
+          return data?.places || [];
+        } catch (e) {
+          console.warn(`[places google] "${q}" crash`, e);
           return [];
         }
-        const data = await res.json();
-        return data?.places || [];
-      } catch (e) {
-        console.warn(`[places] "${q}" crash`, e);
-        return [];
-      }
-    })
-  );
+      })
+    );
 
-  // Dedupe par place.id, calcule la distance, filtre par rayon, exclut les
-  // ids déjà vus.
-  const seen = new Set<string>(excludeIds);
-  const merged: any[] = [];
-  for (const arr of allResults) {
-    for (const p of arr) {
-      if (!p.id || seen.has(p.id)) continue;
-      const lat = p.location?.latitude;
-      const lng = p.location?.longitude;
-      if (typeof lat !== 'number' || typeof lng !== 'number') continue;
-      const distance = haversineKm(centerLat, centerLng, lat, lng);
-      if (distance > radiusKm) continue;
-      seen.add(p.id);
-      // Filtre "avec enfants" : ignore les lieux explicitement non-children-friendly
-      if (withKids && p.goodForChildren === false) continue;
-      merged.push({ ...p, _distance_km: Math.round(distance) });
+    const seen = new Set<string>(excludeIds);
+    for (const arr of allResults) {
+      for (const p of arr) {
+        if (!p.id || seen.has(p.id)) continue;
+        const lat = p.location?.latitude;
+        const lng = p.location?.longitude;
+        if (typeof lat !== 'number' || typeof lng !== 'number') continue;
+        const distance = haversineKm(centerLat, centerLng, lat, lng);
+        if (distance > radiusKm) continue;
+        seen.add(p.id);
+        merged.push({ ...p, _distance_km: Math.round(distance) });
+      }
     }
+    console.log(`[places] Google a renvoyé ${merged.length} lieux uniques`);
   }
 
-  // Tri : score = rating × log10(reviews+1). Favorise les lieux populaires
-  // ET bien notés. Un lieu noté 4.5/5 avec 1000 avis bat un 5/5 avec 2 avis.
+  // === Tentative 2 : Nominatim/OSM fallback si Google n'a rien ===
+  // Couverture excellente pour la nature/baignade en France.
+  if (merged.length === 0) {
+    console.log('[places] fallback Nominatim');
+    merged = await searchPlacesNominatim({
+      centerLat,
+      centerLng,
+      radiusKm,
+      queries: queries.slice(0, 4), // serial → on limite pour rester rapide
+      excludeIds,
+    });
+    console.log(`[places] Nominatim a renvoyé ${merged.length} lieux`);
+  }
+
+  // Tri : Google → score popularité ; Nominatim → importance OSM
   merged.sort((a, b) => {
-    const sA = (a.rating || 3) * Math.log10((a.userRatingCount || 1) + 1);
-    const sB = (b.rating || 3) * Math.log10((b.userRatingCount || 1) + 1);
+    const sA = a.rating
+      ? (a.rating || 3) * Math.log10((a.userRatingCount || 1) + 1)
+      : (a._importance || 0) * 10;
+    const sB = b.rating
+      ? (b.rating || 3) * Math.log10((b.userRatingCount || 1) + 1)
+      : (b._importance || 0) * 10;
     return sB - sA;
   });
 
-  // On garde 10 max — pas besoin de plus pour l'enrichissement LLM.
   return merged.slice(0, 10);
+}
+
+// Fallback Nominatim : cherche des lieux RÉELS via OpenStreetMap.
+// Rate-limited (1 req/s), donc on sérialise et on limite à 4 queries.
+async function searchPlacesNominatim(args: {
+  centerLat: number;
+  centerLng: number;
+  radiusKm: number;
+  queries: string[];
+  excludeIds: string[];
+}): Promise<any[]> {
+  const { centerLat, centerLng, radiusKm, queries, excludeIds } = args;
+
+  // Bounding box approximative pour viewbox Nominatim
+  const dLat = radiusKm / 111;
+  const dLng = radiusKm / (111 * Math.cos((centerLat * Math.PI) / 180));
+  const viewbox = `${centerLng - dLng},${centerLat + dLat},${centerLng + dLng},${centerLat - dLat}`;
+
+  const seen = new Set<string>(excludeIds);
+  const merged: any[] = [];
+
+  for (const q of queries) {
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
+        q
+      )}&format=json&limit=10&accept-language=fr&addressdetails=1&bounded=1&viewbox=${viewbox}&extratags=1`;
+      const res = await fetch(url, {
+        headers: { 'User-Agent': 'TravelO/1.0 (travelo.app)' },
+      });
+      if (!res.ok) {
+        console.warn(`[nominatim] "${q}" → ${res.status}`);
+        continue;
+      }
+      const data = await res.json();
+      for (const r of Array.isArray(data) ? data : []) {
+        const osmKey = r.osm_id ? `osm-${r.osm_type}-${r.osm_id}` : null;
+        if (!osmKey || seen.has(osmKey)) continue;
+        const lat = parseFloat(r.lat);
+        const lng = parseFloat(r.lon);
+        if (isNaN(lat) || isNaN(lng)) continue;
+        const distance = haversineKm(centerLat, centerLng, lat, lng);
+        if (distance > radiusKm) continue;
+        seen.add(osmKey);
+        const niceName =
+          r.name || (r.display_name || '').split(',')[0] || 'Lieu sans nom';
+        const osmUrl = `https://www.openstreetmap.org/${r.osm_type}/${r.osm_id}`;
+        merged.push({
+          id: osmKey,
+          displayName: { text: niceName },
+          formattedAddress: r.display_name || '',
+          location: { latitude: lat, longitude: lng },
+          types: [r.class, r.type].filter(Boolean),
+          primaryType: r.type || r.class || 'point_of_interest',
+          rating: null,
+          userRatingCount: null,
+          websiteUri: r.extratags?.website || r.extratags?.url || null,
+          googleMapsUri: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(niceName)}&center=${lat},${lng}`,
+          _distance_km: Math.round(distance),
+          _importance: parseFloat(r.importance) || 0,
+          _osm_url: osmUrl,
+        });
+      }
+    } catch (e) {
+      console.warn(`[nominatim] "${q}" crash`, e);
+    }
+    // Respect du rate-limit Nominatim (1 req/s)
+    await new Promise((r) => setTimeout(r, 1100));
+  }
+
+  return merged;
 }
 
 // Prompt d'enrichissement : le LLM reçoit une liste fermée et écrit hook
