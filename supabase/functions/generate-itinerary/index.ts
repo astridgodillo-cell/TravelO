@@ -859,45 +859,77 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
-// Géocodage : "Ventabren" → { lat, lng }. Utilise Places Text Search
-// avec maxResultCount=1, on prend les coordonnées du premier match.
+// Géocodage : "Ventabren" → { lat, lng }. Utilise Places Text Search.
+// Tolérant : essaye plusieurs variantes pour gérer les formats courants
+// (code postal entre parenthèses, virgules, etc.).
 async function geocodePlace(
   query: string
 ): Promise<{ lat: number; lng: number; formattedAddress: string } | null> {
   if (!GOOGLE_PLACES_API_KEY) return null;
-  try {
-    const res = await fetch(
-      'https://places.googleapis.com/v1/places:searchText',
-      {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'X-Goog-Api-Key': GOOGLE_PLACES_API_KEY,
-          'X-Goog-FieldMask': 'places.location,places.formattedAddress',
-        },
-        body: JSON.stringify({
-          textQuery: query,
-          languageCode: 'fr',
-          maxResultCount: 1,
-        }),
-      }
-    );
-    if (!res.ok) {
-      console.warn('[geocode] failed', res.status, await res.text());
-      return null;
-    }
-    const data = await res.json();
-    const p = data?.places?.[0];
-    if (!p?.location) return null;
-    return {
-      lat: p.location.latitude,
-      lng: p.location.longitude,
-      formattedAddress: p.formattedAddress || query,
-    };
-  } catch (e) {
-    console.warn('[geocode] crash', e);
-    return null;
+
+  // Génère plusieurs variantes à tenter, de la plus fidèle à la plus permissive
+  const variants: string[] = [];
+  const original = query.trim();
+  variants.push(original);
+
+  // Nettoyage : retire le contenu entre parenthèses (ex: "Ventabren (13122)" → "Ventabren")
+  // Google Places gère mal les parens autour des codes postaux.
+  const noParens = original.replace(/\s*\([^)]*\)\s*/g, ' ').replace(/\s+/g, ' ').trim();
+  if (noParens && noParens !== original) variants.push(noParens);
+
+  // Si on a un code postal français (5 chiffres) collé ou seul, on l'extrait
+  // et on construit une requête "VILLE, CODE_POSTAL France" qui marche mieux.
+  const postalMatch = original.match(/\b(\d{5})\b/);
+  const wordsOnly = original.replace(/\b\d{5}\b/g, '').replace(/[(),]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (postalMatch && wordsOnly) {
+    variants.push(`${wordsOnly} ${postalMatch[1]} France`);
   }
+
+  // Ajoute "France" en fallback si pas déjà mentionné
+  if (!/france/i.test(noParens) && noParens) {
+    variants.push(`${noParens}, France`);
+  }
+
+  // Dédoublonne
+  const tried = new Set<string>();
+  for (const variant of variants) {
+    if (!variant || tried.has(variant)) continue;
+    tried.add(variant);
+    try {
+      const res = await fetch(
+        'https://places.googleapis.com/v1/places:searchText',
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'X-Goog-Api-Key': GOOGLE_PLACES_API_KEY,
+            'X-Goog-FieldMask': 'places.location,places.formattedAddress',
+          },
+          body: JSON.stringify({
+            textQuery: variant,
+            languageCode: 'fr',
+            maxResultCount: 1,
+          }),
+        }
+      );
+      if (!res.ok) {
+        console.warn(`[geocode] "${variant}" → ${res.status}`);
+        continue;
+      }
+      const data = await res.json();
+      const p = data?.places?.[0];
+      if (p?.location) {
+        return {
+          lat: p.location.latitude,
+          lng: p.location.longitude,
+          formattedAddress: p.formattedAddress || variant,
+        };
+      }
+    } catch (e) {
+      console.warn(`[geocode] "${variant}" crash`, e);
+    }
+  }
+  return null;
 }
 
 // Cherche des lieux RÉELS via Google Places dans un rayon donné.
@@ -1940,7 +1972,7 @@ Deno.serve(async (req) => {
       if (!coords) {
         return jsonResponse(
           {
-            error: `Impossible de localiser "${location}". Précise la ville ou la région.`,
+            error: `Impossible de trouver "${location}" sur la carte. Essaie un format comme "13122 Ventabren", "Aix-en-Provence", ou ajoute le pays (ex: "Ventabren France").`,
           },
           400
         );

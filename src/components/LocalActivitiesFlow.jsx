@@ -236,11 +236,11 @@ export default function LocalActivitiesFlow() {
         </div>
 
         <div>
-          <label className="label">📍 Ma position (ville)</label>
+          <label className="label">📍 Ma position</label>
           <div className="flex gap-2">
             <input
               className="input flex-1"
-              placeholder="Ex : Lyon, Bordeaux, Annecy…"
+              placeholder="Ex : Aix-en-Provence  •  13122 Ventabren  •  Lyon 6ème  •  15 rue de Rivoli Paris"
               value={location}
               onChange={(e) => setLocation(e.target.value)}
             />
@@ -254,6 +254,10 @@ export default function LocalActivitiesFlow() {
               {gettingPosition ? '…' : '📍 GPS'}
             </button>
           </div>
+          <p className="text-xs text-slate-500 mt-1">
+            Une ville, un code postal, une adresse, ou un lieu connu. Plus c'est
+            précis, mieux on cible. Évite les abréviations.
+          </p>
         </div>
 
         <div>
