@@ -825,13 +825,26 @@ Contraintes :
 const ACTIVITY_TYPES_BRIEF: Record<string, string> = {
   insolite: 'expériences originales / hors guides classiques',
   culture: 'musées, monuments, sites historiques, galeries',
-  nature: 'parcs, jardins, points de vue, balades en pleine air',
-  sport: 'sport et activités physiques (kayak, escalade, etc.)',
-  gastronomie: 'restaurants typiques, marchés, dégustations, cours',
-  famille: 'parcs d\'attractions, zoos, aquariums, ateliers enfants',
-  'bien-etre': 'spa, thermes, yoga, retraites',
+  nature: 'parcs, jardins, balades en pleine nature, forêts, grottes',
+  baignade:
+    'lieux pour se baigner : plages, lacs, rivières baignables, cascades, piscines naturelles, sources chaudes',
+  sport: 'sport et activités physiques (kayak, escalade, vélo, etc.)',
+  aventure:
+    'sensations fortes : parapente, accrobranche, saut élastique, karting, escape game, via ferrata',
+  panorama:
+    'points de vue, belvédères, miradors, sommets accessibles, spots couchers de soleil',
+  gastronomie: 'restaurants typiques, marchés, dégustations, cours de cuisine',
+  famille:
+    'parcs d\'attractions, mini-golf, ateliers enfants, plaines de jeux, lieux family-friendly',
+  animalier:
+    'zoos, aquariums, fermes pédagogiques, observation faune sauvage, parcs animaliers',
+  festival:
+    'événements de SAISON : concerts, marchés saisonniers, fêtes locales, expos temporaires actuellement en cours',
+  'bien-etre': 'spa, thermes, sauna, yoga, retraites',
+  spirituel:
+    'monastères, abbayes, lieux de méditation, sites sacrés, pèlerinages',
   'vie-nocturne': 'bars, concerts, clubs, événements du soir',
-  shopping: 'boutiques uniques, marchés, créateurs',
+  shopping: 'boutiques uniques, marchés, créateurs locaux',
   romantique: 'idées en couple : panoramas, dîners intimes, croisières',
 };
 
@@ -894,7 +907,7 @@ Schéma JSON STRICT (uniquement ce JSON, pas de markdown, pas de texte autour) :
     {
       "id": "slug-ascii-unique-en-minuscules",
       "title": "Nom exact et trouvable sur Google Maps",
-      "type": "insolite" | "culture" | "nature" | "sport" | "gastronomie" | "famille" | "bien-etre" | "vie-nocturne" | "shopping" | "romantique",
+      "type": "insolite" | "culture" | "nature" | "baignade" | "sport" | "aventure" | "panorama" | "gastronomie" | "famille" | "animalier" | "festival" | "bien-etre" | "spirituel" | "vie-nocturne" | "shopping" | "romantique",
       "hook": "Accroche 10-15 mots",
       "description": "2-3 phrases, 40-70 mots, sensorielle et concrète",
       "address": "Adresse postale lisible (ville + département/région)",

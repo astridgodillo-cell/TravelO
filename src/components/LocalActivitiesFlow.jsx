@@ -14,10 +14,16 @@ const ACTIVITY_TYPES = [
   { id: 'insolite', label: '✨ Insolite' },
   { id: 'culture', label: '🏛️ Culture' },
   { id: 'nature', label: '🌳 Nature' },
+  { id: 'baignade', label: '🏊 Baignade' },
   { id: 'sport', label: '🚴 Sport' },
+  { id: 'aventure', label: '🎢 Aventure' },
+  { id: 'panorama', label: '🌅 Panorama' },
   { id: 'gastronomie', label: '🍽️ Gastronomie' },
   { id: 'famille', label: '👨‍👩‍👧 Famille' },
+  { id: 'animalier', label: '🦒 Animalier' },
+  { id: 'festival', label: '🎪 Festival' },
   { id: 'bien-etre', label: '♨️ Bien-être' },
+  { id: 'spirituel', label: '🧘 Spirituel' },
   { id: 'vie-nocturne', label: '🌃 Vie nocturne' },
   { id: 'shopping', label: '🛍️ Shopping' },
   { id: 'romantique', label: '💑 Romantique' },
@@ -470,7 +476,6 @@ function ActivityCard({
       )}
 
       <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-500">
-        {a.address && <span>📍 {a.address}</span>}
         {a.duration && <span>⏱️ {a.duration}</span>}
         {(a.price_note || a.price_eur_per_person !== undefined) && (
           <span>
@@ -480,7 +485,42 @@ function ActivityCard({
         {a.best_time && <span>🕒 {a.best_time}</span>}
       </div>
 
-      <div className="mt-3 pt-3 border-t border-slate-100 flex justify-between items-center">
+      {a.address && (
+        <p className="text-xs text-slate-500 mt-1">📍 {a.address}</p>
+      )}
+
+      {/* Liens cliquables : Maps + Site + Réservation */}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <a
+          href={buildMapsUrl(a)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 rounded-md bg-slate-100 hover:bg-slate-200 px-2.5 py-1 text-xs text-slate-700 transition-colors"
+        >
+          📍 Maps
+        </a>
+        <a
+          href={buildSiteSearchUrl(a)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 rounded-md bg-slate-100 hover:bg-slate-200 px-2.5 py-1 text-xs text-slate-700 transition-colors"
+        >
+          🔗 Site
+        </a>
+        {a.booking_hint && (
+          <a
+            href={buildBookingUrl(a)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 rounded-md bg-coral-50 hover:bg-coral-100 px-2.5 py-1 text-xs text-coral-700 transition-colors"
+            title={a.booking_hint}
+          >
+            🎟️ Réserver
+          </a>
+        )}
+      </div>
+
+      <div className="mt-3 pt-3 border-t border-slate-100 flex justify-end">
         <button
           type="button"
           onClick={onAddWishlist}
@@ -493,12 +533,38 @@ function ActivityCard({
         >
           {wishlisted ? '⭐ Ajouté à la wishlist' : '⭐ + Wishlist'}
         </button>
-        {a.booking_hint && (
-          <span className="text-[10px] text-slate-500">
-            🎟️ {a.booking_hint}
-          </span>
-        )}
       </div>
     </div>
   );
+}
+
+// === Helpers liens externes ===
+// Google Maps : priorité aux coordonnées (plus précis), sinon recherche
+// texte avec titre + adresse.
+function buildMapsUrl(a) {
+  if (a.coordinates?.lat && a.coordinates?.lng) {
+    const q = encodeURIComponent(a.title || '');
+    return `https://www.google.com/maps/search/?api=1&query=${q}&query_place_id=&center=${a.coordinates.lat},${a.coordinates.lng}`;
+  }
+  const q = encodeURIComponent(`${a.title || ''} ${a.address || ''}`.trim());
+  return `https://www.google.com/maps/search/?api=1&query=${q}`;
+}
+
+// Recherche Google : "<titre> <adresse> site officiel" — le premier résultat
+// est le site officiel du lieu dans la grande majorité des cas. Plus fiable
+// que de demander au LLM de produire des URLs (risque d'hallucination).
+function buildSiteSearchUrl(a) {
+  const q = encodeURIComponent(
+    `${a.title || ''} ${a.address || ''} site officiel`.trim()
+  );
+  return `https://www.google.com/search?q=${q}`;
+}
+
+// Réservation : on cherche le titre + le hint donné par le LLM (souvent
+// "GetYourGuide", "Tiqets", "Viator"…) sur Google.
+function buildBookingUrl(a) {
+  const q = encodeURIComponent(
+    `${a.title || ''} ${a.booking_hint || 'réservation billetterie'}`.trim()
+  );
+  return `https://www.google.com/search?q=${q}`;
 }
