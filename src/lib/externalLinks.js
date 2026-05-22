@@ -196,25 +196,39 @@ export function viaMichelin(from, to) {
   return `https://www.viamichelin.fr/itineraires?dep=${q(from)}&arr=${q(to)}`;
 }
 
+// Toutes les clés sont stockées SANS accents pour faire du matching
+// robuste avec normalizeAccents() ci-dessous.
 const KNOWN_ACCOMMODATION_TYPES = {
   hotel: 'booking',
   resort: 'booking',
-  'boutique-hôtel': 'booking',
+  'boutique-hotel': 'booking',
   airbnb: 'booking',
   auberge: 'booking',
+  'chambre d hotes': 'booking',
+  gite: 'booking',
   camping: 'park4night',
   'camping municipal': 'park4night',
   'aire de camping-car': 'park4night',
   'aire de camping-car publique': 'park4night',
-  'aire de camping-car privée': 'park4night',
+  'aire de camping-car privee': 'park4night',
   'france passion': 'park4night',
   bivouac: 'park4night',
   'parking gratuit': 'park4night',
 };
 
+// Retire les accents et l'apostrophe pour que "Hôtel" matche "hotel",
+// "Chambre d'hôtes" matche "chambre d hotes", etc.
+function normalizeAccents(s) {
+  return (s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[‘’']/g, ' ');
+}
+
 export function bestAccommodationLink(accommodation, ctx = {}) {
   if (!accommodation) return null;
-  const type = (accommodation.type || '').toLowerCase();
+  const type = normalizeAccents(accommodation.type);
   const matchKey = Object.keys(KNOWN_ACCOMMODATION_TYPES).find((k) =>
     type.includes(k)
   );
