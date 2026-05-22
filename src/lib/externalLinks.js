@@ -36,14 +36,39 @@ export function park4nightSearch(location) {
   return `https://park4night.com/fr/search?text=${q(cleanLocation(location) || location)}`;
 }
 
+// Si configuré (VITE_BOOKING_AFFILIATE_ID), chaque lien Booking inclut
+// l'AID partenaire → commission ~4% du prix de la nuit reversée à TravelO.
+// Inscription : https://partner.booking.com/fr/programme-daffiliation
+const BOOKING_AFFILIATE_ID = import.meta.env?.VITE_BOOKING_AFFILIATE_ID || '';
+const BOOKING_LABEL = 'travelo-itinerary';
+
+// Booking exige checkout > checkin. Si on a juste la date du jour, on ajoute
+// +1 jour pour le checkout (1 nuit par défaut).
+function addOneDay(isoDate) {
+  if (!isoDate) return '';
+  const d = new Date(isoDate);
+  if (Number.isNaN(d.getTime())) return '';
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
 export function bookingSearch(location, checkin, checkout, adults = 2, children = 0) {
+  const safeCheckout =
+    checkout && checkout !== checkin ? checkout : addOneDay(checkin);
   const params = new URLSearchParams({
     ss: location || '',
     checkin: checkin || '',
-    checkout: checkout || '',
+    checkout: safeCheckout,
     group_adults: String(adults),
     group_children: String(children),
+    selected_currency: 'EUR',
+    lang: 'fr',
+    no_rooms: '1',
   });
+  if (BOOKING_AFFILIATE_ID) {
+    params.set('aid', BOOKING_AFFILIATE_ID);
+    params.set('label', BOOKING_LABEL);
+  }
   return `https://www.booking.com/searchresults.fr.html?${params.toString()}`;
 }
 

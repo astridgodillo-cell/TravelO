@@ -518,13 +518,17 @@ function DayCard({
             (day.location || '').toLowerCase().trim()
         ).length
     : 0;
+  const nextDayDate = Array.isArray(allDays)
+    ? allDays[dayIndex + 1]?.date
+    : null;
   const accomLink = bestAccommodationLink(day.accommodation, {
     location: day.location,
     checkin: day.date,
-    checkout: day.date,
+    checkout: nextDayDate || day.date,
     adults,
     children: childrenCount,
   });
+  const isBookingCta = accomLink?.provider === 'Booking';
 
   return (
     <article className="card print:break-inside-avoid print:shadow-none print:border-slate-300 animate-fade-up">
@@ -832,28 +836,98 @@ function DayCard({
                 ))}
               </div>
             )}
-            <div className="print:hidden mt-2 flex flex-wrap gap-3 text-xs">
-              {accomLink && (
+            {isBookingCta && (
+              <div className="print:hidden mt-3">
                 <a
                   href={accomLink.url}
                   target="_blank"
-                  rel="noreferrer"
-                  className="text-brand-700 hover:underline"
+                  rel="noopener noreferrer sponsored"
+                  className="group flex items-center justify-between gap-3 rounded-lg bg-[#003580] hover:bg-[#00224f] transition-colors px-4 py-3 text-white shadow-sm"
                 >
-                  🔗 Chercher sur {accomLink.provider}
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-white/15 text-base font-bold">
+                      B.
+                    </span>
+                    <div className="min-w-0">
+                      <div className="font-semibold leading-tight">
+                        Réserver sur Booking.com
+                      </div>
+                      <div className="text-[11px] text-white/80 leading-tight">
+                        Disponibilités & prix en temps réel
+                      </div>
+                    </div>
+                  </div>
+                  <span className="shrink-0 text-sm font-medium group-hover:translate-x-0.5 transition-transform">
+                    →
+                  </span>
                 </a>
-              )}
-              {isVanTrip && accomLink?.provider !== 'Park4Night' && (
-                <a
-                  href={park4nightSearch(day.location)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-emerald-700 hover:underline"
-                >
-                  🚐 Park4Night ({day.location})
-                </a>
-              )}
-            </div>
+                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500">
+                  <span className="inline-flex items-center gap-1">
+                    <span className="text-emerald-600">✓</span> Annulation
+                    gratuite sur la plupart des hôtels
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="text-emerald-600">✓</span> Meilleur prix
+                    garanti
+                  </span>
+                  <span
+                    className="inline-flex items-center gap-1"
+                    title="TravelO touche une petite commission de Booking — aucun coût supplémentaire pour vous."
+                  >
+                    <span className="text-emerald-600">✓</span> Même prix pour
+                    vous
+                  </span>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-3 text-[11px]">
+                  <a
+                    href={googleMapsSearch(
+                      day.accommodation.name
+                        ? `${day.accommodation.name} ${day.accommodation.coordinates_hint || day.location}`
+                        : day.location
+                    )}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-slate-400 hover:text-slate-600 hover:underline"
+                  >
+                    Voir sur Google Maps
+                  </a>
+                  {isVanTrip && (
+                    <a
+                      href={park4nightSearch(day.location)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-slate-400 hover:text-slate-600 hover:underline"
+                    >
+                      🚐 Park4Night
+                    </a>
+                  )}
+                </div>
+              </div>
+            )}
+            {!isBookingCta && (
+              <div className="print:hidden mt-2 flex flex-wrap gap-3 text-xs">
+                {accomLink && (
+                  <a
+                    href={accomLink.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-brand-700 hover:underline"
+                  >
+                    🔗 Chercher sur {accomLink.provider}
+                  </a>
+                )}
+                {isVanTrip && accomLink?.provider !== 'Park4Night' && (
+                  <a
+                    href={park4nightSearch(day.location)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-emerald-700 hover:underline"
+                  >
+                    🚐 Park4Night ({day.location})
+                  </a>
+                )}
+              </div>
+            )}
           </Block>
         )}
         {day.meals && (
