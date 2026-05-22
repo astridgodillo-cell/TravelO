@@ -768,12 +768,24 @@ function DayCard({
                       )}
                     </div>
                   </div>
-                  <div className="text-right text-xs shrink-0">
+                  <div
+                    className="text-right text-xs shrink-0"
+                    title={
+                      a.price_per_person_eur === 0
+                        ? 'Activité officielle gratuite. GetYourGuide propose des visites guidées payantes en supplément.'
+                        : 'Estimation TravelO. Le prix réel peut différer — vérifiez sur GetYourGuide.'
+                    }
+                  >
                     <div className="text-slate-500">
-                      {formatEur(a.price_per_person_eur)} / pers.
+                      {a.price_per_person_eur > 0 && 'à partir de '}
+                      {formatEurOrFree(a.price_per_person_eur)}
+                      {a.price_per_person_eur > 0 ? ' / pers.' : ''}
                     </div>
                     <div className="font-semibold text-slate-800">
-                      Famille : {formatEur(a.family_total_eur)}
+                      Famille :{' '}
+                      {a.family_total_eur > 0
+                        ? formatEurEstimate(a.family_total_eur)
+                        : formatEurOrFree(a.family_total_eur)}
                     </div>
                   </div>
                 </div>
@@ -1683,6 +1695,7 @@ function Info({ label, value }) {
 function ActivityBookingCta({ activity, location, compact = false }) {
   const url = getYourGuideSearch(activity.title, location);
   const [verified, setVerified] = useState(undefined);
+  const isFree = activity.price_per_person_eur === 0;
 
   useEffect(() => {
     let active = true;
@@ -1698,8 +1711,22 @@ function ActivityBookingCta({ activity, location, compact = false }) {
   // verified === undefined (en cours) ou null (erreur) → on affiche.
   if (verified === false) return null;
 
+  const ctaTitle = isFree
+    ? 'Visites guidées sur GetYourGuide'
+    : 'Réserver sur GetYourGuide';
+  const ctaSubtitle = isFree
+    ? 'Visites guidées payantes en supplément (option)'
+    : 'Confirmation immédiate · Annulation gratuite';
+
   return (
     <div className={compact ? 'mt-2' : 'mt-4'}>
+      {isFree && (
+        <p className="mb-1 text-[11px] italic text-slate-500 print:hidden">
+          ℹ️ L'activité ci-dessus est gratuite. GetYourGuide propose des
+          visites guidées avec guide francophone, coupe-files et options
+          spéciales (payantes).
+        </p>
+      )}
       <a
         href={url}
         target="_blank"
@@ -1711,11 +1738,9 @@ function ActivityBookingCta({ activity, location, compact = false }) {
             🎫
           </span>
           <div className="min-w-0">
-            <div className="font-semibold leading-tight">
-              Réserver sur GetYourGuide
-            </div>
+            <div className="font-semibold leading-tight">{ctaTitle}</div>
             <div className="text-[11px] text-white/80 leading-tight print:text-slate-600">
-              Confirmation immédiate · Annulation gratuite
+              {ctaSubtitle}
             </div>
           </div>
         </div>
