@@ -86,7 +86,12 @@ export default function ItineraryView({
   const allActivities = useMemo(() => {
     if (!itinerary?.days) return [];
     return itinerary.days.flatMap((d) =>
-      (d.activities || []).map((a) => ({ ...a, day: d.label, date: d.date }))
+      (d.activities || []).map((a) => ({
+        ...a,
+        day: d.label,
+        date: d.date,
+        location: a.location || d.location,
+      }))
     );
   }, [itinerary]);
 
@@ -717,32 +722,29 @@ function DayCard({
                     {a.description && (
                       <p className="text-slate-600 mt-1">{a.description}</p>
                     )}
-                    <div className="print:hidden mt-2 flex flex-wrap gap-x-3 gap-y-1.5 text-xs items-center">
+                    {isLikelyBookable(a) && (
+                      <ActivityBookingCta
+                        activity={a}
+                        location={day.location}
+                        compact
+                      />
+                    )}
+                    <div className="print:hidden mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] items-center text-slate-400">
                       {isLikelyBookable(a) && (
-                        <>
-                          <a
-                            href={getYourGuideSearch(a.title, day.location)}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-800 hover:bg-emerald-200 px-2.5 py-0.5 font-semibold"
-                          >
-                            🎫 Réserver (GetYourGuide)
-                          </a>
-                          <a
-                            href={tiqetsSearch(a.title, day.location)}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-brand-700 hover:underline"
-                          >
-                            🏛️ Tiqets
-                          </a>
-                        </>
+                        <a
+                          href={tiqetsSearch(a.title, day.location)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="hover:text-slate-600 hover:underline"
+                        >
+                          🏛️ Tiqets
+                        </a>
                       )}
                       <a
                         href={googleMapsSearch(`${a.title} ${day.location}`)}
                         target="_blank"
                         rel="noreferrer"
-                        className="text-brand-700 hover:underline"
+                        className="hover:text-slate-600 hover:underline"
                       >
                         📍 Google Maps
                       </a>
@@ -752,13 +754,13 @@ function DayCard({
                             onClick={() =>
                               onEditActivity?.(dayIndex, i, a, day.location)
                             }
-                            className="text-slate-500 hover:text-brand-700 hover:underline"
+                            className="hover:text-brand-700 hover:underline"
                           >
                             ✏️ Modifier
                           </button>
                           <button
                             onClick={() => onRemoveActivity?.(dayIndex, i)}
-                            className="text-slate-400 hover:text-red-600 hover:underline"
+                            className="hover:text-red-600 hover:underline"
                           >
                             🗑️ Supprimer
                           </button>
@@ -1613,13 +1615,19 @@ function FichesActivites({ activities }) {
             {a.immersive_description || a.description}
           </p>
           <div className="mt-3 flex flex-wrap gap-4 text-sm">
-            <span className="text-slate-500">
-              {formatEur(a.price_per_person_eur)} / personne
+            <span
+              className="text-slate-500"
+              title="Estimation TravelO. Le prix réel sur GetYourGuide peut varier."
+            >
+              à partir de {formatEurEstimate(a.price_per_person_eur)} / personne
             </span>
             <span className="font-semibold text-slate-800">
-              Total famille : {formatEur(a.family_total_eur)}
+              Total famille : {formatEurEstimate(a.family_total_eur)}
             </span>
           </div>
+          {isLikelyBookable(a) && (
+            <ActivityBookingCta activity={a} location={a.location} />
+          )}
         </article>
       ))}
     </section>
@@ -1658,6 +1666,59 @@ function Info({ label, value }) {
       <div className="font-medium text-slate-800 capitalize">
         {value || '—'}
       </div>
+    </div>
+  );
+}
+
+// CTA prominent pour la réservation d'une activité via GetYourGuide.
+// Style identique au CTA Booking mais aux couleurs GYG (orange #FF5533).
+// Optionnel : props compact=true pour une version réduite (Planning),
+// par défaut version complète avec badges (FichesActivites).
+function ActivityBookingCta({ activity, location, compact = false }) {
+  const url = getYourGuideSearch(activity.title, location);
+  return (
+    <div className={compact ? 'mt-2' : 'mt-4'}>
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer sponsored"
+        className="group flex items-center justify-between gap-3 rounded-lg bg-[#FF5533] hover:bg-[#E04420] transition-colors px-4 py-3 text-white shadow-sm print:bg-white print:text-[#FF5533] print:border print:border-[#FF5533] print:shadow-none"
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-white/15 text-base font-bold print:bg-[#FF5533] print:text-white">
+            🎫
+          </span>
+          <div className="min-w-0">
+            <div className="font-semibold leading-tight">
+              Réserver sur GetYourGuide
+            </div>
+            <div className="text-[11px] text-white/80 leading-tight print:text-slate-600">
+              Confirmation immédiate · Annulation gratuite
+            </div>
+          </div>
+        </div>
+        <span className="shrink-0 text-sm font-medium group-hover:translate-x-0.5 transition-transform print:hidden">
+          →
+        </span>
+      </a>
+      {!compact && (
+        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500 print:hidden">
+          <span className="inline-flex items-center gap-1">
+            <span className="text-emerald-600">✓</span> Annulation gratuite
+            jusqu'à 24h avant
+          </span>
+          <span className="inline-flex items-center gap-1">
+            <span className="text-emerald-600">✓</span> Avis vérifiés des
+            voyageurs
+          </span>
+          <span
+            className="inline-flex items-center gap-1"
+            title="TravelO touche une petite commission de GetYourGuide — aucun coût supplémentaire pour vous."
+          >
+            <span className="text-emerald-600">✓</span> Même prix pour vous
+          </span>
+        </div>
+      )}
     </div>
   );
 }
