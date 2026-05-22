@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
+import { DayPicker } from 'react-day-picker';
+import { fr } from 'date-fns/locale';
+import 'react-day-picker/dist/style.css';
 import {
   TRIP_TYPES,
   MOTORIZED_TRIP_TYPES,
@@ -15,6 +18,33 @@ import {
 } from '../lib/preferenceOptions';
 import { DEFAULTS, computeTotalDays } from './PreferencesForm';
 import Icon from './Icon';
+
+// --- Helpers dates ---
+function toIsoDate(d) {
+  if (!d) return '';
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function fromIsoDate(iso) {
+  if (!iso) return undefined;
+  const [y, m, d] = iso.split('-').map(Number);
+  if (!y || !m || !d) return undefined;
+  return new Date(y, m - 1, d);
+}
+
+function formatFrDate(iso) {
+  const d = fromIsoDate(iso);
+  if (!d) return '—';
+  return d.toLocaleDateString('fr-FR', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+}
 
 // --- Helpers --------------------------------------------------------------
 
@@ -182,42 +212,86 @@ function StepDestination({ values, update }) {
 
 function StepDates({ values, update }) {
   const totalDays = computeTotalDays(values.startDate, values.endDate);
+  const selected = {
+    from: fromIsoDate(values.startDate),
+    to: fromIsoDate(values.endDate),
+  };
+
+  function handleSelect(range) {
+    // range peut être undefined (reset) ou {from, to?}
+    update('startDate', toIsoDate(range?.from));
+    update('endDate', toIsoDate(range?.to));
+  }
+
+  // Bloque les dates passées
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
   return (
     <div>
       <StepHeader
         icon="calendar"
         title="Quand veux-tu partir ?"
-        subtitle="Indique tes dates de début et de fin. On calcule la durée automatiquement."
+        subtitle="Clique sur ta date de départ, puis sur ta date de retour. Les jours entre les deux seront sélectionnés."
       />
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label className="label">Date de début</label>
-          <input
-            type="date"
-            className="input"
-            value={values.startDate}
-            onChange={(e) => update('startDate', e.target.value)}
-          />
-        </div>
-        <div>
-          <label className="label">Date de fin</label>
-          <input
-            type="date"
-            className="input"
-            value={values.endDate}
-            min={values.startDate || undefined}
-            onChange={(e) => update('endDate', e.target.value)}
+
+      <div className="flex justify-center">
+        <div className="rdp-wizard rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <DayPicker
+            mode="range"
+            locale={fr}
+            selected={selected.from ? selected : undefined}
+            onSelect={handleSelect}
+            numberOfMonths={typeof window !== 'undefined' && window.innerWidth >= 768 ? 2 : 1}
+            disabled={{ before: today }}
+            weekStartsOn={1}
+            showOutsideDays={false}
           />
         </div>
       </div>
-      {totalDays > 0 && (
-        <div className="mt-6 rounded-xl bg-brand-50 border border-brand-100 p-4 text-center">
-          <div className="text-3xl font-bold text-brand-700">{totalDays}</div>
-          <div className="text-xs text-brand-600 uppercase tracking-wide">
-            {totalDays > 1 ? 'jours de voyage' : 'jour de voyage'}
+
+      <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="rounded-xl bg-slate-50 border border-slate-200 p-3 text-center">
+          <div className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">
+            Départ
+          </div>
+          <div className="text-sm font-medium text-slate-900 mt-1">
+            {formatFrDate(values.startDate)}
           </div>
         </div>
-      )}
+        <div className="rounded-xl bg-slate-50 border border-slate-200 p-3 text-center">
+          <div className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold">
+            Retour
+          </div>
+          <div className="text-sm font-medium text-slate-900 mt-1">
+            {formatFrDate(values.endDate)}
+          </div>
+        </div>
+        <div
+          className={`rounded-xl border p-3 text-center ${
+            totalDays > 0
+              ? 'bg-brand-50 border-brand-200'
+              : 'bg-slate-50 border-slate-200'
+          }`}
+        >
+          <div
+            className={`text-[10px] uppercase tracking-wide font-semibold ${
+              totalDays > 0 ? 'text-brand-600' : 'text-slate-500'
+            }`}
+          >
+            Durée
+          </div>
+          <div
+            className={`text-sm font-bold mt-1 ${
+              totalDays > 0 ? 'text-brand-700' : 'text-slate-900'
+            }`}
+          >
+            {totalDays > 0
+              ? `${totalDays} ${totalDays > 1 ? 'jours' : 'jour'}`
+              : '—'}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

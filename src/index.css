@@ -54,6 +54,34 @@
   }
 }
 
+/* ---- react-day-picker : override aux couleurs brand TravelO ---- */
+.rdp-wizard .rdp-root {
+  --rdp-accent-color: theme('colors.brand.600');
+  --rdp-accent-background-color: theme('colors.brand.50');
+  --rdp-range_middle-color: theme('colors.brand.900');
+  --rdp-range_middle-background-color: theme('colors.brand.50');
+  --rdp-range_start-background: theme('colors.brand.600');
+  --rdp-range_start-color: white;
+  --rdp-range_end-background: theme('colors.brand.600');
+  --rdp-range_end-color: white;
+  --rdp-day-height: 2.5rem;
+  --rdp-day-width: 2.5rem;
+  --rdp-font-family: inherit;
+}
+.rdp-wizard .rdp-caption_label,
+.rdp-wizard .rdp-month_caption {
+  font-weight: 600;
+  color: theme('colors.slate.900');
+  text-transform: capitalize;
+}
+.rdp-wizard .rdp-day_button:hover:not([disabled]) {
+  background-color: theme('colors.brand.100');
+}
+.rdp-wizard .rdp-day_today:not(.rdp-day_outside) .rdp-day_button {
+  font-weight: 700;
+  color: theme('colors.brand.700');
+}
+
 @media print {
   body {
     @apply bg-white text-slate-900;
