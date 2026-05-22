@@ -2218,6 +2218,112 @@ function enrichItineraryWithFlight(itinerary: any, flight: FlightData, p: any) {
   return itinerary;
 }
 
+/**
+ * Sépare une FlightData en deux "jambes" (aller / retour) avec leur propre
+ * coût et horaire. Utile pour le mode long (plan-trip + expand-day) où chaque
+ * jambe est attachée à un day_plan distinct.
+ */
+function splitFlightForLegs(flight: FlightData, isRoundTrip: boolean, p: any) {
+  const total = flight.price_eur;
+  const outboundCost = isRoundTrip ? Math.round(total / 2) : total;
+  const returnCost = isRoundTrip ? total - outboundCost : 0;
+  const airlineLabel =
+    flight.airline && flight.airline !== 'N/A' ? flight.airline : 'compagnie';
+  const flightNumberLabel = flight.flight_number
+    ? ` ${flight.airline || ''}${flight.flight_number}`.trim()
+    : '';
+
+  return {
+    isRoundTrip,
+    total,
+    outbound: {
+      from: p.departureLocation || 'Domicile',
+      to: p.destinations || flight.destination_iata,
+      cost: outboundCost,
+      departure_at: flight.departure_at,
+      airlineLabel,
+      flightNumberLabel,
+      airline: flight.airline,
+      flight_number: flight.flight_number,
+      deeplink: flight.deeplink || null,
+      source: flight.source,
+    },
+    returnLeg:
+      isRoundTrip && returnCost > 0
+        ? {
+            from: p.destinations || flight.origin_iata,
+            to: p.returnLocation || p.departureLocation || 'Domicile',
+            cost: returnCost,
+            departure_at: flight.return_at,
+            airlineLabel,
+            flightNumberLabel,
+            airline: flight.airline,
+            flight_number: flight.flight_number,
+            deeplink: flight.deeplink || null,
+            source: flight.source,
+          }
+        : null,
+  };
+}
+
+type FlightLeg = ReturnType<typeof splitFlightForLegs>['outbound'];
+
+function buildFlightTrip(leg: FlightLeg, legLabel: 'aller' | 'retour') {
+  const time = leg.departure_at ? leg.departure_at.substring(11, 16) : null;
+  return {
+    from: leg.from,
+    to: leg.to,
+    distance_km: null,
+    duration: null,
+    mode: 'Avion',
+    estimated_cost_eur: leg.cost,
+    fuel_cost_eur: null,
+    toll_cost_eur: null,
+    ferry_cost_eur: null,
+    cost_note: `Vol ${legLabel} ${leg.airlineLabel}${leg.flightNumberLabel}${time ? `, départ ${time}` : ''} — prix Aviasales`,
+    road_warning: null,
+    _flight: {
+      airline: leg.airline,
+      flight_number: leg.flight_number,
+      departure_at: leg.departure_at,
+      deeplink: leg.deeplink,
+      source: leg.source,
+    },
+  };
+}
+
+function formatFlightLegForPrompt(leg: FlightLeg, legLabel: 'aller' | 'retour'): string {
+  const time = leg.departure_at ? leg.departure_at.substring(11, 16) : null;
+  return `
+VOL ${legLabel.toUpperCase()} RÉEL — à intégrer impérativement dans cette journée :
+  - Trajet : ${leg.from} → ${leg.to}
+  - Compagnie : ${leg.airlineLabel}${leg.flightNumberLabel}
+  - ${legLabel === 'aller' ? 'Heure de départ' : 'Heure de départ retour'} : ${time || '(non précisée)'}
+  - Coût total famille pour cette jambe : ${leg.cost} €
+  ⇒ Crée un trip de mode "Avion" avec EXACTEMENT ce coût et cale les activités de la journée autour de cet horaire (transfert aéroport, marges, check-in/out, jet lag éventuel).`;
+}
+
+/**
+ * Ajoute le trip "Avion" à UN jour expand. Utilisé en mode long quand
+ * day_plan._flight_outbound ou _flight_return est présent.
+ */
+function enrichDayWithFlightLeg(day: any, leg: FlightLeg, legLabel: 'aller' | 'retour') {
+  if (!day || !leg || !leg.cost) return day;
+  if (!Array.isArray(day.trips)) day.trips = [];
+  // Supprime tout trip "Avion" inventé par le LLM
+  day.trips = day.trips.filter(
+    (t: any) => !/avion|vol|flight|plane/i.test(t?.mode || '')
+  );
+  const trip = buildFlightTrip(leg, legLabel);
+  if (legLabel === 'aller') {
+    day.trips.unshift(trip);
+  } else {
+    day.trips.push(trip);
+  }
+  day.day_total_eur = (day.day_total_eur || 0) + leg.cost;
+  return day;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: CORS_HEADERS });
@@ -2646,12 +2752,49 @@ Deno.serve(async (req) => {
       if (!preferences?.destinations || !preferences?.startDate) {
         return jsonResponse({ error: 'preferences invalides' }, 400);
       }
-      const prompt = buildPlanPrompt(preferences);
+      // Récupère le vol réel pour caler J1 et J_final et le transmettre
+      // ensuite via day_plans[..]._flight_outbound / _flight_return.
+      const flightData = await resolveFlightData(preferences);
+      let prompt = buildPlanPrompt(preferences);
+      if (flightData) {
+        prompt += `\n\n${formatFlightBlockForPrompt(flightData, preferences)}`;
+      }
       // 32000 tokens : Gemini "thinking" peut en consommer une partie,
       // le reste doit suffire pour summary + 30+ day_plans + notes complètes
       // (packing list + phrases + tips). Gemini Flash supporte jusqu'à 65k.
       const { text, usage, modelUsed } = await callMain(prompt, 32000);
       const plan = await parseOrRepair(text, callMainSafe);
+      // Injecte les données vol dans le plan : summary (pour le frontend)
+      // ET dans day_plans[0]/last (pour expand-day, qui les recevra via dayPlan)
+      if (flightData && plan && Array.isArray(plan.day_plans) && plan.day_plans.length) {
+        const isRoundTrip =
+          !preferences.returnLocation ||
+          preferences.returnLocation === preferences.departureLocation;
+        const legs = splitFlightForLegs(flightData, isRoundTrip, preferences);
+        if (!plan.summary) plan.summary = {};
+        const pax =
+          (Number(preferences.adults) || 1) +
+          (Array.isArray(preferences.childrenAges) ? preferences.childrenAges.length : 0);
+        plan.summary.flight_data = {
+          airline: flightData.airline,
+          flight_number: flightData.flight_number,
+          origin_iata: flightData.origin_iata,
+          destination_iata: flightData.destination_iata,
+          total_price_eur: legs.total,
+          outbound_price_eur: legs.outbound.cost,
+          return_price_eur: legs.returnLeg?.cost || 0,
+          departure_at: flightData.departure_at,
+          return_at: flightData.return_at,
+          deeplink: flightData.deeplink || null,
+          source: flightData.source,
+          per_person_eur: pax > 0 ? Math.round(legs.total / pax) : legs.total,
+        };
+        plan.day_plans[0]._flight_outbound = legs.outbound;
+        if (legs.returnLeg) {
+          plan.day_plans[plan.day_plans.length - 1]._flight_return =
+            legs.returnLeg;
+        }
+      }
       return jsonResponse({ plan, usage, model: modelUsed });
     }
 
@@ -2663,15 +2806,32 @@ Deno.serve(async (req) => {
           400
         );
       }
-      const prompt = buildExpandPrompt(
+      let prompt = buildExpandPrompt(
         preferences,
         day_plan,
         previous_plan,
         next_plan
       );
+      // Si ce jour porte une jambe de vol (transmise via plan-trip),
+      // on l'injecte dans le prompt pour caler les horaires.
+      if (day_plan._flight_outbound) {
+        prompt += `\n\n${formatFlightLegForPrompt(day_plan._flight_outbound, 'aller')}`;
+      }
+      if (day_plan._flight_return) {
+        prompt += `\n\n${formatFlightLegForPrompt(day_plan._flight_return, 'retour')}`;
+      }
       // Expansion backend : Gemini 2.5 Flash si configuré, sinon Haiku
       const { text, usage, modelUsed } = await callExpansion(prompt, 6000);
-      const day = await parseOrRepair(text, callExpansionSafe);
+      let day = await parseOrRepair(text, callExpansionSafe);
+      // Post-traitement : injecte physiquement le trip "Avion" et ajuste
+      // day_total_eur pour qu'il apparaisse dans le budget (le frontend
+      // recalcule trips_eur en sommant les trips de chaque jour).
+      if (day_plan._flight_outbound) {
+        day = enrichDayWithFlightLeg(day, day_plan._flight_outbound, 'aller');
+      }
+      if (day_plan._flight_return) {
+        day = enrichDayWithFlightLeg(day, day_plan._flight_return, 'retour');
+      }
       return jsonResponse({ day, usage, model: modelUsed });
     }
 
