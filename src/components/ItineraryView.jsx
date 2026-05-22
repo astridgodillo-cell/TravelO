@@ -10,6 +10,7 @@ import DayPhotos from './DayPhotos';
 import DaySpecialties from './DaySpecialties';
 import ItineraryTable from './ItineraryTable';
 import Icon from './Icon';
+import { fetchHotelRating } from '../lib/photos';
 import {
   bestAccommodationLink,
   googleMapsDirections,
@@ -825,6 +826,10 @@ function DayCard({
           <Block title="Hébergement / nuit">
             <div className="font-medium text-slate-800">
               {day.accommodation.name}
+              <HotelRating
+                hotelName={day.accommodation.name}
+                location={day.location}
+              />
             </div>
             <div className="text-slate-500">
               {day.accommodation.type}
@@ -1654,6 +1659,49 @@ function Info({ label, value }) {
         {value || '—'}
       </div>
     </div>
+  );
+}
+
+// Affiche la vraie note Google de l'hôtel à côté de son nom.
+// Lazy fetch via Edge Function + cache sessionStorage 24h.
+// État compact : "8,2/10 · 3 371 avis" — laisse vide si inconnu.
+function HotelRating({ hotelName, location }) {
+  const [data, setData] = useState(undefined); // undefined = loading, null = no data
+  useEffect(() => {
+    let active = true;
+    if (!hotelName) {
+      setData(null);
+      return;
+    }
+    fetchHotelRating(hotelName, location).then((res) => {
+      if (!active) return;
+      setData(res?.rating ? res : null);
+    });
+    return () => {
+      active = false;
+    };
+  }, [hotelName, location]);
+
+  if (data === undefined) {
+    return (
+      <span className="ml-2 inline-block h-4 w-20 align-middle rounded bg-slate-100 animate-pulse" />
+    );
+  }
+  if (!data || !data.rating) return null;
+
+  const ratingOn10 = (data.rating * 2).toFixed(1).replace('.', ',');
+  return (
+    <span
+      className="ml-2 inline-flex items-center gap-1 align-middle text-xs"
+      title={`Note Google : ${data.rating}/5 (${data.userRatingCount} avis)`}
+    >
+      <span className="inline-flex items-center rounded bg-[#003580] text-white px-1.5 py-0.5 font-semibold">
+        {ratingOn10}
+      </span>
+      <span className="text-slate-500">
+        · {data.userRatingCount.toLocaleString('fr-FR')} avis
+      </span>
+    </span>
   );
 }
 

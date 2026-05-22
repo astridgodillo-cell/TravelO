@@ -2601,6 +2601,58 @@ Deno.serve(async (req) => {
       });
     }
 
+    if (mode === 'fetch-hotel-rating') {
+      const { hotelName, location } = body;
+      if (!hotelName || typeof hotelName !== 'string') {
+        return jsonResponse({ error: 'Paramètre "hotelName" requis.' }, 400);
+      }
+      if (!GOOGLE_PLACES_API_KEY) {
+        return jsonResponse({ rating: null, reason: 'no_google_key' });
+      }
+      try {
+        const textQuery = `${hotelName}${location ? ' ' + location : ''}`;
+        const res = await fetch(
+          'https://places.googleapis.com/v1/places:searchText',
+          {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              'X-Goog-Api-Key': GOOGLE_PLACES_API_KEY,
+              'X-Goog-FieldMask':
+                'places.id,places.displayName,places.rating,places.userRatingCount,places.googleMapsUri,places.priceLevel',
+            },
+            body: JSON.stringify({
+              textQuery,
+              languageCode: 'fr',
+              maxResultCount: 1,
+              includedType: 'lodging',
+            }),
+          }
+        );
+        if (!res.ok) {
+          const txt = await res.text();
+          console.warn(
+            `[hotel-rating] "${textQuery}" ${res.status} ${txt.slice(0, 200)}`
+          );
+          return jsonResponse({ rating: null });
+        }
+        const data = await res.json();
+        const place = data?.places?.[0];
+        if (!place) {
+          return jsonResponse({ rating: null });
+        }
+        return jsonResponse({
+          rating: place.rating || null,
+          userRatingCount: place.userRatingCount || 0,
+          googleMapsUri: place.googleMapsUri || null,
+          matchedName: place.displayName?.text || null,
+        });
+      } catch (e) {
+        console.error('[hotel-rating] crash', e);
+        return jsonResponse({ rating: null });
+      }
+    }
+
     if (mode === 'suggest-cities') {
       const {
         destination,
