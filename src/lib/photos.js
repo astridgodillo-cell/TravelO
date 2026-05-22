@@ -50,6 +50,77 @@ function writeHotelCache(key, data) {
   }
 }
 
+// Cache 7 jours : on évite de spammer GetYourGuide à chaque rafraîchissement.
+const GYG_AVAIL_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+function gygCacheKey(title, location) {
+  const norm = (s) =>
+    (s || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9 ]/g, ' ')
+      .trim()
+      .replace(/\s+/g, ' ');
+  return `travelo:gyg-avail:${norm(title)}|${norm(location)}`;
+}
+
+function readGygCache(key) {
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw);
+    if (Date.now() - parsed.ts > GYG_AVAIL_TTL_MS) return undefined;
+    return parsed.available;
+  } catch {
+    return undefined;
+  }
+}
+
+function writeGygCache(key, available) {
+  try {
+    sessionStorage.setItem(
+      key,
+      JSON.stringify({ ts: Date.now(), available })
+    );
+  } catch {
+    /* quota dépassé */
+  }
+}
+
+// Retourne :
+//   true   → GYG a des résultats pour cette activité
+//   false  → GYG n'a aucun résultat (cacher le bouton)
+//   null   → vérification impossible (réseau, blocage) → laisser
+//            l'heuristique décider
+export async function checkActivityBookable(activityTitle, location) {
+  if (!activityTitle) return null;
+  const key = gygCacheKey(activityTitle, location);
+  const cached = readGygCache(key);
+  if (cached !== undefined) return cached;
+  try {
+    const { data, error } = await supabase.functions.invoke(FN_NAME, {
+      body: {
+        mode: 'check-gyg-availability',
+        activityTitle,
+        location,
+      },
+    });
+    if (error || data?.error) {
+      console.warn('[gyg-availability] fetch failed', error || data?.error);
+      return null;
+    }
+    const available = data?.available ?? null;
+    // On ne cache que les réponses définitives (true ou false),
+    // pas les null (qui peuvent être des erreurs transitoires).
+    if (available !== null) writeGygCache(key, available);
+    return available;
+  } catch (e) {
+    console.error('[gyg-availability] exception', e);
+    return null;
+  }
+}
+
 export async function fetchHotelRating(hotelName, location) {
   if (!hotelName) return null;
   const key = hotelCacheKey(hotelName, location);

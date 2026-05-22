@@ -2601,6 +2601,74 @@ Deno.serve(async (req) => {
       });
     }
 
+    if (mode === 'check-gyg-availability') {
+      const { activityTitle, location } = body;
+      if (!activityTitle || typeof activityTitle !== 'string') {
+        return jsonResponse(
+          { error: 'Paramètre "activityTitle" requis.' },
+          400
+        );
+      }
+      try {
+        const query = `${activityTitle}${location ? ' ' + location : ''}`;
+        const url = `https://www.getyourguide.fr/s/?q=${encodeURIComponent(query)}`;
+        const res = await fetch(url, {
+          headers: {
+            // User-Agent classique pour ne pas être bloqué
+            'user-agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'accept-language': 'fr-FR,fr;q=0.9,en;q=0.8',
+          },
+          // Pas de redirect manuel — Cloudflare/GYG peut renvoyer 301/302
+          redirect: 'follow',
+        });
+        if (!res.ok) {
+          // En cas d'erreur réseau / blocage, on retourne null pour que
+          // le frontend retombe sur l'heuristique (mieux vaut afficher
+          // qu'un faux négatif).
+          console.warn(`[gyg-availability] "${query}" HTTP ${res.status}`);
+          return jsonResponse({ available: null });
+        }
+        const html = await res.text();
+        // Indicateurs de "pas de résultats" :
+        // - GYG affiche "no result", "aucun résultat" selon la langue
+        // - Bloc spécifique "data-track-id="no-results"" ou similaire
+        // - Page redirigée vers l'accueil (très peu de contenu activité)
+        const lowered = html.toLowerCase();
+        const noResultsIndicators = [
+          'aucun résultat',
+          'aucun resultat',
+          'no results',
+          "we couldn't find",
+          'nous n\'avons trouvé aucune',
+          'data-track-id="no-results"',
+        ];
+        const hasNoResults = noResultsIndicators.some((p) =>
+          lowered.includes(p)
+        );
+        if (hasNoResults) {
+          return jsonResponse({ available: false });
+        }
+        // Indicateur positif : présence de cartes d'activités.
+        // GYG utilise différentes classes selon les versions ; on en
+        // teste plusieurs pour rester robuste.
+        const resultIndicators = [
+          'activity-card',
+          'tour-card',
+          'data-test-id="search-result"',
+          'data-test-id="activity-card"',
+          'class="activity-tile',
+          'href="/-/t', // les pages d'activités ont des URL "/-/t<ID>"
+          '/activity/',
+        ];
+        const hasResults = resultIndicators.some((p) => lowered.includes(p));
+        return jsonResponse({ available: hasResults });
+      } catch (e) {
+        console.error('[gyg-availability] crash', e);
+        return jsonResponse({ available: null });
+      }
+    }
+
     if (mode === 'fetch-hotel-rating') {
       const { hotelName, location } = body;
       if (!hotelName || typeof hotelName !== 'string') {

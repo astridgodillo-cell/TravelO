@@ -10,7 +10,7 @@ import DayPhotos from './DayPhotos';
 import DaySpecialties from './DaySpecialties';
 import ItineraryTable from './ItineraryTable';
 import Icon from './Icon';
-import { fetchHotelRating } from '../lib/photos';
+import { fetchHotelRating, checkActivityBookable } from '../lib/photos';
 import {
   bestAccommodationLink,
   googleMapsDirections,
@@ -1674,8 +1674,30 @@ function Info({ label, value }) {
 // Style identique au CTA Booking mais aux couleurs GYG (orange #FF5533).
 // Optionnel : props compact=true pour une version réduite (Planning),
 // par défaut version complète avec badges (FichesActivites).
+//
+// Vérification dispo : appelle checkActivityBookable() au montage
+// pour confirmer que GYG a bien des résultats. Si la réponse est
+// négative, le composant se cache. Tant que la réponse est inconnue
+// (loading ou erreur), on affiche le bouton (heuristique = mieux
+// vaut afficher qu'un faux négatif).
 function ActivityBookingCta({ activity, location, compact = false }) {
   const url = getYourGuideSearch(activity.title, location);
+  const [verified, setVerified] = useState(undefined);
+
+  useEffect(() => {
+    let active = true;
+    checkActivityBookable(activity.title, location).then((res) => {
+      if (active) setVerified(res);
+    });
+    return () => {
+      active = false;
+    };
+  }, [activity.title, location]);
+
+  // Si la vérification a explicitement répondu "non disponible", cacher.
+  // verified === undefined (en cours) ou null (erreur) → on affiche.
+  if (verified === false) return null;
+
   return (
     <div className={compact ? 'mt-2' : 'mt-4'}>
       <a
