@@ -274,6 +274,7 @@ export default function ItineraryView({
         <div className={tab === 'planning' ? '' : 'hidden print:block'}>
           <Planning
             days={days}
+            tripType={summary?.trip_type}
             adults={adults}
             childrenCount={children}
             isVanTrip={isVanTrip}
@@ -352,6 +353,7 @@ export default function ItineraryView({
 
 function Planning({
   days,
+  tripType,
   adults,
   childrenCount,
   isVanTrip,
@@ -406,7 +408,7 @@ function Planning({
           day={d}
           dayIndex={i}
           allDays={days}
-          tripType={summary?.trip_type}
+          tripType={tripType}
           expanded={expandedDays.has(i)}
           onToggleExpand={() => toggleDay(i)}
           adults={adults}
