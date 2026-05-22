@@ -92,8 +92,22 @@ export default function ItineraryView({
     return googleMapsMultiStop(stops);
   }, [itinerary]);
 
-  if (!itinerary) return null;
-  const { summary, days, budget_summary, notes, metadata } = itinerary;
+  if (!itinerary || typeof itinerary !== 'object') {
+    console.warn('[ItineraryView] itinerary missing or invalid', itinerary);
+    return (
+      <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+        L'itinéraire reçu est vide ou invalide. Réessaie ou contacte le
+        support.
+      </div>
+    );
+  }
+  const {
+    summary = {},
+    days = [],
+    budget_summary = {},
+    notes = {},
+    metadata = {},
+  } = itinerary;
   const adults = summary?.travellers?.adults || 2;
   const children = summary?.travellers?.children_ages?.length || 0;
   const isVanTrip = VAN_TRIP_TYPES.has(summary?.trip_type);
