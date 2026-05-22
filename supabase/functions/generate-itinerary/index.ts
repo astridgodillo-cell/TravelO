@@ -10,7 +10,12 @@
 
 // deno-lint-ignore-file no-explicit-any
 import { jsonrepair } from 'https://esm.sh/jsonrepair@3.10.0';
-import { searchFlight, type FlightData } from '../_shared/travelpayouts.ts';
+import {
+  searchFlight,
+  cityToIata,
+  buildAviasalesDeeplink,
+  type FlightData,
+} from '../_shared/travelpayouts.ts';
 
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
 const TRAVELPAYOUTS_TOKEN = Deno.env.get('TRAVELPAYOUTS_TOKEN') || '';
@@ -2324,6 +2329,128 @@ function enrichDayWithFlightLeg(day: any, leg: FlightLeg, legLabel: 'aller' | 'r
   return day;
 }
 
+// ============================================================
+// FALLBACK : deeplink Aviasales SANS prix
+// ============================================================
+//
+// Quand Travelpayouts ne renvoie pas de prix dans son cache (routes
+// long-courrier, dates très lointaines, etc.), on peut quand même
+// générer un lien de réservation Aviasales pré-rempli. L'utilisateur
+// clique, atterrit sur Aviasales avec sa recherche, et voit les vrais
+// prix/horaires en direct.
+
+interface DeeplinkPair {
+  origin_iata: string;
+  destination_iata: string;
+  outbound_deeplink: string;
+  return_deeplink: string | null;
+}
+
+async function resolveDeeplinkPair(p: any): Promise<DeeplinkPair | null> {
+  if (!AIR_TRIP_TYPES.has(p?.tripType)) return null;
+  if (!TRAVELPAYOUTS_MARKER) return null;
+  const adults = Number(p.adults) || 1;
+  const childrenCount = Array.isArray(p.childrenAges) ? p.childrenAges.length : 0;
+  const origin = await cityToIata(p.departureLocation);
+  const destination = await cityToIata(p.destinations);
+  if (!origin || !destination || origin === destination) return null;
+  const isRoundTrip =
+    !p.returnLocation || p.returnLocation === p.departureLocation;
+  const outbound = buildAviasalesDeeplink({
+    origin,
+    destination,
+    departDate: p.startDate,
+    returnDate: isRoundTrip ? p.endDate : null,
+    adults,
+    children: childrenCount,
+    marker: TRAVELPAYOUTS_MARKER,
+  });
+  const ret = isRoundTrip
+    ? buildAviasalesDeeplink({
+        origin: destination,
+        destination: origin,
+        departDate: p.endDate,
+        returnDate: null,
+        adults,
+        children: childrenCount,
+        marker: TRAVELPAYOUTS_MARKER,
+      })
+    : null;
+  return {
+    origin_iata: origin,
+    destination_iata: destination,
+    outbound_deeplink: outbound,
+    return_deeplink: ret,
+  };
+}
+
+/**
+ * Attache un deeplink Aviasales aux trips "Avion" qui n'en ont pas encore
+ * (cas typique : le LLM a inventé un trip "Vol direct" sans nos données).
+ * Garantit que l'utilisateur a TOUJOURS un bouton "Réserver" cliquable.
+ */
+function attachDeeplinksToTrips(itinerary: any, dl: DeeplinkPair) {
+  if (!itinerary?.days?.length || !dl) return itinerary;
+  const isFlightMode = (m: string) =>
+    /avion|vol|flight|plane/i.test(m || '');
+  // J1 : aller
+  const firstDay = itinerary.days[0];
+  if (firstDay?.trips) {
+    for (const t of firstDay.trips) {
+      if (isFlightMode(t.mode) && !t._flight?.deeplink) {
+        t._flight = { ...(t._flight || {}), deeplink: dl.outbound_deeplink };
+      }
+    }
+  }
+  // Dernier jour : retour
+  if (dl.return_deeplink && itinerary.days.length > 1) {
+    const lastDay = itinerary.days[itinerary.days.length - 1];
+    if (lastDay?.trips) {
+      for (const t of lastDay.trips) {
+        if (isFlightMode(t.mode) && !t._flight?.deeplink) {
+          t._flight = { ...(t._flight || {}), deeplink: dl.return_deeplink };
+        }
+      }
+    }
+  }
+  // Expose au niveau summary pour affichage hero/budget
+  if (itinerary.summary) {
+    itinerary.summary.flight_data = {
+      ...(itinerary.summary.flight_data || {}),
+      origin_iata:
+        itinerary.summary.flight_data?.origin_iata || dl.origin_iata,
+      destination_iata:
+        itinerary.summary.flight_data?.destination_iata || dl.destination_iata,
+      outbound_deeplink:
+        itinerary.summary.flight_data?.deeplink || dl.outbound_deeplink,
+      return_deeplink:
+        itinerary.summary.flight_data?.return_deeplink || dl.return_deeplink,
+      deeplink: itinerary.summary.flight_data?.deeplink || dl.outbound_deeplink,
+    };
+  }
+  return itinerary;
+}
+
+/**
+ * Variante pour UN jour expand : attache le deeplink correspondant
+ * (aller ou retour selon `leg`) aux trips "Avion" du jour.
+ */
+function attachDeeplinkToDayTrips(
+  day: any,
+  deeplink: string,
+  leg: 'outbound' | 'return'
+) {
+  if (!day?.trips || !deeplink) return day;
+  const isFlightMode = (m: string) =>
+    /avion|vol|flight|plane/i.test(m || '');
+  for (const t of day.trips) {
+    if (isFlightMode(t.mode) && !t._flight?.deeplink) {
+      t._flight = { ...(t._flight || {}), deeplink, _leg: leg };
+    }
+  }
+  return day;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: CORS_HEADERS });
@@ -2795,6 +2922,30 @@ Deno.serve(async (req) => {
             legs.returnLeg;
         }
       }
+      // Fallback : si pas de prix Travelpayouts, on génère au moins les
+      // deeplinks et on les attache aux day_plans (transmis ensuite à
+      // expand-day, qui les posera sur les trips "Avion" du jour).
+      const dlPair = await resolveDeeplinkPair(preferences);
+      if (dlPair && Array.isArray(plan?.day_plans) && plan.day_plans.length) {
+        if (!plan.summary) plan.summary = {};
+        plan.summary.flight_data = {
+          ...(plan.summary.flight_data || {}),
+          origin_iata:
+            plan.summary.flight_data?.origin_iata || dlPair.origin_iata,
+          destination_iata:
+            plan.summary.flight_data?.destination_iata ||
+            dlPair.destination_iata,
+          deeplink:
+            plan.summary.flight_data?.deeplink || dlPair.outbound_deeplink,
+          outbound_deeplink: dlPair.outbound_deeplink,
+          return_deeplink: dlPair.return_deeplink,
+        };
+        plan.day_plans[0]._aviasales_outbound_deeplink = dlPair.outbound_deeplink;
+        if (dlPair.return_deeplink) {
+          plan.day_plans[plan.day_plans.length - 1]._aviasales_return_deeplink =
+            dlPair.return_deeplink;
+        }
+      }
       return jsonResponse({ plan, usage, model: modelUsed });
     }
 
@@ -2832,6 +2983,23 @@ Deno.serve(async (req) => {
       if (day_plan._flight_return) {
         day = enrichDayWithFlightLeg(day, day_plan._flight_return, 'retour');
       }
+      // Fallback deeplink : attache le lien Aviasales aux trips "Avion" du
+      // jour même si on n'a pas pu enrichir avec un prix (transmis depuis
+      // plan-trip via day_plan._aviasales_*_deeplink).
+      if (day_plan._aviasales_outbound_deeplink) {
+        day = attachDeeplinkToDayTrips(
+          day,
+          day_plan._aviasales_outbound_deeplink,
+          'outbound'
+        );
+      }
+      if (day_plan._aviasales_return_deeplink) {
+        day = attachDeeplinkToDayTrips(
+          day,
+          day_plan._aviasales_return_deeplink,
+          'return'
+        );
+      }
       return jsonResponse({ day, usage, model: modelUsed });
     }
 
@@ -2854,6 +3022,12 @@ Deno.serve(async (req) => {
     // les totaux, pour garantir l'affichage côté frontend.
     if (flightData) {
       itinerary = enrichItineraryWithFlight(itinerary, flightData, preferences);
+    }
+    // Fallback : attache un deeplink Aviasales aux trips "Avion" même si
+    // on n'a pas trouvé de prix (le bouton "Réserver" reste utilisable).
+    const deeplinkPair = await resolveDeeplinkPair(preferences);
+    if (deeplinkPair) {
+      itinerary = attachDeeplinksToTrips(itinerary, deeplinkPair);
     }
     return jsonResponse({ itinerary, usage, model: modelUsed });
   } catch (err) {

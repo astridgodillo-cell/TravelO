@@ -828,7 +828,23 @@ function TripRow({ trip, dayDate }) {
     trip.fuel_cost_eur != null ||
     trip.toll_cost_eur != null ||
     trip.ferry_cost_eur != null;
-  const isFerry = (trip.mode || '').toLowerCase().includes('ferry');
+  const modeLower = (trip.mode || '').toLowerCase();
+  const isFerry = modeLower.includes('ferry');
+  const isFlight =
+    /avion|vol|flight|plane/.test(modeLower) || !!trip._flight;
+  const flight = trip._flight || {};
+  // "HH:MM" depuis "YYYY-MM-DDTHH:MM:SS"
+  const flightTime =
+    flight.departure_at && typeof flight.departure_at === 'string'
+      ? flight.departure_at.substring(11, 16)
+      : null;
+  const flightLine = [
+    flight.airline && flight.airline !== 'N/A' ? flight.airline : null,
+    flight.flight_number ? `vol ${flight.airline || ''}${flight.flight_number}`.trim() : null,
+    flightTime ? `départ ${flightTime}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   return (
     <li className="rounded-lg border border-slate-100 bg-white p-3">
@@ -850,6 +866,11 @@ function TripRow({ trip, dayDate }) {
           )}
         </div>
       </div>
+      {isFlight && flightLine && (
+        <div className="mt-2 text-xs text-slate-600 border-t border-slate-100 pt-2">
+          ✈️ {flightLine}
+        </div>
+      )}
       {hasBreakdown && (
         <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500 border-t border-slate-100 pt-2">
           {trip.fuel_cost_eur != null && trip.fuel_cost_eur > 0 && (
@@ -880,6 +901,16 @@ function TripRow({ trip, dayDate }) {
             className="text-brand-700 hover:underline"
           >
             ⛴️ Comparer ferries
+          </a>
+        )}
+        {isFlight && flight.deeplink && (
+          <a
+            href={flight.deeplink}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 rounded-md bg-brand-600 text-white px-2 py-1 hover:bg-brand-700 transition-colors"
+          >
+            ✈️ Voir & réserver ce vol sur Aviasales
           </a>
         )}
       </div>
