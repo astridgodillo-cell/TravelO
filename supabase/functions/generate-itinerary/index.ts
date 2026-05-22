@@ -2074,9 +2074,13 @@ async function resolveFlightData(p: any): Promise<FlightData | null> {
   try {
     const adults = Number(p.adults) || 1;
     const childrenCount = Array.isArray(p.childrenAges) ? p.childrenAges.length : 0;
+    // Si l'utilisateur a précisé une ville/aéroport d'arrivée exacte, on
+    // l'utilise (utile quand destinations = pays type "Norvège").
+    const arrivalCity = p.arrivalGateway || p.destinations;
+    const departureCity = p.departureGateway || p.departureLocation;
     return await searchFlight({
-      originCity: p.departureLocation,
-      destinationCity: p.destinations,
+      originCity: departureCity,
+      destinationCity: arrivalCity,
       departDate: p.startDate,
       returnDate:
         p.returnLocation && p.returnLocation !== p.departureLocation
@@ -2376,8 +2380,11 @@ async function resolveDeeplinkPair(p: any): Promise<DeeplinkPair | null> {
   if (!TRAVELPAYOUTS_MARKER) return null;
   const adults = Number(p.adults) || 1;
   const childrenCount = Array.isArray(p.childrenAges) ? p.childrenAges.length : 0;
-  const origin = await cityToIata(p.departureLocation);
-  const destination = await cityToIata(p.destinations);
+  // Préfère arrivalGateway/departureGateway si saisis (cas pays).
+  const arrivalCity = p.arrivalGateway || p.destinations;
+  const departureCity = p.departureGateway || p.departureLocation;
+  const origin = await cityToIata(departureCity);
+  const destination = await cityToIata(arrivalCity);
   if (!origin || !destination || origin === destination) return null;
   const isRoundTrip =
     !p.returnLocation || p.returnLocation === p.departureLocation;

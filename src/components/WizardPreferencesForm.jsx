@@ -21,29 +21,53 @@ import Icon from './Icon';
 const AIR_TYPES = new Set(['avion-voiture', 'avion-citybreak']);
 const TRAIN_TYPES = new Set(['train-international', 'circuit-train']);
 
-function buildAviasalesPreviewUrl(values) {
-  if (!values.departureLocation || !values.destinations || !values.startDate) {
+// Résolution ville → code IATA via l'autocomplete Travelpayouts (public,
+// pas de token requis). On préfère "city" à "airport" pour avoir le code
+// "metropolitan" qui regroupe tous les aéroports de la ville.
+async function resolveIata(query) {
+  if (!query || !query.trim()) return null;
+  try {
+    const url = `https://autocomplete.travelpayouts.com/places2?term=${encodeURIComponent(
+      query
+    )}&locale=fr&types[]=city&types[]=airport&types[]=country`;
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const arr = await res.json();
+    if (!Array.isArray(arr) || arr.length === 0) return null;
+    // Si premier résultat est un PAYS, on retourne un signal pour demander
+    // à l'utilisateur de choisir une ville précise.
+    if (arr[0].type === 'country') {
+      return { country: true, name: arr[0].name, code: arr[0].code };
+    }
+    const city = arr.find((p) => p.type === 'city');
+    const pick = city || arr[0];
+    return { code: pick.code, name: pick.name, type: pick.type };
+  } catch (e) {
+    console.warn('[wizard] resolveIata failed', e);
     return null;
   }
-  const isRoundTrip =
-    !values.returnLocation || values.returnLocation === values.departureLocation;
-  const adults = Math.max(1, Number(values.adults) || 1);
-  const childrenCount = Array.isArray(values.childrenAges)
-    ? values.childrenAges.length
-    : 0;
-  // Sans marker : on ne s'en sert que comme préview pour l'utilisateur.
-  // Le marker affilié est appliqué côté itinéraire généré (Edge Function).
-  const params = new URLSearchParams({
-    origin_name: values.departureLocation,
-    destination_name: values.destinations,
-    depart_date: values.startDate,
-    adults: String(adults),
-    children: String(childrenCount),
-    currency: 'eur',
-    locale: 'fr',
-  });
-  if (isRoundTrip && values.endDate) params.set('return_date', values.endDate);
-  return `https://www.aviasales.com/search?${params.toString()}`;
+}
+
+// Construit le deeplink Aviasales au format natif : /search/{ORI}{DD}{MM}{DST}{DD2}{MM2}{pax}
+// → pré-remplit nativement origine, destination ET dates dans l'UI Aviasales.
+function buildAviasalesNativeUrl({
+  originIata,
+  destIata,
+  departDate,
+  returnDate,
+  adults,
+  childrenCount,
+}) {
+  const dd1 = departDate.substring(8, 10);
+  const mm1 = departDate.substring(5, 7);
+  let segment = `${originIata}${dd1}${mm1}${destIata}`;
+  if (returnDate) {
+    const dd2 = returnDate.substring(8, 10);
+    const mm2 = returnDate.substring(5, 7);
+    segment += `${dd2}${mm2}`;
+  }
+  const pax = `${Math.max(1, adults)}${childrenCount > 0 ? childrenCount : ''}`;
+  return `https://www.aviasales.com/search/${segment}${pax}?currency=eur&locale=fr`;
 }
 
 // --- Sous-composants UI ---------------------------------------------------
@@ -327,8 +351,9 @@ function StepFlight({ values, update, updateManualFlight }) {
     if (values.arrivalTime || values.departureTime) return 'known';
     return null;
   });
-
-  const previewUrl = useMemo(() => buildAviasalesPreviewUrl(values), [values]);
+  // État de résolution IATA pour ouvrir Aviasales avec dates pré-remplies
+  const [resolveStatus, setResolveStatus] = useState('idle'); // 'idle' | 'loading' | 'need_city' | 'error'
+  const [resolveError, setResolveError] = useState(null);
 
   // Le bloc "type de transport" est implicite (avion-intl ou domestique).
   // On l'initialise une fois pour qu'il soit transmis au backend.
@@ -338,6 +363,67 @@ function StepFlight({ values, update, updateManualFlight }) {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Ville d'atterrissage précise = arrivalGateway (existant) ou destinations
+  const arrivalCity = values.arrivalGateway || values.destinations;
+  const hasMinimumForSearch =
+    !!values.departureLocation && !!arrivalCity && !!values.startDate;
+
+  async function openAviasalesSearch() {
+    if (!hasMinimumForSearch) return;
+    setResolveStatus('loading');
+    setResolveError(null);
+    try {
+      const isRoundTrip =
+        !values.returnLocation ||
+        values.returnLocation === values.departureLocation;
+      const adults = Math.max(1, Number(values.adults) || 1);
+      const childrenCount = Array.isArray(values.childrenAges)
+        ? values.childrenAges.length
+        : 0;
+      const [origin, dest] = await Promise.all([
+        resolveIata(values.departureLocation),
+        resolveIata(arrivalCity),
+      ]);
+      if (!origin || !dest) {
+        setResolveStatus('error');
+        setResolveError(
+          'Impossible de trouver les codes aéroport. Vérifie l\'orthographe des villes.'
+        );
+        return;
+      }
+      // Si la destination est en fait un pays → on demande à l'utilisateur
+      // de préciser une ville d'atterrissage.
+      if (dest.country) {
+        setResolveStatus('need_city');
+        setResolveError(
+          `"${dest.name}" est un pays. Précise une ville d'arrivée précise (ex: Oslo, Bergen, Tromsø…) dans le champ ci-dessous.`
+        );
+        return;
+      }
+      if (origin.country) {
+        setResolveStatus('error');
+        setResolveError(
+          `"${origin.name}" est un pays. Précise ta ville de départ exacte.`
+        );
+        return;
+      }
+      const url = buildAviasalesNativeUrl({
+        originIata: origin.code,
+        destIata: dest.code,
+        departDate: values.startDate,
+        returnDate: isRoundTrip ? values.endDate : null,
+        adults,
+        childrenCount,
+      });
+      window.open(url, '_blank', 'noopener,noreferrer');
+      setResolveStatus('idle');
+    } catch (e) {
+      console.error(e);
+      setResolveStatus('error');
+      setResolveError('Une erreur est survenue. Réessaie.');
+    }
+  }
+
   return (
     <div>
       <StepHeader
@@ -345,6 +431,35 @@ function StepFlight({ values, update, updateManualFlight }) {
         title="Ton vol"
         subtitle="3 options selon ta situation. Tu peux changer d'avis plus tard."
       />
+
+      {/* Champ "Ville d'arrivée précise" — utile quand destinations = pays */}
+      <div className="mb-6 rounded-xl bg-slate-50 border border-slate-200 p-4">
+        <label className="label">
+          Aéroport / ville d'arrivée exacte
+          <span className="text-slate-400 font-normal">
+            {' '}
+            (essentiel si tu as saisi un pays)
+          </span>
+        </label>
+        <input
+          className="input"
+          placeholder={
+            values.destinations
+              ? `Ex pour ${values.destinations} : Oslo, Bergen, Tromsø…`
+              : 'Ex : Oslo, JFK, Lisbonne…'
+          }
+          value={values.arrivalGateway || ''}
+          onChange={(e) => {
+            update('arrivalGateway', e.target.value);
+            if (resolveStatus !== 'idle') setResolveStatus('idle');
+          }}
+        />
+        <p className="text-xs text-slate-500 mt-1">
+          Sert à la recherche de vol et au calage de l'itinéraire. Si vide, on
+          utilise "{values.destinations || '(destination)'}" — ça peut être
+          ambigu pour un pays.
+        </p>
+      </div>
 
       {!path && (
         <div className="grid grid-cols-1 gap-3">
@@ -361,7 +476,7 @@ function StepFlight({ values, update, updateManualFlight }) {
             description="On t'ouvre Aviasales avec tes dates pré-remplies. Tu reviens ici pour saisir tes horaires une fois ton vol choisi."
             onClick={() => setPath('search')}
             tone="blue"
-            disabled={!previewUrl}
+            disabled={!hasMinimumForSearch}
           />
           <PathCard
             icon="⏳"
@@ -510,24 +625,38 @@ function StepFlight({ values, update, updateManualFlight }) {
               🔍 Recherche ton vol sur Aviasales
             </h3>
             <p className="text-sm text-sky-800 mt-2">
-              On a pré-rempli tes dates et destinations. Choisis ton vol,{' '}
+              On pré-remplit tes dates, ton origine et ta destination. Choisis
+              ton vol,{' '}
               <strong>note l'heure d'arrivée et de départ</strong>, puis reviens
               ici pour les saisir.
             </p>
-            {previewUrl ? (
-              <a
-                href={previewUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-4 inline-flex items-center gap-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white px-5 py-2.5 font-medium transition-colors"
+            {hasMinimumForSearch ? (
+              <button
+                type="button"
+                onClick={openAviasalesSearch}
+                disabled={resolveStatus === 'loading'}
+                className="mt-4 inline-flex items-center gap-2 rounded-xl bg-sky-600 hover:bg-sky-700 disabled:opacity-60 text-white px-5 py-2.5 font-medium transition-colors"
               >
-                Ouvrir Aviasales dans un nouvel onglet →
-              </a>
+                {resolveStatus === 'loading'
+                  ? 'Préparation…'
+                  : 'Ouvrir Aviasales dans un nouvel onglet →'}
+              </button>
             ) : (
               <p className="mt-4 text-xs text-sky-700">
                 Renseigne d'abord destination + dates pour activer la
                 recherche.
               </p>
+            )}
+            {resolveError && (
+              <div
+                className={`mt-3 text-xs rounded-lg p-3 ${
+                  resolveStatus === 'need_city'
+                    ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                    : 'bg-red-100 text-red-800 border border-red-300'
+                }`}
+              >
+                {resolveError}
+              </div>
             )}
           </div>
           <p className="text-center text-sm text-slate-600">
