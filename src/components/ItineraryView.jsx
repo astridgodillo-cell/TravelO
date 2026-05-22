@@ -815,9 +815,20 @@ function DayCard({
               {day.accommodation.name}
             </div>
             <div className="text-slate-500">
-              {day.accommodation.type} —{' '}
-              {formatEurOrFree(day.accommodation.price_eur)}
-              {day.accommodation.price_eur > 0 ? ' / nuit' : ''}
+              {day.accommodation.type}
+              {day.accommodation.price_eur > 0 ? (
+                <>
+                  {' — à partir de '}
+                  <span
+                    className="font-medium text-slate-700"
+                    title="Estimation calculée par TravelO. Le prix réel dépend de la saison et des disponibilités — vérifiez sur Booking."
+                  >
+                    ≈ {formatEurOrFree(day.accommodation.price_eur)} / nuit
+                  </span>
+                </>
+              ) : (
+                <> — {formatEurOrFree(day.accommodation.price_eur)}</>
+              )}
             </div>
             {day.accommodation.coordinates_hint && (
               <div className="text-slate-400 italic mt-1">
