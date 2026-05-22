@@ -336,7 +336,13 @@ export default function PreferencesForm({ onSubmit, loading, initialValues }) {
         </div>
       </Section>
 
-      <Section title="Horaires d'arrivée et de départ">
+      <Section
+        title={
+          isAirTransport && showSchedule
+            ? '✈️ Mon vol'
+            : "Horaires d'arrivée et de départ"
+        }
+      >
         {!SCHEDULED_TRIP_TYPES.has(tripType) && (
           <label className="flex items-center gap-2 text-sm cursor-pointer">
             <input
@@ -351,13 +357,12 @@ export default function PreferencesForm({ onSubmit, loading, initialValues }) {
         {showSchedule && (
           <>
             <p className="text-xs text-slate-500 -mt-2">
-              Renseignez ces horaires si vous arrivez en avion / train longue
-              distance / croisière. L'IA calera la journée d'arrivée avec le
-              temps d'installation, et le dernier jour avec la marge nécessaire
-              avant le départ (
-              {DEPARTURE_BUFFER_HINT[effectiveTransport] ||
-                'marge adaptée au type de transport'}
-              ).
+              {isAirTransport
+                ? "Tout est optionnel — plus vous renseignez, plus l'estimation est précise. Sinon, on récupère automatiquement compagnie, prix et horaires via Aviasales. L'IA cale la journée d'arrivée avec le temps d'installation et le dernier jour avec la marge avant l'aéroport (~3 h)."
+                : `Renseignez ces horaires si vous arrivez en train longue distance / croisière / ferry. L'IA calera la journée d'arrivée avec le temps d'installation, et le dernier jour avec la marge nécessaire avant le départ (${
+                    DEPARTURE_BUFFER_HINT[effectiveTransport] ||
+                    'marge adaptée au type de transport'
+                  }).`}
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -377,73 +382,8 @@ export default function PreferencesForm({ onSubmit, loading, initialValues }) {
                 </select>
               </div>
 
-              <div>
-                <label className="label">
-                  Aéroport / gare / port d'arrivée
-                  <span className="text-slate-400 font-normal">
-                    {' '}
-                    (optionnel — par défaut, lieu de destination)
-                  </span>
-                </label>
-                <input
-                  className="input"
-                  placeholder="Ex : Aéroport Suvarnabhumi (Bangkok)"
-                  value={values.arrivalGateway}
-                  onChange={(e) => update('arrivalGateway', e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="label">
-                  Heure d'arrivée à destination (J1)
-                </label>
-                <input
-                  type="time"
-                  className="input"
-                  value={values.arrivalTime}
-                  onChange={(e) => update('arrivalTime', e.target.value)}
-                />
-              </div>
-
-              <div>
-                <label className="label">
-                  Aéroport / gare / port du retour
-                  <span className="text-slate-400 font-normal">
-                    {' '}
-                    (vide = identique à l'arrivée)
-                  </span>
-                </label>
-                <input
-                  className="input"
-                  placeholder="Identique à l'arrivée"
-                  value={values.departureGateway}
-                  onChange={(e) => update('departureGateway', e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="label">
-                  Heure de départ du retour (dernier jour)
-                </label>
-                <input
-                  type="time"
-                  className="input"
-                  value={values.departureTime}
-                  onChange={(e) => update('departureTime', e.target.value)}
-                />
-              </div>
-            </div>
-
-            {isAirTransport && (
-              <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
-                <h4 className="font-medium text-slate-800 mb-1">
-                  ✈️ J'ai déjà réservé mon vol (optionnel)
-                </h4>
-                <p className="text-xs text-slate-500 mb-3">
-                  Sinon, on récupère automatiquement une estimation réaliste
-                  (compagnie, prix, horaires) via Aviasales. Si vous renseignez
-                  un prix ci-dessous, il sera utilisé tel quel et affiché dans
-                  le budget.
-                </p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {isAirTransport && (
+                <>
                   <div>
                     <label className="label">Compagnie aérienne</label>
                     <input
@@ -456,7 +396,7 @@ export default function PreferencesForm({ onSubmit, loading, initialValues }) {
                     />
                   </div>
                   <div>
-                    <label className="label">Numéro de vol (optionnel)</label>
+                    <label className="label">Numéro de vol</label>
                     <input
                       className="input"
                       placeholder="Ex : AF038"
@@ -466,9 +406,53 @@ export default function PreferencesForm({ onSubmit, loading, initialValues }) {
                       }
                     />
                   </div>
+                </>
+              )}
+            </div>
+
+            {/* Bloc ALLER */}
+            <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-600 mb-3">
+                {isAirTransport ? '✈️ Vol aller' : 'Arrivée'}
+              </div>
+              <div
+                className={`grid grid-cols-1 gap-3 ${
+                  isAirTransport ? 'md:grid-cols-3' : 'md:grid-cols-2'
+                }`}
+              >
+                <div>
+                  <label className="label">
+                    {isAirTransport ? 'Aéroport d\'arrivée' : 'Aéroport / gare / port d\'arrivée'}
+                    <span className="text-slate-400 font-normal">
+                      {' '}
+                      (optionnel)
+                    </span>
+                  </label>
+                  <input
+                    className="input"
+                    placeholder={
+                      isAirTransport
+                        ? 'Ex : JFK, CDG, LIS…'
+                        : 'Ex : Aéroport Suvarnabhumi (Bangkok)'
+                    }
+                    value={values.arrivalGateway}
+                    onChange={(e) => update('arrivalGateway', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="label">Heure d'arrivée (J1)</label>
+                  <input
+                    type="time"
+                    className="input"
+                    value={values.arrivalTime}
+                    onChange={(e) => update('arrivalTime', e.target.value)}
+                  />
+                </div>
+                {isAirTransport && (
                   <div>
                     <label className="label">
-                      Prix par personne — aller (€)
+                      Prix / personne (€)
+                      <span className="text-slate-400 font-normal"> (optionnel)</span>
                     </label>
                     <input
                       type="number"
@@ -481,9 +465,49 @@ export default function PreferencesForm({ onSubmit, loading, initialValues }) {
                       }
                     />
                   </div>
+                )}
+              </div>
+            </div>
+
+            {/* Bloc RETOUR */}
+            <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-600 mb-3">
+                {isAirTransport ? '✈️ Vol retour' : 'Départ'}
+              </div>
+              <div
+                className={`grid grid-cols-1 gap-3 ${
+                  isAirTransport ? 'md:grid-cols-3' : 'md:grid-cols-2'
+                }`}
+              >
+                <div>
+                  <label className="label">
+                    {isAirTransport ? 'Aéroport de départ' : 'Aéroport / gare / port'}
+                    <span className="text-slate-400 font-normal">
+                      {' '}
+                      (vide = identique à l'arrivée)
+                    </span>
+                  </label>
+                  <input
+                    className="input"
+                    placeholder="Identique à l'arrivée"
+                    value={values.departureGateway}
+                    onChange={(e) => update('departureGateway', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="label">Heure de départ (dernier jour)</label>
+                  <input
+                    type="time"
+                    className="input"
+                    value={values.departureTime}
+                    onChange={(e) => update('departureTime', e.target.value)}
+                  />
+                </div>
+                {isAirTransport && (
                   <div>
                     <label className="label">
-                      Prix par personne — retour (€)
+                      Prix / personne (€)
+                      <span className="text-slate-400 font-normal"> (optionnel)</span>
                     </label>
                     <input
                       type="number"
@@ -496,9 +520,9 @@ export default function PreferencesForm({ onSubmit, loading, initialValues }) {
                       }
                     />
                   </div>
-                </div>
+                )}
               </div>
-            )}
+            </div>
           </>
         )}
       </Section>
