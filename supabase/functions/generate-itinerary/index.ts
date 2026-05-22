@@ -405,6 +405,30 @@ Horaires impératifs (contrainte FORTE — utilise ces valeurs pour caler J1 et 
   - Marge OBLIGATOIRE avant le départ : ${buffer}
   ⇒ Sur J1 : prévois récupération bagages + transfert depuis ${arrivalGw} (s'il diffère de la destination) + check-in / installation (1-2 h) avant toute activité. Si arrivée après 18h : check-in + dîner uniquement. Si vol >5 fuseaux : J1 reste très léger (décalage horaire).
   ⇒ Sur le dernier jour : termine toutes les activités avec la marge ci-dessus + transfert vers ${departureGw}. Si heure de départ tôt (avant 10h) : check-out + transfert uniquement. Programme les visites importantes la veille au soir.`;
+  } else if (p.tripType === 'avion-voiture' || p.tripType === 'avion-citybreak') {
+    // Voyage avion-* SANS horaires précis saisis : il faut éviter d'inventer
+    // une heure d'arrivée précoce et de bâtir la journée dessus (cas typique
+    // hallucination "atterrissage à 7h"). On force un programme léger et
+    // robuste pour J1 et le dernier jour, valable quelle que soit l'heure
+    // réelle du vol.
+    scheduleBlock = `
+HORAIRES DE VOL NON CONFIRMÉS — règle CRITIQUE pour J1 et le dernier jour :
+L'utilisateur n'a PAS encore réservé son vol ou n'a pas saisi l'heure exacte d'arrivée/de départ. Tu NE DOIS PAS inventer une heure précise d'atterrissage/décollage (ex : "atterrissage à 7h"), car si la vraie heure est différente, toute la journée devient incohérente.
+
+À FAIRE pour J1 :
+- Description : "Arrivée à ${p.destinations} (horaire à confirmer dès réservation du vol) + transfert vers le centre + installation à l'hôtel + balade découverte légère + dîner local."
+- AUCUNE activité payante, AUCUNE excursion guidée, AUCUN musée fermant tôt.
+- Le programme doit rester valable quelle que soit l'heure d'arrivée réelle (matin, midi, fin d'après-midi, soir).
+- moments matin/midi/après-midi/soir : laisse les premiers vides ou très flexibles selon la durée du vol typique (long-courrier transatlantique = arrivée souvent en fin d'après-midi/soirée ; vol moyen-courrier = arrivée variable).
+- Mentionne EXPLICITEMENT dans la description du jour : "Programme volontairement léger — à enrichir une fois les horaires de vol confirmés".
+
+À FAIRE pour le dernier jour (retour) :
+- Description : "Dernière matinée libre à ${p.destinations} (selon l'heure du vol retour) + check-out + transfert vers l'aéroport."
+- Privilégie le shopping souvenirs, un café/brunch détente, une balade — rien de planifié qui doit absolument être fait à une heure précise.
+- AUCUNE excursion lointaine, AUCUNE activité longue.
+- Mentionne : "Programme à ajuster selon l'heure réelle du vol retour".
+
+Les jours du MILIEU (J2 à J_avant-dernier) gardent leur programme habituel, RICHE et DÉTAILLÉ.`;
   }
 
   return `Destination(s) : ${p.destinations}

@@ -392,6 +392,7 @@ function Planning({
           day={d}
           dayIndex={i}
           allDays={days}
+          tripType={summary?.trip_type}
           expanded={expandedDays.has(i)}
           onToggleExpand={() => toggleDay(i)}
           adults={adults}
@@ -451,6 +452,7 @@ function DayCard({
   day,
   dayIndex,
   allDays,
+  tripType,
   expanded,
   onToggleExpand,
   adults,
@@ -465,6 +467,21 @@ function DayCard({
   canRegenerate,
   canEditActivities,
 }) {
+  // Détecte les jours d'arrivée/départ d'un voyage avion-* sans horaire
+  // confirmé : on a une trip de mode "Avion" mais sans heure de départ
+  // précise (_flight.departure_at vide). Le programme du jour a été
+  // calé sur une heure inventée par l'IA — bandeau d'avertissement.
+  const isAirTrip =
+    tripType === 'avion-voiture' || tripType === 'avion-citybreak';
+  const isFirstOrLastDay =
+    dayIndex === 0 || (allDays && dayIndex === allDays.length - 1);
+  const flightTrip = (day.trips || []).find((t) =>
+    /avion|vol|flight|plane/i.test(t?.mode || '')
+  );
+  const flightLeg = dayIndex === 0 ? 'aller' : 'retour';
+  const hasFlightTime = !!flightTrip?._flight?.departure_at;
+  const showUnconfirmedScheduleWarning =
+    isAirTrip && isFirstOrLastDay && flightTrip && !hasFlightTime;
   // Titre du jour :
   // 1. day_title (nouveau schéma) si présent
   // 2. Sinon, on tente de construire un titre à partir des lieux extraits
@@ -597,6 +614,35 @@ function DayCard({
           photoOffset={sameLocationBefore}
         />
       </div>
+
+      {showUnconfirmedScheduleWarning && (
+        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          <div className="flex items-start gap-2">
+            <span className="text-base leading-none mt-0.5">⚠️</span>
+            <div className="flex-1">
+              <div className="font-semibold">
+                Horaires de vol {flightLeg} non confirmés
+              </div>
+              <p className="text-xs mt-1 text-amber-800 leading-relaxed">
+                Le programme de ce jour a été calé sur une heure de{' '}
+                {flightLeg === 'aller' ? 'arrivée' : 'départ'} estimée.
+                Quand vous aurez réservé votre vol, cliquez sur{' '}
+                <strong>« Régénérer »</strong> en haut de la carte et indiquez
+                l'heure réelle (ex : <em>« le vol arrive à 22h12 »</em>) pour
+                obtenir un programme adapté.
+                {flightTrip?._flight?.deeplink && (
+                  <>
+                    {' '}
+                    Vous pouvez aussi cliquer sur le bouton{' '}
+                    <strong>Aviasales</strong> dans la section Trajets ci-dessous
+                    pour voir les vrais horaires.
+                  </>
+                )}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       <button
         type="button"
