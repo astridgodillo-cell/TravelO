@@ -43,6 +43,12 @@ const formatEur = (n) =>
 
 const formatEurOrFree = (n) => (n === 0 ? 'Gratuit' : formatEur(n));
 
+// Préfixe "≈ " pour les estimations calculées par l'IA (hôtels, repas,
+// trajets routiers, budget total). À ne PAS utiliser pour les prix
+// scrappés en direct (vols Aviasales, etc.) qui eux sont réels.
+const formatEurEstimate = (n) =>
+  typeof n === 'number' ? '≈ ' + formatEur(n) : formatEur(n);
+
 function formatAiCost(eur) {
   if (typeof eur !== 'number' || !isFinite(eur)) return '—';
   if (eur < 0.005) return '< 0,01 €';
@@ -178,15 +184,18 @@ export default function ItineraryView({
                 </p>
               )}
             </div>
-            <div className="text-right bg-white/15 backdrop-blur rounded-2xl px-4 py-3 print:bg-slate-100">
+            <div
+              className="text-right bg-white/15 backdrop-blur rounded-2xl px-4 py-3 print:bg-slate-100"
+              title="Estimation TravelO basée sur les prix moyens. Les prix réels (hébergements, transports) varient selon la saison et les disponibilités."
+            >
               <div className="text-[10px] uppercase tracking-widest text-white/80 print:text-slate-500">
-                Budget total
+                Budget estimé
               </div>
               <div className="text-3xl font-bold tabular-nums">
-                {formatEur(budget_summary?.grand_total_eur)}
+                {formatEurEstimate(budget_summary?.grand_total_eur)}
               </div>
               <div className="text-xs text-white/80 print:text-slate-500">
-                {formatEur(budget_summary?.per_person_eur)} / pers.
+                {formatEurEstimate(budget_summary?.per_person_eur)} / pers.
               </div>
             </div>
           </div>
@@ -584,12 +593,15 @@ function DayCard({
           </div>
         </div>
         <div className="flex items-center justify-between sm:justify-end gap-3 flex-wrap w-full sm:w-auto sm:flex-shrink-0 border-t border-slate-100 pt-3 sm:border-t-0 sm:pt-0">
-          <div className="text-left sm:text-right">
+          <div
+            className="text-left sm:text-right"
+            title="Estimation pour cette journée (hébergement, repas, trajets, activités). Les prix réels peuvent varier."
+          >
             <div className="text-[10px] uppercase tracking-widest text-slate-400">
-              Total jour
+              Total estimé
             </div>
             <div className="text-lg sm:text-xl font-bold text-slate-900 tabular-nums">
-              {formatEur(day.day_total_eur)}
+              {formatEurEstimate(day.day_total_eur)}
             </div>
           </div>
           {canRegenerate && (
@@ -848,31 +860,31 @@ function DayCard({
               </div>
             )}
             {isBookingCta && (
-              <div className="print:hidden mt-3">
+              <div className="mt-3">
                 <a
                   href={accomLink.url}
                   target="_blank"
                   rel="noopener noreferrer sponsored"
-                  className="group flex items-center justify-between gap-3 rounded-lg bg-[#003580] hover:bg-[#00224f] transition-colors px-4 py-3 text-white shadow-sm"
+                  className="group flex items-center justify-between gap-3 rounded-lg bg-[#003580] hover:bg-[#00224f] transition-colors px-4 py-3 text-white shadow-sm print:bg-white print:text-[#003580] print:border print:border-[#003580] print:shadow-none"
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-white/15 text-base font-bold">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-white/15 text-base font-bold print:bg-[#003580] print:text-white">
                       B.
                     </span>
                     <div className="min-w-0">
                       <div className="font-semibold leading-tight">
                         Réserver sur Booking.com
                       </div>
-                      <div className="text-[11px] text-white/80 leading-tight">
+                      <div className="text-[11px] text-white/80 leading-tight print:text-slate-600">
                         Disponibilités & prix en temps réel
                       </div>
                     </div>
                   </div>
-                  <span className="shrink-0 text-sm font-medium group-hover:translate-x-0.5 transition-transform">
+                  <span className="shrink-0 text-sm font-medium group-hover:translate-x-0.5 transition-transform print:hidden">
                     →
                   </span>
                 </a>
-                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500">
+                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500 print:hidden">
                   <span className="inline-flex items-center gap-1">
                     <span className="text-emerald-600">✓</span> Annulation
                     gratuite sur la plupart des hôtels
@@ -889,7 +901,7 @@ function DayCard({
                     vous
                   </span>
                 </div>
-                <div className="mt-2 flex flex-wrap gap-3 text-[11px]">
+                <div className="mt-2 flex flex-wrap gap-3 text-[11px] print:hidden">
                   <a
                     href={googleMapsSearch(
                       day.accommodation.name
@@ -943,8 +955,11 @@ function DayCard({
         )}
         {day.meals && (
           <Block title="Repas (famille)">
-            <div className="font-medium text-slate-800">
-              {formatEur(day.meals.daily_family_budget_eur)} / jour
+            <div
+              className="font-medium text-slate-800"
+              title="Estimation TravelO du budget repas. Le coût réel dépend des restaurants choisis."
+            >
+              {formatEurEstimate(day.meals.daily_family_budget_eur)} / jour
             </div>
             {day.meals.style && (
               <div className="text-xs text-slate-500 capitalize">
@@ -1004,9 +1019,16 @@ function TripRow({ trip, dayDate }) {
             {trip.distance_km} km · {trip.duration} · {trip.mode}
           </span>
         </div>
-        <div className="text-right">
+        <div
+          className="text-right"
+          title={
+            isFlight
+              ? 'Prix Aviasales — peut varier en temps réel selon la disponibilité.'
+              : 'Estimation TravelO basée sur le mode et la distance. Carburant et péages peuvent varier.'
+          }
+        >
           <div className="font-semibold">
-            {formatEur(trip.estimated_cost_eur)}
+            {formatEurEstimate(trip.estimated_cost_eur)}
           </div>
           {trip.cost_note && (
             <div className="text-xs text-slate-400">{trip.cost_note}</div>
@@ -1225,6 +1247,11 @@ function BudgetGlobal({ budget, days, metadata }) {
       <h2 className="text-xl font-semibold text-slate-900">
         Récapitulatif budget global
       </h2>
+      <p className="mt-2 text-xs italic text-slate-500">
+        Tous les montants sont des estimations TravelO. Les prix réels
+        (hébergements, transports, repas) varient selon la saison et les
+        disponibilités — vérifiez auprès de chaque prestataire avant de réserver.
+      </p>
       <table className="mt-4 w-full text-sm">
         <tbody>
           {rows.map(([label, value]) => (
@@ -1234,20 +1261,20 @@ function BudgetGlobal({ budget, days, metadata }) {
             >
               <td className="py-2 text-slate-600">{label}</td>
               <td className="py-2 text-right font-medium">
-                {formatEur(value)}
+                {formatEurEstimate(value)}
               </td>
             </tr>
           ))}
           <tr className="border-t-2 border-slate-200">
-            <td className="py-3 font-semibold text-slate-900">Grand total</td>
+            <td className="py-3 font-semibold text-slate-900">Grand total estimé</td>
             <td className="py-3 text-right text-lg font-bold text-brand-700">
-              {formatEur(budget.grand_total_eur)}
+              {formatEurEstimate(budget.grand_total_eur)}
             </td>
           </tr>
           <tr>
             <td className="py-1 text-sm text-slate-500">Par personne</td>
             <td className="py-1 text-right text-slate-700">
-              {formatEur(budget.per_person_eur)}
+              {formatEurEstimate(budget.per_person_eur)}
             </td>
           </tr>
         </tbody>
