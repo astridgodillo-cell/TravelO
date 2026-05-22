@@ -233,21 +233,28 @@ export function bestAccommodationLink(accommodation, ctx = {}) {
     type.includes(k)
   );
   const provider = matchKey ? KNOWN_ACCOMMODATION_TYPES[matchKey] : 'google';
-  const searchText = accommodation.name
-    ? `${accommodation.name} ${accommodation.coordinates_hint || ''}`.trim()
-    : ctx.location || '';
+  // Le nom complet de l'hôtel + ville = atterrissage direct sur la fiche
+  // hôtel ~80% du temps (Booking matche par nom). Sans le nom, on retombe
+  // sur une liste générique de la ville, ce qui fait perdre la conversion.
+  const cityName = cleanLocation(ctx.location) || '';
+  const bookingQuery = accommodation.name
+    ? `${accommodation.name}${cityName ? ', ' + cityName : ''}`
+    : cityName;
+  const fallbackText = accommodation.name
+    ? `${accommodation.name} ${accommodation.coordinates_hint || cityName}`.trim()
+    : cityName;
 
   if (provider === 'park4night') {
     return {
       provider: 'Park4Night',
-      url: park4nightSearch(ctx.location || searchText),
+      url: park4nightSearch(cityName || fallbackText),
     };
   }
   if (provider === 'booking') {
     return {
       provider: 'Booking',
       url: bookingSearch(
-        ctx.location || searchText,
+        bookingQuery,
         ctx.checkin,
         ctx.checkout,
         ctx.adults,
@@ -257,6 +264,6 @@ export function bestAccommodationLink(accommodation, ctx = {}) {
   }
   return {
     provider: 'Google Maps',
-    url: googleMapsSearch(searchText),
+    url: googleMapsSearch(fallbackText),
   };
 }
