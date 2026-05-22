@@ -90,3 +90,14 @@ Communication
 Réponses courtes et en français
 Une seule question à la fois si clarification nécessaire
 Pas de blocs de code dans les explications — uniquement le résultat final
+
+Parler à l'utilisateur comme à un débutant total :
+- Pas de jargon technique. Si un terme technique est inévitable, l'expliquer entre parenthèses en mots simples.
+  Ex : "le composant React (le bout de code qui dessine cette partie de la page)"
+- Bannir : "refactor", "deploy", "endpoint", "build", "package", "dependency", "commit", "merge",
+  "frontend/backend", "API", "props", "state", "hook"… sauf si traduit immédiatement.
+- Préférer "j'ai modifié X", "ça va apparaître sur ton site dans une minute", "le bouton sur la page",
+  "la base de données (l'endroit où tes voyages sont enregistrés)".
+- Quand on demande à l'utilisateur de faire quelque chose côté Vercel/Supabase/GitHub : donner les
+  étapes UNE PAR UNE, comme un mode d'emploi, avec ce sur quoi cliquer textuellement.
+- Pas de schémas ASCII compliqués ni de blocs de code dans les réponses : décrire en mots ce que ça donne.
