@@ -604,11 +604,36 @@ function StepFlight({ values, update, updateManualFlight }) {
               />
             </div>
           </div>
+          {/* Prix unique aller-retour par personne — comme sur Aviasales/Skyscanner */}
+          <div className="rounded-lg bg-brand-50 border border-brand-200 p-4">
+            <label className="label">
+              💶 Prix par personne — vol aller-retour complet (€)
+            </label>
+            <input
+              type="number"
+              min="0"
+              className="input"
+              placeholder="Ex : 320 (le prix affiché sur Aviasales/Skyscanner)"
+              value={values.manualFlight?.outboundPriceEur || ''}
+              onChange={(e) => {
+                updateManualFlight('outboundPriceEur', e.target.value);
+                // On stocke uniquement dans outbound : c'est le prix aller-retour
+                // total par personne. Le backend fait outbound × pax.
+                updateManualFlight('returnPriceEur', '');
+              }}
+            />
+            <p className="text-xs text-slate-500 mt-2">
+              C'est le prix tel qu'il apparaît sur les comparateurs : aller +
+              retour cumulés, pour une personne. Le total famille sera calculé
+              automatiquement (× nombre de voyageurs).
+            </p>
+          </div>
+
           <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 space-y-3">
             <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
               ✈️ Vol aller
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <label className="label">Aéroport d'arrivée</label>
                 <input
@@ -627,26 +652,13 @@ function StepFlight({ values, update, updateManualFlight }) {
                   onChange={(e) => update('arrivalTime', e.target.value)}
                 />
               </div>
-              <div>
-                <label className="label">Prix / pers (€)</label>
-                <input
-                  type="number"
-                  min="0"
-                  className="input"
-                  placeholder="Ex : 320"
-                  value={values.manualFlight?.outboundPriceEur || ''}
-                  onChange={(e) =>
-                    updateManualFlight('outboundPriceEur', e.target.value)
-                  }
-                />
-              </div>
             </div>
           </div>
           <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 space-y-3">
             <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
               ✈️ Vol retour
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
                 <label className="label">Aéroport de départ</label>
                 <input
@@ -665,19 +677,6 @@ function StepFlight({ values, update, updateManualFlight }) {
                   className="input"
                   value={values.departureTime}
                   onChange={(e) => update('departureTime', e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="label">Prix / pers (€)</label>
-                <input
-                  type="number"
-                  min="0"
-                  className="input"
-                  placeholder="Ex : 340"
-                  value={values.manualFlight?.returnPriceEur || ''}
-                  onChange={(e) =>
-                    updateManualFlight('returnPriceEur', e.target.value)
-                  }
                 />
               </div>
             </div>

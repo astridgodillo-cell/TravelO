@@ -415,11 +415,7 @@ export default function PreferencesForm({ onSubmit, loading, initialValues }) {
               <div className="text-xs font-semibold uppercase tracking-wide text-slate-600 mb-3">
                 {isAirTransport ? '✈️ Vol aller' : 'Arrivée'}
               </div>
-              <div
-                className={`grid grid-cols-1 gap-3 ${
-                  isAirTransport ? 'md:grid-cols-3' : 'md:grid-cols-2'
-                }`}
-              >
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className="label">
                     {isAirTransport ? 'Aéroport d\'arrivée' : 'Aéroport / gare / port d\'arrivée'}
@@ -448,24 +444,6 @@ export default function PreferencesForm({ onSubmit, loading, initialValues }) {
                     onChange={(e) => update('arrivalTime', e.target.value)}
                   />
                 </div>
-                {isAirTransport && (
-                  <div>
-                    <label className="label">
-                      Prix / personne (€)
-                      <span className="text-slate-400 font-normal"> (optionnel)</span>
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      className="input"
-                      placeholder="Ex : 320"
-                      value={values.manualFlight?.outboundPriceEur || ''}
-                      onChange={(e) =>
-                        updateManualFlight('outboundPriceEur', e.target.value)
-                      }
-                    />
-                  </div>
-                )}
               </div>
             </div>
 
@@ -474,11 +452,7 @@ export default function PreferencesForm({ onSubmit, loading, initialValues }) {
               <div className="text-xs font-semibold uppercase tracking-wide text-slate-600 mb-3">
                 {isAirTransport ? '✈️ Vol retour' : 'Départ'}
               </div>
-              <div
-                className={`grid grid-cols-1 gap-3 ${
-                  isAirTransport ? 'md:grid-cols-3' : 'md:grid-cols-2'
-                }`}
-              >
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className="label">
                     {isAirTransport ? 'Aéroport de départ' : 'Aéroport / gare / port'}
@@ -503,26 +477,34 @@ export default function PreferencesForm({ onSubmit, loading, initialValues }) {
                     onChange={(e) => update('departureTime', e.target.value)}
                   />
                 </div>
-                {isAirTransport && (
-                  <div>
-                    <label className="label">
-                      Prix / personne (€)
-                      <span className="text-slate-400 font-normal"> (optionnel)</span>
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      className="input"
-                      placeholder="Ex : 340"
-                      value={values.manualFlight?.returnPriceEur || ''}
-                      onChange={(e) =>
-                        updateManualFlight('returnPriceEur', e.target.value)
-                      }
-                    />
-                  </div>
-                )}
               </div>
             </div>
+
+            {/* Prix unique aller-retour par personne (vol uniquement) */}
+            {isAirTransport && (
+              <div className="rounded-lg bg-brand-50 border border-brand-200 p-3">
+                <label className="label">
+                  💶 Prix par personne — vol aller-retour complet (€)
+                  <span className="text-slate-400 font-normal"> (optionnel)</span>
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  className="input"
+                  placeholder="Ex : 320 (le prix affiché sur Aviasales / Skyscanner)"
+                  value={values.manualFlight?.outboundPriceEur || ''}
+                  onChange={(e) => {
+                    updateManualFlight('outboundPriceEur', e.target.value);
+                    updateManualFlight('returnPriceEur', '');
+                  }}
+                />
+                <p className="text-xs text-slate-500 mt-1.5">
+                  C'est le prix tel qu'affiché sur les comparateurs (aller +
+                  retour, pour une personne). Le total famille est calculé
+                  automatiquement.
+                </p>
+              </div>
+            )}
           </>
         )}
       </Section>
