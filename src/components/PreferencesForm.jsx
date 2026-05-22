@@ -17,7 +17,7 @@ import {
   suggestStayPrefs,
 } from '../lib/preferenceOptions';
 
-const DEFAULTS = {
+export const DEFAULTS = {
   destinations: '',
   startDate: '',
   endDate: '',
@@ -73,7 +73,7 @@ const DEPARTURE_BUFFER_HINT = {
   croisiere: '~2 h avant embarquement',
 };
 
-function computeTotalDays(start, end) {
+export function computeTotalDays(start, end) {
   if (!start || !end) return 0;
   const s = new Date(start);
   const e = new Date(end);

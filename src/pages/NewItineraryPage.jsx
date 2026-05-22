@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import PreferencesForm from '../components/PreferencesForm';
+import WizardPreferencesForm from '../components/WizardPreferencesForm';
 import InspireMeFlow from '../components/InspireMeFlow';
 import LocalActivitiesFlow from '../components/LocalActivitiesFlow';
 import GeneratingLoader from '../components/GeneratingLoader';
@@ -37,6 +38,10 @@ const MODES = [
 
 export default function NewItineraryPage() {
   const [mode, setMode] = useState('expert');
+  // En mode "expert", l'utilisateur a deux sous-vues possibles :
+  // - 'wizard' (par défaut) : navigation pas-à-pas guidée
+  // - 'form' : formulaire complet d'un seul tenant (power users)
+  const [expertView, setExpertView] = useState('wizard');
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(null);
   const [error, setError] = useState(null);
@@ -171,11 +176,31 @@ export default function NewItineraryPage() {
       {!loading && mode === 'expert' && (
         <>
           <PrefillBanner onPrefill={handlePrefill} />
-          <PreferencesForm
-            onSubmit={handleGenerate}
-            loading={loading}
-            initialValues={prefillPrefs}
-          />
+          {expertView === 'wizard' ? (
+            <WizardPreferencesForm
+              onSubmit={handleGenerate}
+              loading={loading}
+              initialValues={prefillPrefs}
+              onSwitchToFullForm={() => setExpertView('form')}
+            />
+          ) : (
+            <>
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setExpertView('wizard')}
+                  className="text-xs text-slate-500 hover:text-brand-700 hover:underline"
+                >
+                  ← Revenir au pas-à-pas guidé
+                </button>
+              </div>
+              <PreferencesForm
+                onSubmit={handleGenerate}
+                loading={loading}
+                initialValues={prefillPrefs}
+              />
+            </>
+          )}
         </>
       )}
 
