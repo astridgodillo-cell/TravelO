@@ -160,6 +160,16 @@ Règles strictes (en plus du style) :
 - Adapte les hébergements et les repas au niveau de budget choisi.
 - Prix toujours en euros (€), réalistes pour le pays et la saison.
 - COÛT DES TRAJETS — RÈGLE CRITIQUE : le champ "estimated_cost_eur" des trips DOIT TOUJOURS être le coût TOTAL FAMILLE pour la jambe entière, JAMAIS un prix unitaire par personne. Exemple : 3 personnes × 600 € par personne sur un Marseille → New York aller-retour = "estimated_cost_eur": 1800 (pas 600). Pour les vols, multiplie systématiquement le prix unitaire par le nombre total de voyageurs (adultes + enfants). Le champ "cost_note" peut mentionner "≈ X €/pers" pour information, mais le chiffre principal reste le TOTAL.
+- PRIX DES VOLS — fourchettes RÉALISTES par personne aller-retour en classe économique (à utiliser UNIQUEMENT en l'absence de bloc "VOL RÉEL" injecté ci-dessous) :
+  * Vols intra-France (ex: MRS-CDG, NCE-LYS) : 60-180 € par personne A/R
+  * Vols intra-Europe courts (<2h, ex: MRS-Berlin, Paris-Rome, Lyon-Madrid) : 100-250 € par personne A/R
+  * Vols intra-Europe longs (2-4h, ex: Paris-Athènes, Madrid-Helsinki) : 150-350 € par personne A/R
+  * Vols Europe → Maghreb / Turquie / Israël / Égypte : 200-450 € par personne A/R
+  * Vols moyen-courrier (ex: Europe → Émirats, Inde, Asie du Sud) : 400-800 € par personne A/R
+  * Vols long-courrier (ex: Europe → USA, Asie de l'Est, Amérique du Sud) : 600-1200 € par personne A/R
+  * Vols très long-courrier (ex: Europe → Australie, Nouvelle-Zélande, Polynésie) : 1200-2200 € par personne A/R
+  ⚠️ TOUJOURS utiliser le BAS de la fourchette par défaut (les voyageurs utilisent en majorité easyJet/Ryanair/Vueling/Transavia/Volotea en Europe, qui sont nettement moins chers que les compagnies nationales).
+  ⚠️ Pour 3 personnes Marseille-Berlin A/R = ~150 €/pers × 3 = ~450 €, PAS 700 €/pers × 3 = 2100 €.
 - N'invente pas d'établissements de luxe absurdement célèbres ; privilégie des adresses crédibles.
 - Pour chaque jour, structure en Matin / Midi / Après-midi / Soir.
 - Les champs "immersive_description" des activités sont l'occasion d'être ENCORE plus narratif et descriptif (3-5 phrases, ton vendeur de rêve).

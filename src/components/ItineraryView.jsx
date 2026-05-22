@@ -1014,6 +1014,13 @@ function TripRow({ trip, dayDate }) {
   const isFlight =
     /avion|vol|flight|plane/.test(modeLower) || !!trip._flight;
   const flight = trip._flight || {};
+  // Le prix vient-il vraiment d'Aviasales (Travelpayouts) ou est-ce
+  // une invention de l'IA ? Si pas de source travelpayouts, l'estimation
+  // peut être 2-3x au-dessus de la réalité — on doit le signaler.
+  const isFlightPriceFromAviasales =
+    typeof flight.source === 'string' &&
+    flight.source.startsWith('travelpayouts');
+  const isAiEstimatedFlight = isFlight && !isFlightPriceFromAviasales;
   // "HH:MM" depuis "YYYY-MM-DDTHH:MM:SS"
   const flightTime =
     flight.departure_at && typeof flight.departure_at === 'string'
@@ -1041,9 +1048,11 @@ function TripRow({ trip, dayDate }) {
         <div
           className="text-right"
           title={
-            isFlight
+            isFlightPriceFromAviasales
               ? 'Prix Aviasales — peut varier en temps réel selon la disponibilité.'
-              : 'Estimation TravelO basée sur le mode et la distance. Carburant et péages peuvent varier.'
+              : isFlight
+                ? 'Prix INVENTÉ par l\'IA — peut être très éloigné de la réalité. Vérifiez sur Aviasales.'
+                : 'Estimation TravelO basée sur le mode et la distance. Carburant et péages peuvent varier.'
           }
         >
           <div className="font-semibold">
@@ -1059,10 +1068,17 @@ function TripRow({ trip, dayDate }) {
           ✈️ {flightLine}
         </div>
       )}
-      {isFlight && !flightLine && flight.deeplink && (
+      {isAiEstimatedFlight && (
+        <div className="mt-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 print:hidden">
+          ⚠️ <strong>Prix de vol estimé par IA</strong> — souvent éloigné du
+          vrai prix (à la hausse ou à la baisse). Cliquez sur le bouton
+          Aviasales ci-dessous pour voir les vrais tarifs en temps réel.
+        </div>
+      )}
+      {isFlight && !flightLine && isFlightPriceFromAviasales && (
         <div className="mt-2 text-xs text-slate-500 italic border-t border-slate-100 pt-2">
-          Prix estimé — cliquez sur Aviasales ci-dessous pour voir compagnie,
-          horaires et escales en temps réel.
+          Prix Aviasales sans horaire — cliquez sur Aviasales ci-dessous pour
+          voir compagnie, horaires et escales en temps réel.
         </div>
       )}
       {hasBreakdown && (
@@ -1101,10 +1117,17 @@ function TripRow({ trip, dayDate }) {
           <a
             href={flight.deeplink}
             target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 rounded-md bg-brand-600 text-white px-2 py-1 hover:bg-brand-700 transition-colors"
+            rel="noopener noreferrer sponsored"
+            className={
+              isAiEstimatedFlight
+                ? 'inline-flex items-center gap-1 rounded-md bg-amber-600 text-white px-3 py-1.5 hover:bg-amber-700 transition-colors font-semibold'
+                : 'inline-flex items-center gap-1 rounded-md bg-brand-600 text-white px-2 py-1 hover:bg-brand-700 transition-colors'
+            }
           >
-            ✈️ Voir & réserver ce vol sur Aviasales
+            ✈️{' '}
+            {isAiEstimatedFlight
+              ? 'Vérifier les vrais prix sur Aviasales'
+              : 'Voir & réserver ce vol sur Aviasales'}
           </a>
         )}
       </div>
