@@ -845,19 +845,19 @@ function StepStyle({ values, update, toggle }) {
       </h3>
       <div className="flex flex-wrap gap-2 mb-6">
         {INTERESTS.map((i) => {
-          const active = values.interests.includes(i.id);
+          const active = values.interests.includes(i);
           return (
             <button
-              key={i.id}
+              key={i}
               type="button"
-              onClick={() => toggle('interests', i.id)}
-              className={`rounded-full px-4 py-2 text-sm font-medium border transition-all ${
+              onClick={() => toggle('interests', i)}
+              className={`rounded-full px-4 py-2 text-sm font-medium border transition-all capitalize ${
                 active
                   ? 'bg-brand-600 text-white border-brand-600'
                   : 'bg-white border-slate-200 hover:border-slate-300'
               }`}
             >
-              {i.label}
+              {i}
             </button>
           );
         })}
@@ -926,19 +926,19 @@ function StepPersonalization({ values, update, toggle }) {
       </h3>
       <div className="flex flex-wrap gap-2 mb-6">
         {SPECIFIC_ACTIVITIES.map((a) => {
-          const active = values.specificActivities.includes(a);
+          const active = values.specificActivities.includes(a.id);
           return (
             <button
-              key={a}
+              key={a.id}
               type="button"
-              onClick={() => toggle('specificActivities', a)}
+              onClick={() => toggle('specificActivities', a.id)}
               className={`rounded-full px-3 py-1.5 text-sm border transition-all ${
                 active
                   ? 'bg-brand-600 text-white border-brand-600'
                   : 'bg-white border-slate-200 hover:border-slate-300'
               }`}
             >
-              {a}
+              {a.label}
             </button>
           );
         })}
@@ -1032,11 +1032,7 @@ function StepRecap({ values }) {
           />
           <RecapRow
             label="🎨 Intérêts"
-            value={
-              values.interests
-                .map((id) => INTERESTS.find((i) => i.id === id)?.label || id)
-                .join(', ') || '—'
-            }
+            value={values.interests.join(', ') || '—'}
           />
           {AIR_TYPES.has(values.tripType) && (
             <>
