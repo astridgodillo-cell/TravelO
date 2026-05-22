@@ -53,6 +53,14 @@ const DEFAULTS = {
   departureGateway: '',           // ex : "Gare de Madrid Atocha" (vide = identique à arrivalGateway)
   departureTime: '',              // "HH:MM" — heure du transport retour
   scheduledTransport: '',         // 'avion-intl' | 'avion-domestique' | 'train' | 'ferry' | 'croisiere' | ''
+  // Vol déjà réservé : si renseigné, écrase l'estimation Travelpayouts.
+  // Prix par personne (le backend multiplie par adults + enfants).
+  manualFlight: {
+    airline: '',
+    flightNumber: '',
+    outboundPriceEur: '',
+    returnPriceEur: '',
+  },
 };
 
 // Marge conseillée avant l'heure de départ (utilisée pour info dans l'UI ; le
@@ -108,6 +116,7 @@ export default function PreferencesForm({ onSubmit, loading, initialValues }) {
           ? 'croisiere'
           : '';
   const effectiveTransport = values.scheduledTransport || defaultScheduledTransport;
+  const isAirTransport = effectiveTransport === 'avion-intl' || effectiveTransport === 'avion-domestique';
   const totalDays = computeTotalDays(values.startDate, values.endDate);
   const maxOffDays = Math.max(0, totalDays - 2); // au moins 1 jour de voyage à l'aller et 1 au retour
 
@@ -117,6 +126,13 @@ export default function PreferencesForm({ onSubmit, loading, initialValues }) {
 
   function updateVehicle(field, value) {
     setValues((v) => ({ ...v, vehicle: { ...v.vehicle, [field]: value } }));
+  }
+
+  function updateManualFlight(field, value) {
+    setValues((v) => ({
+      ...v,
+      manualFlight: { ...(v.manualFlight || {}), [field]: value },
+    }));
   }
 
   function toggle(field, value) {
@@ -415,6 +431,74 @@ export default function PreferencesForm({ onSubmit, loading, initialValues }) {
                 />
               </div>
             </div>
+
+            {isAirTransport && (
+              <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <h4 className="font-medium text-slate-800 mb-1">
+                  ✈️ J'ai déjà réservé mon vol (optionnel)
+                </h4>
+                <p className="text-xs text-slate-500 mb-3">
+                  Sinon, on récupère automatiquement une estimation réaliste
+                  (compagnie, prix, horaires) via Aviasales. Si vous renseignez
+                  un prix ci-dessous, il sera utilisé tel quel et affiché dans
+                  le budget.
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="label">Compagnie aérienne</label>
+                    <input
+                      className="input"
+                      placeholder="Ex : Air France, Lufthansa…"
+                      value={values.manualFlight?.airline || ''}
+                      onChange={(e) =>
+                        updateManualFlight('airline', e.target.value)
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Numéro de vol (optionnel)</label>
+                    <input
+                      className="input"
+                      placeholder="Ex : AF038"
+                      value={values.manualFlight?.flightNumber || ''}
+                      onChange={(e) =>
+                        updateManualFlight('flightNumber', e.target.value)
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="label">
+                      Prix par personne — aller (€)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      className="input"
+                      placeholder="Ex : 320"
+                      value={values.manualFlight?.outboundPriceEur || ''}
+                      onChange={(e) =>
+                        updateManualFlight('outboundPriceEur', e.target.value)
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="label">
+                      Prix par personne — retour (€)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      className="input"
+                      placeholder="Ex : 340"
+                      value={values.manualFlight?.returnPriceEur || ''}
+                      onChange={(e) =>
+                        updateManualFlight('returnPriceEur', e.target.value)
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
           </>
         )}
       </Section>

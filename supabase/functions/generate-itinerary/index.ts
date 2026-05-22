@@ -10,8 +10,11 @@
 
 // deno-lint-ignore-file no-explicit-any
 import { jsonrepair } from 'https://esm.sh/jsonrepair@3.10.0';
+import { searchFlight, type FlightData } from '../_shared/travelpayouts.ts';
 
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
+const TRAVELPAYOUTS_TOKEN = Deno.env.get('TRAVELPAYOUTS_TOKEN') || '';
+const TRAVELPAYOUTS_MARKER = Deno.env.get('TRAVELPAYOUTS_MARKER') || '';
 const MODEL = Deno.env.get('ANTHROPIC_MODEL') || 'claude-sonnet-4-20250514';
 const EXPAND_MODEL =
   Deno.env.get('ANTHROPIC_EXPAND_MODEL') || 'claude-haiku-4-5-20251001';
@@ -1973,6 +1976,248 @@ async function getApprovedUser(req: Request): Promise<
   }
 }
 
+// ============================================================
+// VOLS RÉELS (Travelpayouts / Aviasales Data API)
+// ============================================================
+//
+// Pour les voyages "avion-*", on tente de récupérer un vrai vol (prix,
+// compagnie, horaires) AVANT d'appeler le LLM. Les infos sont :
+// 1) injectées dans le prompt pour info,
+// 2) puis ré-injectées physiquement dans l'itinéraire (trips J1 + J_final)
+//    après génération, pour garantir qu'elles apparaissent dans le budget.
+
+const AIR_TRIP_TYPES = new Set(['avion-voiture', 'avion-citybreak']);
+
+function shouldFetchFlight(p: any): boolean {
+  if (!p) return false;
+  if (!AIR_TRIP_TYPES.has(p.tripType)) return false;
+  // Si l'utilisateur a déjà saisi son vol à la main, on ne tape pas Travelpayouts
+  if (p.manualFlight && (p.manualFlight.outboundPriceEur || p.manualFlight.returnPriceEur)) {
+    return false;
+  }
+  return true;
+}
+
+function manualFlightToData(p: any): FlightData | null {
+  const mf = p?.manualFlight;
+  if (!mf) return null;
+  const adults = Number(p.adults) || 1;
+  const childrenCount = Array.isArray(p.childrenAges) ? p.childrenAges.length : 0;
+  const pax = adults + childrenCount;
+  const outbound = Number(mf.outboundPriceEur) || 0;
+  const ret = Number(mf.returnPriceEur) || 0;
+  // outbound/return sont des prix PAR PERSONNE. Total famille = (a+r) * pax.
+  const totalPerPax = outbound + ret;
+  if (totalPerPax <= 0) return null;
+  return {
+    origin_iata: '',
+    destination_iata: '',
+    price_eur: Math.round(totalPerPax * pax),
+    airline: mf.airline || 'N/A',
+    flight_number: mf.flightNumber || null,
+    // Réutilise les dates/heures déjà saisies par l'utilisateur dans la
+    // section "Horaires d'arrivée et de départ" pour ne pas dupliquer.
+    departure_at:
+      p.startDate && p.arrivalTime
+        ? `${p.startDate}T${p.arrivalTime}:00`
+        : null,
+    return_at:
+      p.endDate && p.departureTime
+        ? `${p.endDate}T${p.departureTime}:00`
+        : null,
+    deeplink: '',
+    source: 'travelpayouts-cheap',
+  };
+}
+
+async function resolveFlightData(p: any): Promise<FlightData | null> {
+  // 1) Saisie manuelle prioritaire
+  const manual = manualFlightToData(p);
+  if (manual) return manual;
+
+  // 2) Recherche Travelpayouts si secrets configurés et tripType compatible
+  if (!shouldFetchFlight(p)) return null;
+  if (!TRAVELPAYOUTS_TOKEN || !TRAVELPAYOUTS_MARKER) {
+    console.warn('[flights] Travelpayouts secrets manquants, skip.');
+    return null;
+  }
+  try {
+    const adults = Number(p.adults) || 1;
+    const childrenCount = Array.isArray(p.childrenAges) ? p.childrenAges.length : 0;
+    return await searchFlight({
+      originCity: p.departureLocation,
+      destinationCity: p.destinations,
+      departDate: p.startDate,
+      returnDate:
+        p.returnLocation && p.returnLocation !== p.departureLocation
+          ? null // aller simple
+          : p.endDate,
+      adults,
+      children: childrenCount,
+      token: TRAVELPAYOUTS_TOKEN,
+      marker: TRAVELPAYOUTS_MARKER,
+    });
+  } catch (e) {
+    console.warn('[flights] searchFlight failed:', e);
+    return null;
+  }
+}
+
+function formatFlightBlockForPrompt(flight: FlightData, p: any): string {
+  if (!flight) return '';
+  const adults = Number(p.adults) || 1;
+  const childrenCount = Array.isArray(p.childrenAges) ? p.childrenAges.length : 0;
+  const pax = adults + childrenCount;
+  const pricePerPax = pax > 0 ? Math.round(flight.price_eur / pax) : flight.price_eur;
+  const isRoundTrip =
+    !p.returnLocation || p.returnLocation === p.departureLocation;
+  return `
+VOL RÉEL (récupéré via Aviasales / Travelpayouts — DOIS être utilisé tel quel) :
+  - Trajet : ${p.departureLocation} (${flight.origin_iata || '?'}) → ${p.destinations} (${flight.destination_iata || '?'})${
+    isRoundTrip ? ' aller-retour' : ' aller simple'
+  }
+  - Compagnie : ${flight.airline}${flight.flight_number ? ` (vol ${flight.airline}${flight.flight_number})` : ''}
+  - Prix total famille : ${flight.price_eur} € (≈ ${pricePerPax} € par personne)
+  - Heure de départ aller : ${flight.departure_at || '(non précisée)'}
+  ${isRoundTrip ? `- Heure de départ retour : ${flight.return_at || '(non précisée)'}` : ''}
+  ⇒ Tu DOIS créer un trip de mode "Avion" dans le J1 (vol aller) et ${isRoundTrip ? 'dans le dernier jour (vol retour) ' : ''}avec EXACTEMENT ce prix et ces horaires. Cale le timing du jour autour de l'heure d'arrivée/de départ (transfert aéroport, marges, check-in).`;
+}
+
+/**
+ * Ajoute physiquement les trips "Vol" dans l'itinéraire généré (J1 + dernier
+ * jour) et recalcule les totaux du budget. Garantit que le vol apparaît
+ * toujours dans "Trajets (total)" et "Détail par mode" même si le LLM l'a
+ * oublié ou mis un prix différent.
+ */
+function enrichItineraryWithFlight(itinerary: any, flight: FlightData, p: any) {
+  if (!itinerary || !Array.isArray(itinerary.days) || itinerary.days.length === 0) {
+    return itinerary;
+  }
+  if (!flight || !flight.price_eur || flight.price_eur <= 0) {
+    return itinerary;
+  }
+
+  const isRoundTrip =
+    !p.returnLocation || p.returnLocation === p.departureLocation;
+  const total = flight.price_eur;
+  // Si aller-retour, on split 50/50 ; sinon tout sur l'aller
+  const outboundCost = isRoundTrip ? Math.round(total / 2) : total;
+  const returnCost = isRoundTrip ? total - outboundCost : 0;
+
+  const airlineLabel = flight.airline && flight.airline !== 'N/A' ? flight.airline : 'compagnie';
+  const flightNumberLabel = flight.flight_number
+    ? ` ${flight.airline || ''}${flight.flight_number}`.trim()
+    : '';
+
+  const buildTrip = (
+    from: string,
+    to: string,
+    cost: number,
+    departureIso: string | null,
+    label: 'aller' | 'retour'
+  ) => {
+    const time = departureIso ? departureIso.substring(11, 16) : null;
+    return {
+      from,
+      to,
+      distance_km: null,
+      duration: null,
+      mode: 'Avion',
+      estimated_cost_eur: cost,
+      fuel_cost_eur: null,
+      toll_cost_eur: null,
+      ferry_cost_eur: null,
+      cost_note: `Vol ${label} ${airlineLabel}${flightNumberLabel}${time ? `, départ ${time}` : ''} — prix Aviasales`,
+      road_warning: null,
+      _flight: {
+        airline: flight.airline,
+        flight_number: flight.flight_number,
+        departure_at: departureIso,
+        deeplink: flight.deeplink || null,
+        source: flight.source,
+      },
+    };
+  };
+
+  // --- J1 : ajoute le vol aller en TÊTE des trips ---
+  const firstDay = itinerary.days[0];
+  if (firstDay) {
+    if (!Array.isArray(firstDay.trips)) firstDay.trips = [];
+    // Supprime un éventuel trip "Avion" hallucinant placé par le LLM
+    firstDay.trips = firstDay.trips.filter(
+      (t: any) => !/avion|vol|flight|plane/i.test(t?.mode || '')
+    );
+    firstDay.trips.unshift(
+      buildTrip(
+        p.departureLocation || 'Domicile',
+        p.destinations || flight.destination_iata,
+        outboundCost,
+        flight.departure_at,
+        'aller'
+      )
+    );
+    firstDay.day_total_eur =
+      (firstDay.day_total_eur || 0) + outboundCost;
+  }
+
+  // --- Dernier jour : vol retour si aller-retour ---
+  if (isRoundTrip && returnCost > 0) {
+    const lastDay = itinerary.days[itinerary.days.length - 1];
+    if (lastDay) {
+      if (!Array.isArray(lastDay.trips)) lastDay.trips = [];
+      lastDay.trips = lastDay.trips.filter(
+        (t: any) => !/avion|vol|flight|plane/i.test(t?.mode || '')
+      );
+      lastDay.trips.push(
+        buildTrip(
+          p.destinations || flight.origin_iata,
+          p.returnLocation || p.departureLocation || 'Domicile',
+          returnCost,
+          flight.return_at,
+          'retour'
+        )
+      );
+      lastDay.day_total_eur =
+        (lastDay.day_total_eur || 0) + returnCost;
+    }
+  }
+
+  // --- Recalcule les totaux du budget_summary ---
+  if (itinerary.budget_summary) {
+    itinerary.budget_summary.trips_eur =
+      (itinerary.budget_summary.trips_eur || 0) + total;
+    itinerary.budget_summary.grand_total_eur =
+      (itinerary.budget_summary.grand_total_eur || 0) + total;
+    const pax =
+      (Number(p.adults) || 1) +
+      (Array.isArray(p.childrenAges) ? p.childrenAges.length : 0);
+    if (pax > 0) {
+      itinerary.budget_summary.per_person_eur = Math.round(
+        itinerary.budget_summary.grand_total_eur / pax
+      );
+    }
+  }
+
+  // --- Expose les données vol au niveau summary pour le frontend ---
+  if (itinerary.summary) {
+    itinerary.summary.flight_data = {
+      airline: flight.airline,
+      flight_number: flight.flight_number,
+      origin_iata: flight.origin_iata,
+      destination_iata: flight.destination_iata,
+      total_price_eur: total,
+      outbound_price_eur: outboundCost,
+      return_price_eur: returnCost,
+      departure_at: flight.departure_at,
+      return_at: flight.return_at,
+      deeplink: flight.deeplink || null,
+      source: flight.source,
+    };
+  }
+
+  return itinerary;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: CORS_HEADERS });
@@ -2435,10 +2680,21 @@ Deno.serve(async (req) => {
     if (!preferences?.destinations || !preferences?.startDate) {
       return jsonResponse({ error: 'preferences invalides' }, 400);
     }
-    const userPrompt = buildFullPrompt(preferences);
+    // Récupère le vol réel (Travelpayouts) avant d'appeler le LLM, pour le
+    // briefer dans le prompt avec des horaires/prix exacts.
+    const flightData = await resolveFlightData(preferences);
+    let userPrompt = buildFullPrompt(preferences);
+    if (flightData) {
+      userPrompt += `\n\n${formatFlightBlockForPrompt(flightData, preferences)}`;
+    }
     // Budget large : un voyage 8 jours détaillé peut atteindre 20k tokens.
     const { text, usage, modelUsed } = await callMain(userPrompt, 24000);
-    const itinerary = await parseOrRepair(text, callMainSafe);
+    let itinerary = await parseOrRepair(text, callMainSafe);
+    // Post-traitement : injecte physiquement les trips "Vol" et recalcule
+    // les totaux, pour garantir l'affichage côté frontend.
+    if (flightData) {
+      itinerary = enrichItineraryWithFlight(itinerary, flightData, preferences);
+    }
     return jsonResponse({ itinerary, usage, model: modelUsed });
   } catch (err) {
     return jsonResponse(

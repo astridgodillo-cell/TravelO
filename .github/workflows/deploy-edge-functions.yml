@@ -35,3 +35,10 @@ jobs:
         run: |
           supabase functions deploy generate-itinerary \
             --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
+
+      - name: Deploy travelpayouts-flights
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          supabase functions deploy travelpayouts-flights \
+            --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
