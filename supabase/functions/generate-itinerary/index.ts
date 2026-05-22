@@ -159,6 +159,7 @@ Règles strictes (en plus du style) :
 - Adapte le rythme au type de voyage : un séjour fixe a peu de trajets, un road trip en a beaucoup.
 - Adapte les hébergements et les repas au niveau de budget choisi.
 - Prix toujours en euros (€), réalistes pour le pays et la saison.
+- COÛT DES TRAJETS — RÈGLE CRITIQUE : le champ "estimated_cost_eur" des trips DOIT TOUJOURS être le coût TOTAL FAMILLE pour la jambe entière, JAMAIS un prix unitaire par personne. Exemple : 3 personnes × 600 € par personne sur un Marseille → New York aller-retour = "estimated_cost_eur": 1800 (pas 600). Pour les vols, multiplie systématiquement le prix unitaire par le nombre total de voyageurs (adultes + enfants). Le champ "cost_note" peut mentionner "≈ X €/pers" pour information, mais le chiffre principal reste le TOTAL.
 - N'invente pas d'établissements de luxe absurdement célèbres ; privilégie des adresses crédibles.
 - Pour chaque jour, structure en Matin / Midi / Après-midi / Soir.
 - Les champs "immersive_description" des activités sont l'occasion d'être ENCORE plus narratif et descriptif (3-5 phrases, ton vendeur de rêve).
@@ -2432,6 +2433,70 @@ function attachDeeplinksToTrips(itinerary: any, dl: DeeplinkPair) {
 }
 
 /**
+ * Garde-fou : le LLM met parfois le prix PAR PERSONNE dans
+ * estimated_cost_eur d'un trip vol au lieu du total famille (typiquement
+ * il écrit "600 €/pers" dans cost_note ET "estimated_cost_eur": 600 alors
+ * que la famille compte 3 personnes).
+ *
+ * On détecte ce cas via cost_note (ou mode) et on multiplie par le pax.
+ * Uniquement appliqué aux trips "Avion" qui n'ont PAS de source
+ * Travelpayouts (les nôtres sont déjà corrects).
+ */
+function fixPerPersonFlightCosts(itinerary: any, p: any) {
+  if (!itinerary?.days?.length) return itinerary;
+  const adults = Number(p.adults) || 1;
+  const children = Array.isArray(p.childrenAges) ? p.childrenAges.length : 0;
+  const pax = adults + children;
+  if (pax <= 1) return itinerary; // 1 personne : "par personne" == "total"
+
+  const isFlightMode = (m: string) =>
+    /avion|vol|flight|plane/i.test(m || '');
+  // Patterns FR/EN/abréviations qui trahissent un prix unitaire
+  const perPaxPattern =
+    /(par\s+personne|\/\s*pers(\.|onne)?|\/\s*pax|per\s+person|each|p\.p\.|chacun)/i;
+
+  let totalDelta = 0;
+
+  for (const day of itinerary.days) {
+    if (!Array.isArray(day.trips)) continue;
+    for (const t of day.trips) {
+      if (!isFlightMode(t.mode)) continue;
+      // Skip si c'est un de nos trips enrichis (déjà calculé en total famille)
+      if (t._flight?.source && t._flight.source.startsWith('travelpayouts')) continue;
+      const cost = Number(t.estimated_cost_eur) || 0;
+      if (cost <= 0) continue;
+      const note = `${t.cost_note || ''} ${t.mode || ''}`;
+      if (!perPaxPattern.test(note)) continue;
+      // Sanity check : le coût × pax doit rester plausible (< 50000 € par jambe)
+      const corrected = cost * pax;
+      if (corrected > 50000) continue;
+      console.log(
+        `[flight-fix] Vol "${t.from}→${t.to}" : ${cost} €/pers × ${pax} pax = ${corrected} €`
+      );
+      const oldCost = cost;
+      t.estimated_cost_eur = corrected;
+      // Met à jour la note pour rester cohérent
+      t.cost_note = `Total famille (${pax} pers × ${oldCost} €/pers)`;
+      day.day_total_eur = (day.day_total_eur || 0) + (corrected - oldCost);
+      totalDelta += corrected - oldCost;
+    }
+  }
+
+  if (totalDelta > 0 && itinerary.budget_summary) {
+    itinerary.budget_summary.trips_eur =
+      (itinerary.budget_summary.trips_eur || 0) + totalDelta;
+    itinerary.budget_summary.grand_total_eur =
+      (itinerary.budget_summary.grand_total_eur || 0) + totalDelta;
+    if (pax > 0) {
+      itinerary.budget_summary.per_person_eur = Math.round(
+        itinerary.budget_summary.grand_total_eur / pax
+      );
+    }
+  }
+  return itinerary;
+}
+
+/**
  * Variante pour UN jour expand : attache le deeplink correspondant
  * (aller ou retour selon `leg`) aux trips "Avion" du jour.
  */
@@ -3000,6 +3065,8 @@ Deno.serve(async (req) => {
           'return'
         );
       }
+      // Garde-fou prix unitaire / total famille (s'applique aussi à un jour seul)
+      fixPerPersonFlightCosts({ days: [day] }, preferences);
       return jsonResponse({ day, usage, model: modelUsed });
     }
 
@@ -3029,6 +3096,9 @@ Deno.serve(async (req) => {
     if (deeplinkPair) {
       itinerary = attachDeeplinksToTrips(itinerary, deeplinkPair);
     }
+    // Garde-fou : corrige les vols dont le LLM aurait mis le prix par
+    // personne au lieu du total famille.
+    itinerary = fixPerPersonFlightCosts(itinerary, preferences);
     return jsonResponse({ itinerary, usage, model: modelUsed });
   } catch (err) {
     return jsonResponse(
