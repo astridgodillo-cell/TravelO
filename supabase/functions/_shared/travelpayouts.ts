@@ -156,6 +156,9 @@ export async function cityToIata(name: string): Promise<string | null> {
  * Construit le deeplink Aviasales (recherche front, avec marker affilié).
  * Format : /search/{ORI}{DD}{MM}{DST}{DD2}{MM2}{passengers}
  * Ex : MRS1210JFK181012  →  Marseille 12/10 → JFK 18/10 — 1 adulte 2 enfants.
+ *
+ * On force currency=eur et locale=fr pour que les prix s'affichent en €
+ * et l'interface en français côté utilisateur.
  */
 export function buildAviasalesDeeplink(params: {
   origin: string;
@@ -177,7 +180,7 @@ export function buildAviasalesDeeplink(params: {
   }
   // Passagers : adultes / enfants(2-11) / bébés (on simplifie : tout enfant compté en "enfant")
   const pax = `${Math.max(1, adults)}${children > 0 ? children : ''}`;
-  return `https://www.aviasales.com/search/${segment}${pax}?marker=${marker}`;
+  return `https://www.aviasales.com/search/${segment}${pax}?marker=${marker}&currency=eur&locale=fr`;
 }
 
 /**

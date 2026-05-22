@@ -871,6 +871,12 @@ function TripRow({ trip, dayDate }) {
           ✈️ {flightLine}
         </div>
       )}
+      {isFlight && !flightLine && flight.deeplink && (
+        <div className="mt-2 text-xs text-slate-500 italic border-t border-slate-100 pt-2">
+          Prix estimé — cliquez sur Aviasales ci-dessous pour voir compagnie,
+          horaires et escales en temps réel.
+        </div>
+      )}
       {hasBreakdown && (
         <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500 border-t border-slate-100 pt-2">
           {trip.fuel_cost_eur != null && trip.fuel_cost_eur > 0 && (
