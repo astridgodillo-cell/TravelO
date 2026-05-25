@@ -2744,6 +2744,10 @@ async function resolveDeeplinkPair(p: any): Promise<DeeplinkPair | null> {
       destination,
       departDate: p.startDate,
       returnDate: isRoundTrip ? p.endDate : null,
+      adults,
+      children: childrenCount,
+      currency: 'EUR',
+      locale: 'fr',
     });
     ret = isRoundTrip
       ? buildGoogleFlightsDeeplink({
@@ -2751,6 +2755,10 @@ async function resolveDeeplinkPair(p: any): Promise<DeeplinkPair | null> {
           destination: origin,
           departDate: p.endDate,
           returnDate: null,
+          adults,
+          children: childrenCount,
+          currency: 'EUR',
+          locale: 'fr',
         })
       : null;
   } else {

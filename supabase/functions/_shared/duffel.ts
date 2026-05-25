@@ -22,22 +22,54 @@ export interface DuffelFlightData extends Omit<TpFlightData, 'source'> {
 const DUFFEL_API_BASE = 'https://api.duffel.com';
 
 /**
- * Construit un deeplink Google Flights pré-rempli avec origine, destination
- * et date — utilisé comme bouton "Voir & comparer" puisque Duffel est une
- * API B2B sans site consommateur public.
+ * Construit un deeplink Google Flights PRÉ-REMPLI avec tous les paramètres
+ * utiles pour que l'utilisateur retrouve son vol en un clic :
+ *   - aéroport d'origine / destination (codes IATA)
+ *   - date de départ (et éventuellement date de retour)
+ *   - aller simple ou aller-retour
+ *   - nombre d'adultes + enfants
+ *   - devise EUR et interface française
+ *
+ * On utilise le parser "natural language" de Google Flights via le
+ * paramètre q= : c'est la méthode la plus stable (le format binaire tfs=
+ * change régulièrement et nécessite du protobuf).
+ *
+ * Exemples produits :
+ *   - A/R 2A + 1E :
+ *     "Flights from MRS to YUL on 2026-09-07 returning 2026-09-15 for 2 adults and 1 child"
+ *   - Aller simple 1A :
+ *     "Flights from MRS to YUL on 2026-09-07 for 1 adult"
  */
 export function buildGoogleFlightsDeeplink(params: {
   origin: string;
   destination: string;
   departDate: string;
   returnDate?: string | null;
+  adults?: number;
+  children?: number;
+  currency?: 'EUR' | 'USD' | 'GBP';
+  locale?: 'fr' | 'en';
 }): string {
-  const { origin, destination, departDate, returnDate } = params;
-  // Format Google Flights : .../flights?q=Flights+from+ORI+to+DST+on+YYYY-MM-DD
-  const q = returnDate
-    ? `Flights from ${origin} to ${destination} on ${departDate} returning ${returnDate}`
-    : `Flights from ${origin} to ${destination} on ${departDate}`;
-  return `https://www.google.com/travel/flights?q=${encodeURIComponent(q)}`;
+  const adults = Math.max(1, Number(params.adults) || 1);
+  const children = Math.max(0, Number(params.children) || 0);
+  const currency = params.currency || 'EUR';
+  const locale = params.locale || 'fr';
+
+  let q = `Flights from ${params.origin} to ${params.destination} on ${params.departDate}`;
+  if (params.returnDate) {
+    q += ` returning ${params.returnDate}`;
+  } else {
+    q += ` one-way`;
+  }
+  // Passagers — formule en anglais, mieux comprise par le parser Google.
+  const paxParts: string[] = [];
+  paxParts.push(`${adults} adult${adults > 1 ? 's' : ''}`);
+  if (children > 0) {
+    paxParts.push(`${children} child${children > 1 ? 'ren' : ''}`);
+  }
+  q += ` for ${paxParts.join(' and ')}`;
+
+  return `https://www.google.com/travel/flights?q=${encodeURIComponent(q)}&curr=${currency}&hl=${locale}`;
 }
 
 /**
@@ -177,11 +209,17 @@ export async function searchFlightDuffel(opts: {
 
     // Pas de site consommateur Duffel → on fallback sur Google Flights pour
     // que le bouton "Voir & comparer" reste utile à l'utilisateur.
+    // On passe TOUS les paramètres (pax + dates + devise + locale) pour que
+    // la recherche Google Flights soit complètement pré-remplie au clic.
     const deeplink = buildGoogleFlightsDeeplink({
       origin,
       destination,
       departDate: opts.departDate,
       returnDate: opts.returnDate,
+      adults: opts.adults,
+      children: opts.children,
+      currency: 'EUR',
+      locale: 'fr',
     });
 
     return {

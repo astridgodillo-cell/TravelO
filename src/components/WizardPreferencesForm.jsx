@@ -102,18 +102,33 @@ function buildAviasalesNativeUrl({
   return `https://www.aviasales.com/search/${segment}${pax}?currency=eur&locale=fr`;
 }
 
-// Construit l'URL Google Flights pré-remplie. Utilisé quand l'admin a choisi
-// Duffel (qui n'a pas de site consommateur) : Google Flights est le
-// comparateur universel le plus accessible aux utilisateurs francophones.
+// Construit l'URL Google Flights PRÉ-REMPLIE avec tous les paramètres :
+// origine, destination, dates, aller/retour, nombre d'adultes + enfants,
+// devise EUR et interface française. Utilisé quand l'admin a choisi
+// Duffel (qui n'a pas de site consommateur).
+//
+// On utilise le parser "langage naturel" via q= (le plus stable — le
+// format binaire tfs= change régulièrement et nécessite du protobuf).
 function buildGoogleFlightsNativeUrl({
   originIata,
   destIata,
   departDate,
   returnDate,
+  adults,
+  childrenCount,
 }) {
-  const q = returnDate
-    ? `Vols ${originIata} ${destIata} ${departDate} retour ${returnDate}`
-    : `Vols ${originIata} ${destIata} ${departDate}`;
+  const a = Math.max(1, Number(adults) || 1);
+  const c = Math.max(0, Number(childrenCount) || 0);
+  let q = `Flights from ${originIata} to ${destIata} on ${departDate}`;
+  if (returnDate) {
+    q += ` returning ${returnDate}`;
+  } else {
+    q += ` one-way`;
+  }
+  const paxParts = [];
+  paxParts.push(`${a} adult${a > 1 ? 's' : ''}`);
+  if (c > 0) paxParts.push(`${c} child${c > 1 ? 'ren' : ''}`);
+  q += ` for ${paxParts.join(' and ')}`;
   return `https://www.google.com/travel/flights?q=${encodeURIComponent(q)}&hl=fr&curr=EUR`;
 }
 
