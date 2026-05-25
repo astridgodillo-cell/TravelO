@@ -3,17 +3,17 @@ import { getAppConfig, setAppConfig } from '../lib/supabase';
 
 const OPTIONS = [
   { id: 'travelpayouts', label: 'Aviasales', dot: 'bg-sky-500' },
-  { id: 'kiwi', label: 'Kiwi.com', dot: 'bg-fuchsia-500' },
+  { id: 'duffel', label: 'Duffel', dot: 'bg-fuchsia-500' },
 ];
 
 const COLORS = {
   travelpayouts: 'bg-sky-100 text-sky-800 hover:bg-sky-200',
-  kiwi: 'bg-fuchsia-100 text-fuchsia-800 hover:bg-fuchsia-200',
+  duffel: 'bg-fuchsia-100 text-fuchsia-800 hover:bg-fuchsia-200',
 };
 
 /**
  * Mini-dropdown navbar pour basculer le fournisseur de vols
- * (Travelpayouts ↔ Kiwi.com) — admin uniquement.
+ * (Travelpayouts ↔ Duffel) — admin uniquement.
  */
 export default function FlightProviderQuickSwitch() {
   const [current, setCurrent] = useState(null);

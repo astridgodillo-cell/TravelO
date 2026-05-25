@@ -37,7 +37,7 @@ const BACKEND_OPTIONS = [
 
 const FLIGHT_PROVIDER_OPTIONS = [
   { id: 'travelpayouts', label: 'Aviasales (Travelpayouts)', dot: 'bg-sky-500', hint: 'Affiliation Aviasales. Bon pour les long-courriers. Deeplink réservation Aviasales.' },
-  { id: 'kiwi', label: 'Kiwi.com (Tequila)', dot: 'bg-fuchsia-500', hint: 'Très fort sur les low-cost (Ryanair, easyJet, Wizz). Données plus à jour, deeplink Kiwi.' },
+  { id: 'duffel', label: 'Duffel', dot: 'bg-fuchsia-500', hint: 'API moderne 300+ compagnies. Prix temps réel en EUR. Bouton de comparaison Google Flights.' },
 ];
 
 const TABS = [
@@ -255,7 +255,7 @@ export default function AdminPage() {
           </code>
           {' '}ou{' '}
           <code className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded">
-            KIWI_API_KEY
+            DUFFEL_API_TOKEN
           </code>
           ), TravelO bascule automatiquement sur l'autre.
         </p>

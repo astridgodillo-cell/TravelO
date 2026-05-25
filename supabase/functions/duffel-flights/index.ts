@@ -1,7 +1,7 @@
-// Supabase Edge Function — kiwi-flights
+// Supabase Edge Function — duffel-flights
 //
-// Recherche un vol via la Tequila API (Kiwi.com) et renvoie prix, compagnie,
-// horaires et deeplink de réservation.
+// Recherche un vol via l'API Duffel et renvoie prix, compagnie, horaires
+// et deeplink (Google Flights pour comparer, puisque Duffel est B2B).
 //
 // Body POST :
 //   {
@@ -13,12 +13,12 @@
 //     "children": 2
 //   }
 //
-// Secret requis : KIWI_API_KEY
+// Secret requis : DUFFEL_API_TOKEN
 
 // deno-lint-ignore-file no-explicit-any
-import { searchFlightKiwi } from '../_shared/kiwicom.ts';
+import { searchFlightDuffel } from '../_shared/duffel.ts';
 
-const KIWI_API_KEY = Deno.env.get('KIWI_API_KEY') || '';
+const DUFFEL_API_TOKEN = Deno.env.get('DUFFEL_API_TOKEN') || '';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -42,9 +42,9 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: 'Méthode non supportée (POST attendu).' }, 405);
   }
 
-  if (!KIWI_API_KEY) {
+  if (!DUFFEL_API_TOKEN) {
     return jsonResponse(
-      { error: 'Secret KIWI_API_KEY manquant dans Supabase Edge Functions.' },
+      { error: 'Secret DUFFEL_API_TOKEN manquant dans Supabase Edge Functions.' },
       500
     );
   }
@@ -76,14 +76,14 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const flight = await searchFlightKiwi({
+    const flight = await searchFlightDuffel({
       originCity: String(origin),
       destinationCity: String(destination),
       departDate: String(depart_date),
       returnDate: return_date ? String(return_date) : null,
       adults: Number(adults) || 1,
       children: Number(children) || 0,
-      apiKey: KIWI_API_KEY,
+      apiToken: DUFFEL_API_TOKEN,
     });
 
     if (!flight) {

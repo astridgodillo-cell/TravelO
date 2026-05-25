@@ -24,7 +24,7 @@ import {
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
 const TRAVELPAYOUTS_TOKEN = Deno.env.get('TRAVELPAYOUTS_TOKEN') || '';
 const TRAVELPAYOUTS_MARKER = Deno.env.get('TRAVELPAYOUTS_MARKER') || '';
-const KIWI_API_KEY = Deno.env.get('KIWI_API_KEY') || '';
+const DUFFEL_API_TOKEN = Deno.env.get('DUFFEL_API_TOKEN') || '';
 const MODEL = Deno.env.get('ANTHROPIC_MODEL') || 'claude-sonnet-4-20250514';
 const EXPAND_MODEL =
   Deno.env.get('ANTHROPIC_EXPAND_MODEL') || 'claude-haiku-4-5-20251001';
@@ -2045,7 +2045,7 @@ function shouldFetchFlight(p: any): boolean {
 
 function hasAnyFlightProviderConfigured(): boolean {
   return (
-    !!(TRAVELPAYOUTS_TOKEN && TRAVELPAYOUTS_MARKER) || !!KIWI_API_KEY
+    !!(TRAVELPAYOUTS_TOKEN && TRAVELPAYOUTS_MARKER) || !!DUFFEL_API_TOKEN
   );
 }
 
@@ -2086,7 +2086,7 @@ async function resolveFlightData(p: any): Promise<AnyFlightData | null> {
   const manual = manualFlightToData(p);
   if (manual) return manual;
 
-  // 2) Recherche via le fournisseur actif (Travelpayouts ou Kiwi) si
+  // 2) Recherche via le fournisseur actif (Travelpayouts ou Duffel) si
   // tripType compatible et qu'au moins un fournisseur a ses secrets.
   if (!shouldFetchFlight(p)) return null;
   if (!hasAnyFlightProviderConfigured()) {
@@ -2117,7 +2117,7 @@ async function resolveFlightData(p: any): Promise<AnyFlightData | null> {
         serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY,
         travelpayoutsToken: TRAVELPAYOUTS_TOKEN,
         travelpayoutsMarker: TRAVELPAYOUTS_MARKER,
-        kiwiApiKey: KIWI_API_KEY,
+        duffelApiToken: DUFFEL_API_TOKEN,
       }
     );
   } catch (e) {
@@ -2128,7 +2128,7 @@ async function resolveFlightData(p: any): Promise<AnyFlightData | null> {
 
 function flightSourceLabel(source: string | undefined): string {
   if (!source) return 'fournisseur de vols';
-  if (source.startsWith('kiwi')) return 'Kiwi.com';
+  if (source.startsWith('duffel')) return 'Duffel';
   if (source.startsWith('travelpayouts')) return 'Aviasales / Travelpayouts';
   return source;
 }
@@ -3263,7 +3263,7 @@ Deno.serve(async (req) => {
     if (!preferences?.destinations || !preferences?.startDate) {
       return jsonResponse({ error: 'preferences invalides' }, 400);
     }
-    // Récupère le vol réel (Travelpayouts ou Kiwi, selon app_config) avant
+    // Récupère le vol réel (Travelpayouts ou Duffel, selon app_config) avant
     // d'appeler le LLM, pour le briefer dans le prompt avec des horaires/prix exacts.
     const flightData = await resolveFlightData(preferences);
     let userPrompt = buildFullPrompt(preferences);

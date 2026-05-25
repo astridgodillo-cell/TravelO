@@ -1008,9 +1008,22 @@ function DayCard({
 
 function flightProviderName(source) {
   if (typeof source !== 'string') return 'fournisseur partenaire';
-  if (source.startsWith('kiwi')) return 'Kiwi.com';
+  if (source.startsWith('duffel')) return 'Duffel';
   if (source.startsWith('travelpayouts')) return 'Aviasales';
   return 'fournisseur partenaire';
+}
+
+/**
+ * Pour Duffel, le deeplink pointe vers Google Flights (Duffel est B2B,
+ * pas de site consommateur). Pour Travelpayouts, vers Aviasales (où
+ * l'utilisateur peut réserver directement). On adapte le libellé du bouton
+ * en conséquence.
+ */
+function flightDeeplinkLabel(source) {
+  if (typeof source !== 'string') return 'Comparer ce vol';
+  if (source.startsWith('duffel')) return 'Comparer sur Google Flights';
+  if (source.startsWith('travelpayouts')) return 'Voir & réserver sur Aviasales';
+  return 'Voir & comparer ce vol';
 }
 
 function TripRow({ trip, dayDate }) {
@@ -1023,13 +1036,13 @@ function TripRow({ trip, dayDate }) {
   const isFlight =
     /avion|vol|flight|plane/.test(modeLower) || !!trip._flight;
   const flight = trip._flight || {};
-  // Le prix vient-il vraiment d'un fournisseur (Aviasales / Kiwi.com) ou
+  // Le prix vient-il vraiment d'un fournisseur (Aviasales / Duffel) ou
   // est-ce une invention de l'IA ? Si pas de source réelle, l'estimation
   // peut être 2-3x au-dessus de la réalité — on doit le signaler.
   const isFlightPriceReal =
     typeof flight.source === 'string' &&
     (flight.source.startsWith('travelpayouts') ||
-      flight.source.startsWith('kiwi'));
+      flight.source.startsWith('duffel'));
   const isAiEstimatedFlight = isFlight && !isFlightPriceReal;
   const providerLabel = flightProviderName(flight.source);
   // "HH:MM" depuis "YYYY-MM-DDTHH:MM:SS"
@@ -1138,7 +1151,7 @@ function TripRow({ trip, dayDate }) {
             ✈️{' '}
             {isAiEstimatedFlight
               ? `Vérifier les vrais prix sur ${providerLabel}`
-              : `Voir & réserver ce vol sur ${providerLabel}`}
+              : flightDeeplinkLabel(flight.source)}
           </a>
         )}
       </div>

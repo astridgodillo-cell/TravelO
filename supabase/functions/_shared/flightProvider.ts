@@ -1,16 +1,16 @@
 // Dispatcher fournisseur de vols.
 // Lit la clé `flight_provider` dans la table app_config (cache 15 s) et
-// dispatche vers Travelpayouts (Aviasales) ou Kiwi.com (Tequila).
+// dispatche vers Travelpayouts (Aviasales) ou Duffel.
 //
 // Le superadmin peut basculer le provider en un clic depuis l'admin, sans
 // redéploiement.
 
 // deno-lint-ignore-file no-explicit-any
 import { searchFlight, type FlightData } from './travelpayouts.ts';
-import { searchFlightKiwi, type KiwiFlightData } from './kiwicom.ts';
+import { searchFlightDuffel, type DuffelFlightData } from './duffel.ts';
 
-export type AnyFlightData = FlightData | KiwiFlightData;
-export type FlightProvider = 'travelpayouts' | 'kiwi';
+export type AnyFlightData = FlightData | DuffelFlightData;
+export type FlightProvider = 'travelpayouts' | 'duffel';
 
 const DEFAULT_PROVIDER: FlightProvider = 'travelpayouts';
 
@@ -42,7 +42,7 @@ export async function getActiveFlightProvider(
       const rows = await res.json();
       const stored = rows?.[0]?.value;
       const value: FlightProvider =
-        stored === 'kiwi' ? 'kiwi' : 'travelpayouts';
+        stored === 'duffel' ? 'duffel' : 'travelpayouts';
       cachedProvider = { value, expires: Date.now() + 15_000 };
       return value;
     }
@@ -66,16 +66,16 @@ export interface ProviderSecrets {
   serviceRoleKey: string;
   travelpayoutsToken: string;
   travelpayoutsMarker: string;
-  kiwiApiKey: string;
+  duffelApiToken: string;
 }
 
 /**
  * Cherche un vol via le fournisseur configuré dans app_config.
  *
  * Logique de fallback :
- *  - provider='kiwi' mais KIWI_API_KEY manquante → bascule sur Travelpayouts
- *    si ses secrets sont là, sinon null.
- *  - provider='travelpayouts' mais secrets manquants → tente Kiwi si dispo,
+ *  - provider='duffel' mais DUFFEL_API_TOKEN manquant → bascule sur
+ *    Travelpayouts si ses secrets sont là, sinon null.
+ *  - provider='travelpayouts' mais secrets manquants → tente Duffel si dispo,
  *    sinon null.
  */
 export async function searchFlightAny(
@@ -88,12 +88,15 @@ export async function searchFlightAny(
   );
 
   const hasTp = !!(secrets.travelpayoutsToken && secrets.travelpayoutsMarker);
-  const hasKiwi = !!secrets.kiwiApiKey;
+  const hasDuffel = !!secrets.duffelApiToken;
 
-  if (provider === 'kiwi' && hasKiwi) {
-    const r = await searchFlightKiwi({ ...opts, apiKey: secrets.kiwiApiKey });
+  if (provider === 'duffel' && hasDuffel) {
+    const r = await searchFlightDuffel({
+      ...opts,
+      apiToken: secrets.duffelApiToken,
+    });
     if (r) return r;
-    // Si Kiwi ne trouve rien, on tente Travelpayouts en silencieux
+    // Si Duffel ne trouve rien, on tente Travelpayouts en silencieux
     if (hasTp) {
       return await searchFlight({
         ...opts,
@@ -111,24 +114,30 @@ export async function searchFlightAny(
       marker: secrets.travelpayoutsMarker,
     });
     if (r) return r;
-    if (hasKiwi) {
-      return await searchFlightKiwi({ ...opts, apiKey: secrets.kiwiApiKey });
+    if (hasDuffel) {
+      return await searchFlightDuffel({
+        ...opts,
+        apiToken: secrets.duffelApiToken,
+      });
     }
     return null;
   }
 
   // Provider demandé mais secrets manquants → on tente l'autre en fallback
-  if (provider === 'kiwi' && !hasKiwi && hasTp) {
-    console.warn('[flights] KIWI_API_KEY manquante, fallback Travelpayouts');
+  if (provider === 'duffel' && !hasDuffel && hasTp) {
+    console.warn('[flights] DUFFEL_API_TOKEN manquant, fallback Travelpayouts');
     return await searchFlight({
       ...opts,
       token: secrets.travelpayoutsToken,
       marker: secrets.travelpayoutsMarker,
     });
   }
-  if (provider === 'travelpayouts' && !hasTp && hasKiwi) {
-    console.warn('[flights] Secrets Travelpayouts manquants, fallback Kiwi');
-    return await searchFlightKiwi({ ...opts, apiKey: secrets.kiwiApiKey });
+  if (provider === 'travelpayouts' && !hasTp && hasDuffel) {
+    console.warn('[flights] Secrets Travelpayouts manquants, fallback Duffel');
+    return await searchFlightDuffel({
+      ...opts,
+      apiToken: secrets.duffelApiToken,
+    });
   }
 
   console.warn('[flights] aucun fournisseur disponible (secrets manquants).');
@@ -141,5 +150,5 @@ export async function searchFlightAny(
  */
 export function isRealFlightSource(source: string | undefined): boolean {
   if (!source) return false;
-  return source.startsWith('travelpayouts') || source.startsWith('kiwi');
+  return source.startsWith('travelpayouts') || source.startsWith('duffel');
 }
