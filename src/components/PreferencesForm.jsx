@@ -491,7 +491,7 @@ export default function PreferencesForm({ onSubmit, loading, initialValues }) {
                   type="number"
                   min="0"
                   className="input"
-                  placeholder="Ex : 320 (le prix affiché sur Aviasales / Skyscanner)"
+                  placeholder="Ex : 320 (le prix affiché sur le comparateur de vols)"
                   value={values.manualFlight?.outboundPriceEur || ''}
                   onChange={(e) => {
                     updateManualFlight('outboundPriceEur', e.target.value);

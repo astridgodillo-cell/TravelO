@@ -18,6 +18,7 @@ import {
 } from '../lib/preferenceOptions';
 import { DEFAULTS, computeTotalDays } from './PreferencesForm';
 import Icon from './Icon';
+import { getAppConfig } from '../lib/supabase';
 
 // --- Helpers dates ---
 function toIsoDate(d) {
@@ -99,6 +100,36 @@ function buildAviasalesNativeUrl({
   const pax = `${Math.max(1, adults)}${childrenCount > 0 ? childrenCount : ''}`;
   return `https://www.aviasales.com/search/${segment}${pax}?currency=eur&locale=fr`;
 }
+
+// Construit l'URL Google Flights pré-remplie. Utilisé quand l'admin a choisi
+// Duffel (qui n'a pas de site consommateur) : Google Flights est le
+// comparateur universel le plus accessible aux utilisateurs francophones.
+function buildGoogleFlightsNativeUrl({
+  originIata,
+  destIata,
+  departDate,
+  returnDate,
+}) {
+  const q = returnDate
+    ? `Vols ${originIata} ${destIata} ${departDate} retour ${returnDate}`
+    : `Vols ${originIata} ${destIata} ${departDate}`;
+  return `https://www.google.com/travel/flights?q=${encodeURIComponent(q)}&hl=fr&curr=EUR`;
+}
+
+// Méta-infos affichées dans le bouton de recherche selon le fournisseur
+// choisi par l'admin (clé app_config.flight_provider).
+const SEARCH_PROVIDER_META = {
+  travelpayouts: {
+    label: 'Aviasales',
+    buildUrl: buildAviasalesNativeUrl,
+    btnClass: 'bg-sky-600 hover:bg-sky-700',
+  },
+  duffel: {
+    label: 'Google Flights',
+    buildUrl: buildGoogleFlightsNativeUrl,
+    btnClass: 'bg-blue-600 hover:bg-blue-700',
+  },
+};
 
 // --- Sous-composants UI ---------------------------------------------------
 
@@ -425,9 +456,23 @@ function StepFlight({ values, update, updateManualFlight }) {
     if (values.arrivalTime || values.departureTime) return 'known';
     return null;
   });
-  // État de résolution IATA pour ouvrir Aviasales avec dates pré-remplies
+  // État de résolution IATA pour ouvrir la recherche externe avec dates pré-remplies
   const [resolveStatus, setResolveStatus] = useState('idle'); // 'idle' | 'loading' | 'need_city' | 'error'
   const [resolveError, setResolveError] = useState(null);
+  // Fournisseur de recherche externe choisi par l'admin (Aviasales ou Google Flights).
+  // Lu une fois au montage depuis app_config.flight_provider. Par défaut Aviasales.
+  const [searchProvider, setSearchProvider] = useState('travelpayouts');
+  useEffect(() => {
+    let active = true;
+    getAppConfig('flight_provider').then(({ value }) => {
+      if (!active) return;
+      setSearchProvider(value === 'duffel' ? 'duffel' : 'travelpayouts');
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+  const searchMeta = SEARCH_PROVIDER_META[searchProvider] || SEARCH_PROVIDER_META.travelpayouts;
 
   // Le bloc "type de transport" est implicite (avion-intl ou domestique).
   // On l'initialise une fois pour qu'il soit transmis au backend.
@@ -442,7 +487,7 @@ function StepFlight({ values, update, updateManualFlight }) {
   const hasMinimumForSearch =
     !!values.departureLocation && !!arrivalCity && !!values.startDate;
 
-  async function openAviasalesSearch() {
+  async function openFlightSearch() {
     if (!hasMinimumForSearch) return;
     setResolveStatus('loading');
     setResolveError(null);
@@ -465,8 +510,6 @@ function StepFlight({ values, update, updateManualFlight }) {
         );
         return;
       }
-      // Si la destination est en fait un pays → on demande à l'utilisateur
-      // de préciser une ville d'atterrissage.
       if (dest.country) {
         setResolveStatus('need_city');
         setResolveError(
@@ -481,7 +524,7 @@ function StepFlight({ values, update, updateManualFlight }) {
         );
         return;
       }
-      const url = buildAviasalesNativeUrl({
+      const url = searchMeta.buildUrl({
         originIata: origin.code,
         destIata: dest.code,
         departDate: values.startDate,
@@ -547,7 +590,7 @@ function StepFlight({ values, update, updateManualFlight }) {
           <PathCard
             icon="🔍"
             title="Je veux d'abord chercher mon vol"
-            description="On t'ouvre Aviasales avec tes dates pré-remplies. Tu reviens ici pour saisir tes horaires une fois ton vol choisi."
+            description={`On t'ouvre ${searchMeta.label} avec tes dates pré-remplies. Tu reviens ici pour saisir tes horaires une fois ton vol choisi.`}
             onClick={() => setPath('search')}
             tone="blue"
             disabled={!hasMinimumForSearch}
@@ -604,7 +647,7 @@ function StepFlight({ values, update, updateManualFlight }) {
               />
             </div>
           </div>
-          {/* Prix unique aller-retour par personne — comme sur Aviasales/Skyscanner */}
+          {/* Prix unique aller-retour par personne — comme sur les comparateurs (Aviasales / Google Flights / Skyscanner) */}
           <div className="rounded-lg bg-brand-50 border border-brand-200 p-4">
             <label className="label">
               💶 Prix par personne — vol aller-retour complet (€)
@@ -613,7 +656,7 @@ function StepFlight({ values, update, updateManualFlight }) {
               type="number"
               min="0"
               className="input"
-              placeholder="Ex : 320 (le prix affiché sur Aviasales/Skyscanner)"
+              placeholder="Ex : 320 (le prix affiché sur le comparateur)"
               value={values.manualFlight?.outboundPriceEur || ''}
               onChange={(e) => {
                 updateManualFlight('outboundPriceEur', e.target.value);
@@ -695,7 +738,7 @@ function StepFlight({ values, update, updateManualFlight }) {
           </button>
           <div className="rounded-xl bg-sky-50 border border-sky-200 p-5 text-center">
             <h3 className="font-semibold text-sky-900">
-              🔍 Recherche ton vol sur Aviasales
+              🔍 Recherche ton vol sur {searchMeta.label}
             </h3>
             <p className="text-sm text-sky-800 mt-2">
               On pré-remplit tes dates, ton origine et ta destination. Choisis
@@ -706,13 +749,13 @@ function StepFlight({ values, update, updateManualFlight }) {
             {hasMinimumForSearch ? (
               <button
                 type="button"
-                onClick={openAviasalesSearch}
+                onClick={openFlightSearch}
                 disabled={resolveStatus === 'loading'}
-                className="mt-4 inline-flex items-center gap-2 rounded-xl bg-sky-600 hover:bg-sky-700 disabled:opacity-60 text-white px-5 py-2.5 font-medium transition-colors"
+                className={`mt-4 inline-flex items-center gap-2 rounded-xl ${searchMeta.btnClass} disabled:opacity-60 text-white px-5 py-2.5 font-medium transition-colors`}
               >
                 {resolveStatus === 'loading'
                   ? 'Préparation…'
-                  : 'Ouvrir Aviasales dans un nouvel onglet →'}
+                  : `Ouvrir ${searchMeta.label} dans un nouvel onglet →`}
               </button>
             ) : (
               <p className="mt-4 text-xs text-sky-700">

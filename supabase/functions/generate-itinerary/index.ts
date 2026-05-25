@@ -15,8 +15,10 @@ import {
   buildAviasalesDeeplink,
   type FlightData,
 } from '../_shared/travelpayouts.ts';
+import { buildGoogleFlightsDeeplink } from '../_shared/duffel.ts';
 import {
   searchFlightAny,
+  getActiveFlightProvider,
   isRealFlightSource,
   type AnyFlightData,
 } from '../_shared/flightProvider.ts';
@@ -2414,7 +2416,6 @@ interface DeeplinkPair {
 
 async function resolveDeeplinkPair(p: any): Promise<DeeplinkPair | null> {
   if (!AIR_TRIP_TYPES.has(p?.tripType)) return null;
-  if (!TRAVELPAYOUTS_MARKER) return null;
   const adults = Number(p.adults) || 1;
   const childrenCount = Array.isArray(p.childrenAges) ? p.childrenAges.length : 0;
   // Préfère arrivalGateway/departureGateway si saisis (cas pays).
@@ -2425,26 +2426,58 @@ async function resolveDeeplinkPair(p: any): Promise<DeeplinkPair | null> {
   if (!origin || !destination || origin === destination) return null;
   const isRoundTrip =
     !p.returnLocation || p.returnLocation === p.departureLocation;
-  const outbound = buildAviasalesDeeplink({
-    origin,
-    destination,
-    departDate: p.startDate,
-    returnDate: isRoundTrip ? p.endDate : null,
-    adults,
-    children: childrenCount,
-    marker: TRAVELPAYOUTS_MARKER,
-  });
-  const ret = isRoundTrip
-    ? buildAviasalesDeeplink({
-        origin: destination,
-        destination: origin,
-        departDate: p.endDate,
-        returnDate: null,
-        adults,
-        children: childrenCount,
-        marker: TRAVELPAYOUTS_MARKER,
-      })
-    : null;
+
+  // Choix du fournisseur de deeplinks selon la config admin :
+  //  - 'duffel'        → Google Flights (Duffel n'a pas de site consommateur)
+  //  - 'travelpayouts' → Aviasales avec marker affilié
+  const provider = await getActiveFlightProvider(
+    SUPABASE_URL,
+    SUPABASE_SERVICE_ROLE_KEY
+  );
+
+  let outbound: string;
+  let ret: string | null;
+
+  if (provider === 'duffel') {
+    outbound = buildGoogleFlightsDeeplink({
+      origin,
+      destination,
+      departDate: p.startDate,
+      returnDate: isRoundTrip ? p.endDate : null,
+    });
+    ret = isRoundTrip
+      ? buildGoogleFlightsDeeplink({
+          origin: destination,
+          destination: origin,
+          departDate: p.endDate,
+          returnDate: null,
+        })
+      : null;
+  } else {
+    // Travelpayouts / Aviasales — nécessite le marker pour l'affiliation
+    if (!TRAVELPAYOUTS_MARKER) return null;
+    outbound = buildAviasalesDeeplink({
+      origin,
+      destination,
+      departDate: p.startDate,
+      returnDate: isRoundTrip ? p.endDate : null,
+      adults,
+      children: childrenCount,
+      marker: TRAVELPAYOUTS_MARKER,
+    });
+    ret = isRoundTrip
+      ? buildAviasalesDeeplink({
+          origin: destination,
+          destination: origin,
+          departDate: p.endDate,
+          returnDate: null,
+          adults,
+          children: childrenCount,
+          marker: TRAVELPAYOUTS_MARKER,
+        })
+      : null;
+  }
+
   return {
     origin_iata: origin,
     destination_iata: destination,
