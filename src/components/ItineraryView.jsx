@@ -399,6 +399,7 @@ function Planning({
   canEditActivities,
   onUpdateItinerary,
   onSuggestMomentAlternatives,
+  onImportHotelFromImage,
 }) {
   // Tous les jours fermés par défaut : on voit la liste d'un coup d'œil
   // et on déplie au besoin.
