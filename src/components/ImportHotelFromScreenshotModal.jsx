@@ -40,6 +40,32 @@ export default function ImportHotelFromScreenshotModal({
     }
   }, [open]);
 
+  // Permet de coller directement une capture du presse-papiers (Ctrl+V /
+  // Cmd+V). Capture la capture macOS (Cmd+Shift+5 → Ctrl, ou simplement
+  // l'option "copier dans le presse-papiers") sans avoir à enregistrer
+  // un fichier d'abord. Actif uniquement quand la modale est ouverte ET
+  // qu'on est encore en phase upload (sinon on bloquerait des paste de
+  // texte légitimes dans les champs d'édition de l'aperçu).
+  useEffect(() => {
+    if (!open || phase !== 'upload') return;
+    function onPaste(e) {
+      const items = e.clipboardData?.items;
+      if (!items || items.length === 0) return;
+      for (const item of items) {
+        if (item.kind === 'file' && item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) {
+            e.preventDefault();
+            handleFile(file);
+            return;
+          }
+        }
+      }
+    }
+    document.addEventListener('paste', onPaste);
+    return () => document.removeEventListener('paste', onPaste);
+  }, [open, phase]);
+
   if (!open) return null;
 
   async function handleFile(file) {
@@ -167,7 +193,14 @@ export default function ImportHotelFromScreenshotModal({
             >
               <div className="text-4xl mb-2">📸</div>
               <p className="text-sm font-medium text-slate-800">
-                Glisse ta capture d'écran ici
+                Glisse ta capture, ou colle-la avec{' '}
+                <kbd className="rounded border border-slate-300 bg-white px-1.5 py-0.5 font-mono text-[11px] text-slate-700">
+                  Ctrl
+                </kbd>
+                <span className="mx-0.5 text-slate-400">+</span>
+                <kbd className="rounded border border-slate-300 bg-white px-1.5 py-0.5 font-mono text-[11px] text-slate-700">
+                  V
+                </kbd>
               </p>
               <p className="text-xs text-slate-500 mt-1">
                 ou clique pour choisir un fichier (PNG, JPG, WebP — max 8 Mo)
