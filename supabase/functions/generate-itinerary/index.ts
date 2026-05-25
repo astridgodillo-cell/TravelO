@@ -1024,7 +1024,16 @@ function buildRegenerateActivityPrompt(
   const activity = day.activities?.[activityIndex];
   if (!activity) throw new Error(`Activité ${activityIndex} introuvable`);
 
-  return `Tu vas REMPLACER une seule activité d'un itinéraire existant, en tenant compte d'une consigne utilisateur.
+  // Moments actuels (titres + descriptions) — pour que l'IA puisse les
+  // mettre à jour si la nouvelle activité change la cohérence narrative.
+  const momentsSnapshot = {
+    morning: day.morning || null,
+    noon: day.noon || null,
+    afternoon: day.afternoon || null,
+    evening: day.evening || null,
+  };
+
+  return `Tu vas REMPLACER une seule activité d'un itinéraire existant, en tenant compte d'une consigne utilisateur. Tu vas AUSSI mettre à jour les moments du jour qui mentionnaient l'ancienne activité pour qu'ils correspondent à la nouvelle.
 
 Contexte du voyage :
 ${JSON.stringify(itinerary.summary, null, 2)}
@@ -1035,30 +1044,47 @@ Météo du jour : ${day.weather?.temperature_c || '?'}°C ${day.weather?.emoji |
 Activité actuelle à remplacer :
 ${JSON.stringify(activity, null, 2)}
 
+Moments actuels de la journée (matin / midi / après-midi / soir) :
+${JSON.stringify(momentsSnapshot, null, 2)}
+
 Autres activités du jour (à éviter de dupliquer) :
 ${(day.activities || [])
   .filter((_: any, i: number) => i !== activityIndex)
   .map((a: any) => `  - ${a.title}`)
   .join('\n') || '  (aucune)'}
 
-CONSIGNE :
+CONSIGNE UTILISATEUR :
 """
 ${instructions}
 """
 
-Renvoie UNIQUEMENT le JSON d'UNE activité selon ce schéma EXACT (pas d'enveloppe, pas de tableau) :
+Renvoie UNIQUEMENT du JSON valide (rien autour) selon ce schéma :
 
 {
-  "title": string,
-  "schedule": string,
-  "duration": string,
-  "description": string,
-  "immersive_description": string,
-  "price_per_person_eur": number,
-  "family_total_eur": number
+  "activity": {
+    "title": string,
+    "schedule": string,
+    "duration": string,
+    "description": string,
+    "immersive_description": string,
+    "price_per_person_eur": number,
+    "family_total_eur": number
+  },
+  "moments_update": {
+    "morning":   { "title": string, "description": string } | null,
+    "noon":      { "title": string, "description": string } | null,
+    "afternoon": { "title": string, "description": string } | null,
+    "evening":   { "title": string, "description": string } | null
+  }
 }
 
-Contraintes :
+INSTRUCTIONS pour "moments_update" — TRÈS IMPORTANT :
+- Pour CHAQUE moment (matin/midi/après-midi/soir) qui mentionne explicitement l'ancienne activité ("${activity.title}") dans son titre ou sa description, fournis une VERSION MISE À JOUR qui mentionne désormais la NOUVELLE activité et reste cohérente avec le reste de la journée.
+- Pour les moments NON impactés (qui ne parlaient pas de l'ancienne activité), mets null — on conservera l'ancienne version intacte.
+- Le moment qui correspond au CRÉNEAU HORAIRE de la nouvelle activité (selon "schedule") DOIT obligatoirement être mis à jour pour cohérence.
+- Style des moments : titre concis (8-15 mots), description immersive (3-5 phrases) — même registre que dans la journée d'origine.
+
+Contraintes activité :
 - Cohérence avec le lieu du jour (${day.location}) et la saison.
 - Pas de doublon avec les autres activités du jour.
 - Prix réalistes en euros.`;
@@ -3674,9 +3700,19 @@ Si tu ne reconnais PAS un hôtel dans l'image (capture floue, page d'erreur, pho
         instructions
       );
       // Expansion backend (Gemini ou Haiku) — modification ciblée, pas besoin de Sonnet
-      const { text, usage, modelUsed } = await callExpansion(prompt, 2000);
-      const activity = await parseOrRepair(text, callExpansionSafe);
-      return jsonResponse({ activity, usage, model: modelUsed });
+      // Tokens augmentés (2500) pour pouvoir aussi régénérer les moments impactés.
+      const { text, usage, modelUsed } = await callExpansion(prompt, 2500);
+      const parsed = await parseOrRepair(text, callExpansionSafe);
+      // Le schéma renvoie maintenant { activity, moments_update }. Robustesse :
+      // si l'IA renvoie directement l'activité (cas legacy), on l'enveloppe.
+      const activity = parsed?.activity || parsed;
+      const momentsUpdate = parsed?.moments_update || null;
+      return jsonResponse({
+        activity,
+        moments_update: momentsUpdate,
+        usage,
+        model: modelUsed,
+      });
     }
 
     if (mode === 'replan-from-day') {

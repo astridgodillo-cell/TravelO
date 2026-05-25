@@ -491,12 +491,29 @@ export async function regenerateActivity(
     throw new Error('Réponse vide pour l\'activité.');
   }
   const metadata = addUsageToMeta(itinerary.metadata, data.model, data.usage);
+  // moments_update : { morning, noon, afternoon, evening } — chaque clé peut
+  // être null (moment non impacté) ou {title, description} (réécrit pour
+  // refléter la nouvelle activité). Sans ça, on aurait un programme qui
+  // mentionne encore l'ancienne activité ("Chutes Montmorency") alors que
+  // l'activité réelle est devenue autre chose ("Parc Aquarium du Québec").
+  const momentsUpdate = data.moments_update || {};
   const newDays = itinerary.days.map((d, di) => {
     if (di !== dayIndex) return d;
     const newActivities = d.activities.map((a, ai) =>
       ai === activityIndex ? data.activity : a
     );
-    return { ...d, activities: newActivities };
+    const updatedDay = { ...d, activities: newActivities };
+    // Applique les mises à jour de moments si l'IA en a fournies
+    for (const key of ['morning', 'noon', 'afternoon', 'evening']) {
+      const upd = momentsUpdate[key];
+      if (upd && (upd.title || upd.description)) {
+        updatedDay[key] = {
+          ...(updatedDay[key] || {}),
+          ...upd,
+        };
+      }
+    }
+    return updatedDay;
   });
   // Recalcul du jour + budget global
   const budget = computeBudget(newDays, itinerary.summary);
