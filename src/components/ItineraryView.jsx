@@ -6,11 +6,7 @@ import {
   updateFlightField,
   updateActivityPricePerPerson,
   updateAccommodationPrice,
-  updateAccommodationName,
   updateMealsBudget,
-  updateMomentTitle,
-  updateMomentDescription,
-  replaceMoment,
 } from '../lib/itineraryEdits';
 import { useDayLayout } from '../hooks/useDayLayout';
 import EditableValue from './EditableValue';
@@ -947,20 +943,7 @@ function LodgingCard({
         )}
       </div>
       <div className="font-medium text-slate-900">
-        {canEdit ? (
-          <EditableValue
-            value={day.accommodation.name}
-            type="text"
-            label="Cliquer pour saisir le vrai nom d'hôtel (celui que vous avez réservé)"
-            onSave={(newName) =>
-              onUpdateItinerary((it) =>
-                updateAccommodationName(it, dayIndex, newName)
-              )
-            }
-          />
-        ) : (
-          day.accommodation.name
-        )}
+        {day.accommodation.name}
         <HotelRating
           hotelName={day.accommodation.name}
           location={day.location}
@@ -1908,38 +1891,40 @@ function Moment({
   dayIndex,
   momentKey,
   dayLocation,
-  onUpdateItinerary,
   onSuggestMomentAlternatives,
 }) {
   if (!m) return null;
-  const canEdit =
-    typeof onUpdateItinerary === 'function' &&
-    typeof dayIndex === 'number' &&
-    !!momentKey;
   const canSuggest =
     typeof onSuggestMomentAlternatives === 'function' &&
     typeof dayIndex === 'number' &&
     !!momentKey;
   const userEdited = !!m._user_edited;
+  const hasDetail = !!m.description || canSuggest;
 
-  function saveTitle(v) {
-    return onUpdateItinerary((it) =>
-      updateMomentTitle(it, dayIndex, momentKey, v)
+  // Si aucune description et pas de bouton "Proposer d'autres options", on
+  // garde l'affichage plat (pas de dépliage inutile).
+  if (!hasDetail) {
+    return (
+      <div className="rounded-lg border border-slate-100 p-3 bg-white">
+        <div className="flex items-center gap-2">
+          <span className="text-xs uppercase tracking-wide text-brand-700 font-semibold">
+            {label}
+          </span>
+          {userEdited && (
+            <span className="text-[10px] text-emerald-700 font-medium">
+              ✓ corrigé
+            </span>
+          )}
+        </div>
+        <div className="text-slate-800 font-medium mt-1">
+          {m.title || '(à compléter)'}
+        </div>
+      </div>
     );
   }
-  function saveDescription(v) {
-    return onUpdateItinerary((it) =>
-      updateMomentDescription(it, dayIndex, momentKey, v)
-    );
-  }
 
-  // Toujours rendre le bloc dépliable (même sans description) pour donner
-  // accès aux actions d'édition.
   return (
-    <details
-      className="group rounded-lg border border-slate-100 bg-white open:bg-slate-50/50 transition-colors print:open"
-      open={userEdited && !m.description}
-    >
+    <details className="group rounded-lg border border-slate-100 bg-white open:bg-slate-50/50 transition-colors print:open">
       <summary className="cursor-pointer list-none p-3 flex items-start justify-between gap-2 hover:bg-slate-50 rounded-lg select-none">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -1947,27 +1932,13 @@ function Moment({
               {label}
             </span>
             {userEdited && (
-              <span
-                className="text-[10px] text-emerald-700 font-medium"
-                title="Moment personnalisé par vous"
-              >
+              <span className="text-[10px] text-emerald-700 font-medium">
                 ✓ corrigé
               </span>
             )}
           </div>
           <div className="text-slate-800 font-medium mt-1">
-            {canEdit ? (
-              <EditableValue
-                value={m.title || ''}
-                type="text"
-                placeholder="Ex: Repos à l'hôtel, balade tranquille…"
-                label="Cliquez pour modifier le titre de ce moment"
-                allowEmpty
-                onSave={saveTitle}
-              />
-            ) : (
-              m.title || '(à compléter)'
-            )}
+            {m.title || '(à compléter)'}
           </div>
         </div>
         <svg
@@ -1985,18 +1956,7 @@ function Moment({
         </svg>
       </summary>
       <div className="px-3 pb-3 text-sm text-slate-600 leading-relaxed space-y-2">
-        {canEdit ? (
-          <EditableValue
-            value={m.description || ''}
-            type="text"
-            placeholder="Détails du moment — ex: 'Détente piscine, sieste, puis dîner room service'"
-            label="Cliquez pour modifier la description"
-            allowEmpty
-            onSave={saveDescription}
-          />
-        ) : (
-          m.description && <p>{m.description}</p>
-        )}
+        {m.description && <p>{m.description}</p>}
         {canSuggest && (
           <div className="pt-2 border-t border-slate-100 flex flex-wrap gap-2 print:hidden">
             <button
