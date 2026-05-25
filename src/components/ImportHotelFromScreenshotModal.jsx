@@ -15,7 +15,44 @@ import { extractHotelFromImage } from '../lib/ai';
  *   context            : { dayIndex, dayLocation, currentHotelName }
  *   onConfirm(hotel)   : async (hotel) => void   — applique le remplacement
  */
-const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // 8 Mo
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // 8 Mo (limite à l'upload, avant compression)
+
+/**
+ * Compresse une data URL d'image vers du JPEG redimensionné (max 1200×900 par
+ * défaut). Garantit que la photo stockée dans l'itinéraire reste légère
+ * (~300-700 Ko au lieu de plusieurs Mo) — important parce que tout est
+ * stocké dans un seul JSONB côté Supabase et qu'une row a une taille limite.
+ *
+ * Quality 0.85 : reste très lisible pour l'OCR du LLM ET visuellement.
+ */
+async function compressImageDataUrl(dataUrl, { maxDim = 1200, quality = 0.85 } = {}) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          const ratio = Math.min(maxDim / width, maxDim / height);
+          width = Math.round(width * ratio);
+          height = Math.round(height * ratio);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        // Fond blanc pour les PNG transparents qu'on convertit en JPEG
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      } catch (e) {
+        reject(e);
+      }
+    };
+    img.onerror = () => reject(new Error('Impossible de charger cette image.'));
+    img.src = dataUrl;
+  });
+}
 
 export default function ImportHotelFromScreenshotModal({
   open,
@@ -83,11 +120,14 @@ export default function ImportHotelFromScreenshotModal({
     }
     const reader = new FileReader();
     reader.onload = async () => {
-      const url = reader.result;
-      setDataUrl(url);
+      const rawUrl = reader.result;
       setPhase('extracting');
       try {
-        const hotel = await extractHotelFromImage(url, {
+        // Compresse AVANT l'upload : on envoie moins de données au LLM
+        // ET on stocke moins dans la base si l'utilisateur valide.
+        const compressedUrl = await compressImageDataUrl(rawUrl);
+        setDataUrl(compressedUrl);
+        const hotel = await extractHotelFromImage(compressedUrl, {
           day_location: context?.dayLocation,
           current_hotel_name: context?.currentHotelName,
         });
@@ -110,6 +150,11 @@ export default function ImportHotelFromScreenshotModal({
           coordinates_hint: hotel.address_hint || '',
           booking_url: hotel.booking_url || null,
           extraction_note: hotel.extraction_note || '',
+          // On stocke la capture COMPRESSÉE comme photo de l'hôtel. Pour les
+          // utilisateurs qui voudraient une photo "propre" (sans UI Booking),
+          // ils pourront recadrer le screenshot avant import ou utiliser
+          // notre futur fetch Google Places.
+          user_photo: compressedUrl,
         });
         setPhase('preview');
       } catch (e) {

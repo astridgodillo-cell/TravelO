@@ -933,6 +933,7 @@ function LodgingCard({
   const s = CATEGORY_STYLES.lodging;
   const canEdit = typeof onUpdateItinerary === 'function';
   const userEdited = !!day.accommodation._user_edited;
+  const [lightbox, setLightbox] = useState(null); // dataUrl ouverte ou null
   return (
     <div className={`rounded-xl border border-slate-200 border-l-4 ${s.border} ${s.tint} p-3 text-sm`}>
       <div className="flex items-center gap-2 mb-1.5">
@@ -951,6 +952,21 @@ function LodgingCard({
           </span>
         )}
       </div>
+      {day.accommodation.user_photo && (
+        <button
+          type="button"
+          onClick={() => setLightbox(day.accommodation.user_photo)}
+          className="block w-full mb-2 overflow-hidden rounded-lg border border-slate-200 bg-white print:break-inside-avoid"
+          title="Cliquer pour agrandir"
+        >
+          <img
+            src={day.accommodation.user_photo}
+            alt={`Capture de ${day.accommodation.name}`}
+            className="w-full max-h-48 object-cover"
+            loading="lazy"
+          />
+        </button>
+      )}
       <div className="font-medium text-slate-900">
         {day.accommodation.name}
         <HotelRating
@@ -1124,12 +1140,37 @@ function LodgingCard({
                         )
                       : null
                   }
+                  onOpenPhoto={(url) => setLightbox(url)}
                   canEdit={canEdit}
                 />
               ))}
             </ul>
           </div>
         )}
+
+      {/* Lightbox : aperçu plein écran d'une capture cliquée */}
+      {lightbox && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 print:hidden"
+          onClick={() => setLightbox(null)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <img
+            src={lightbox}
+            alt="Capture en grand format"
+            className="max-h-[92vh] max-w-[92vw] object-contain rounded-lg shadow-2xl"
+          />
+          <button
+            type="button"
+            onClick={() => setLightbox(null)}
+            className="absolute top-4 right-4 inline-flex items-center justify-center h-10 w-10 rounded-full bg-white/95 text-slate-800 hover:bg-white shadow-lg"
+            aria-label="Fermer l'aperçu"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {typeof onImportHotelFromImage === 'function' && (
         <div className="print:hidden mt-3 pt-2 border-t border-slate-100">
@@ -1153,53 +1194,77 @@ function LodgingCard({
   );
 }
 
-function AlternativeAccommodationRow({ alt, rank, onPromote, onRemove, canEdit }) {
+function AlternativeAccommodationRow({
+  alt,
+  rank,
+  onPromote,
+  onRemove,
+  onOpenPhoto,
+  canEdit,
+}) {
   return (
     <li className="rounded-lg border border-slate-200 bg-white p-2.5 text-xs">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="inline-flex items-center gap-1.5 text-[10px] text-slate-500 uppercase tracking-wide font-semibold mb-0.5">
-            <span className="rounded bg-slate-100 px-1.5 py-0.5">Priorité {rank}</span>
-            {alt.type && <span className="text-slate-400 normal-case">{alt.type}</span>}
+      <div className="flex items-start gap-2.5">
+        {alt.user_photo && (
+          <button
+            type="button"
+            onClick={() => onOpenPhoto?.(alt.user_photo)}
+            className="shrink-0 h-16 w-20 sm:h-20 sm:w-24 rounded-md overflow-hidden border border-slate-200 bg-slate-100"
+            title="Cliquer pour agrandir"
+          >
+            <img
+              src={alt.user_photo}
+              alt={`Capture de ${alt.name}`}
+              className="h-full w-full object-cover"
+              loading="lazy"
+            />
+          </button>
+        )}
+        <div className="min-w-0 flex-1 flex flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="inline-flex items-center gap-1.5 text-[10px] text-slate-500 uppercase tracking-wide font-semibold mb-0.5">
+              <span className="rounded bg-slate-100 px-1.5 py-0.5">Priorité {rank}</span>
+              {alt.type && <span className="text-slate-400 normal-case">{alt.type}</span>}
+            </div>
+            <div className="font-medium text-slate-900">{alt.name}</div>
+            {(alt.coordinates_hint || alt.address_hint) && (
+              <div className="text-slate-500 italic mt-0.5">
+                📍 {alt.coordinates_hint || alt.address_hint}
+              </div>
+            )}
+            <div className="text-slate-600 mt-0.5">
+              {alt.price_eur > 0
+                ? `≈ ${alt.price_eur.toLocaleString('fr-FR')} € / nuit`
+                : 'Gratuit'}
+              {alt.rating && (
+                <span className="text-slate-400 ml-2">
+                  · {alt.rating}/10
+                  {alt.rating_count && ` (${alt.rating_count} avis)`}
+                </span>
+              )}
+            </div>
           </div>
-          <div className="font-medium text-slate-900">{alt.name}</div>
-          {(alt.coordinates_hint || alt.address_hint) && (
-            <div className="text-slate-500 italic mt-0.5">
-              📍 {alt.coordinates_hint || alt.address_hint}
+          {canEdit && (
+            <div className="flex flex-col sm:flex-row gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={onPromote}
+                className="inline-flex items-center gap-1 rounded-md bg-brand-100 text-brand-800 hover:bg-brand-200 transition-colors px-2 py-1 text-[11px] font-medium"
+                title="Mettre cet hôtel en priorité 1 (utilisé dans le budget)"
+              >
+                ★ Priorité 1
+              </button>
+              <button
+                type="button"
+                onClick={onRemove}
+                className="inline-flex items-center gap-1 rounded-md bg-red-50 text-red-700 hover:bg-red-100 transition-colors px-2 py-1 text-[11px] font-medium"
+                title="Supprimer cette option"
+              >
+                🗑️
+              </button>
             </div>
           )}
-          <div className="text-slate-600 mt-0.5">
-            {alt.price_eur > 0
-              ? `≈ ${alt.price_eur.toLocaleString('fr-FR')} € / nuit`
-              : 'Gratuit'}
-            {alt.rating && (
-              <span className="text-slate-400 ml-2">
-                · {alt.rating}/10
-                {alt.rating_count && ` (${alt.rating_count} avis)`}
-              </span>
-            )}
-          </div>
         </div>
-        {canEdit && (
-          <div className="flex flex-col sm:flex-row gap-1 shrink-0">
-            <button
-              type="button"
-              onClick={onPromote}
-              className="inline-flex items-center gap-1 rounded-md bg-brand-100 text-brand-800 hover:bg-brand-200 transition-colors px-2 py-1 text-[11px] font-medium"
-              title="Mettre cet hôtel en priorité 1 (utilisé dans le budget)"
-            >
-              ★ Priorité 1
-            </button>
-            <button
-              type="button"
-              onClick={onRemove}
-              className="inline-flex items-center gap-1 rounded-md bg-red-50 text-red-700 hover:bg-red-100 transition-colors px-2 py-1 text-[11px] font-medium"
-              title="Supprimer cette option"
-            >
-              🗑️
-            </button>
-          </div>
-        )}
       </div>
     </li>
   );
