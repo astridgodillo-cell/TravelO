@@ -47,6 +47,11 @@ const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') || '';
 const GEMINI_MODEL = Deno.env.get('GEMINI_MODEL') || 'gemini-2.5-flash';
 const DEEPSEEK_API_KEY = Deno.env.get('DEEPSEEK_API_KEY') || '';
 const DEEPSEEK_MODEL = Deno.env.get('DEEPSEEK_MODEL') || 'deepseek-chat';
+// Modèle dédié pour la vision (extraction depuis image). DeepSeek V4 Flash
+// supporte le multimodal via le même endpoint api.deepseek.com depuis avril
+// 2026 — bien moins cher et plus rapide que deepseek-v4-pro pour de l'OCR.
+const DEEPSEEK_VISION_MODEL =
+  Deno.env.get('DEEPSEEK_VISION_MODEL') || 'deepseek-v4-flash';
 // Fallback statique si la table app_config est inaccessible
 const DEFAULT_BACKEND = (
   Deno.env.get('BACKEND') ||
@@ -1776,12 +1781,77 @@ async function callProvider(
 }
 
 /**
+ * Appel DeepSeek V4 Flash en mode vision (format OpenAI-compatible).
+ * DeepSeek a ajouté le multimodal à son API officielle (api.deepseek.com)
+ * en avril 2026 avec les modèles deepseek-v4-flash (rapide, peu cher) et
+ * deepseek-v4-pro (plus lourd). On utilise Flash pour l'extraction OCR :
+ * suffisant pour lire un site web standard, ~10× moins cher que Pro.
+ */
+async function callDeepseekVision(
+  prompt: string,
+  imageBase64: string,
+  mimeType: string,
+  maxTokens = 1500
+): Promise<LLMResult> {
+  const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${DEEPSEEK_API_KEY}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: DEEPSEEK_VISION_MODEL,
+      max_tokens: maxTokens,
+      temperature: 0.2,
+      response_format: { type: 'json_object' },
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'image_url',
+              image_url: { url: `data:${mimeType};base64,${imageBase64}` },
+            },
+            { type: 'text', text: prompt },
+          ],
+        },
+      ],
+    }),
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`DeepSeek vision ${res.status} : ${txt.substring(0, 300)}`);
+  }
+  const data = await res.json();
+  const text = data?.choices?.[0]?.message?.content;
+  if (!text) throw new Error('Réponse DeepSeek vision vide.');
+  return {
+    text,
+    usage: {
+      input_tokens: data.usage?.prompt_tokens || 0,
+      output_tokens: data.usage?.completion_tokens || 0,
+      cache_read_input_tokens:
+        data.usage?.prompt_cache_hit_tokens ||
+        data.usage?.cache_read_input_tokens ||
+        0,
+    },
+    modelUsed: DEEPSEEK_VISION_MODEL,
+  };
+}
+
+/**
  * Appel LLM avec une IMAGE (vision). Format multimodal. Utilisé pour
  * extraire des informations structurées depuis une capture d'écran
  * (ex : extraire les infos d'un hôtel depuis une capture Booking).
  *
- * Stratégie : Gemini 2.5 Flash en priorité (vision excellente + très bon
- * marché), fallback Claude Haiku 4.5 (aussi multimodal).
+ * Ordre de priorité :
+ *   1. DeepSeek V4 Flash — le moins cher, parfait pour OCR / fiches
+ *      structurées comme Booking. Pré-requis : DEEPSEEK_API_KEY ET un
+ *      modèle multimodal (deepseek-v4-flash, configurable via env var
+ *      DEEPSEEK_VISION_MODEL).
+ *   2. Gemini 2.5 Flash — fallback si DeepSeek pas dispo ou erreur.
+ *   3. Claude Haiku 4.5 — dernier recours, toujours présent puisque
+ *      ANTHROPIC_API_KEY est obligatoire pour TravelO.
  */
 async function callVisionLLM(
   prompt: string,
@@ -1789,6 +1859,16 @@ async function callVisionLLM(
   mimeType: string,
   maxTokens = 1500
 ): Promise<LLMResult> {
+  // 1) DeepSeek V4 Flash (priorité — objectif "tout chez DeepSeek")
+  if (DEEPSEEK_API_KEY) {
+    try {
+      return await callDeepseekVision(prompt, imageBase64, mimeType, maxTokens);
+    } catch (e) {
+      console.warn('[vision] DeepSeek error:', (e as Error).message);
+      // On continue vers les fallbacks plutôt que de planter
+    }
+  }
+  // 2) Gemini
   if (GEMINI_API_KEY) {
     try {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
