@@ -1173,10 +1173,10 @@ function ActivityCard({
   const userEdited = !!a._user_edited;
   return (
     <div className={`rounded-lg border border-slate-200 border-l-4 ${s.border} ${s.tint} p-3 text-sm`}>
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="flex-1 min-w-0">
-          <div className="font-medium text-slate-900 inline-flex items-center gap-2">
-            <span>{a.title}</span>
+      <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-start sm:justify-between gap-y-2 sm:gap-2">
+        <div className="sm:flex-1 sm:min-w-0">
+          <div className="font-medium text-slate-900 flex flex-wrap items-center gap-2">
+            <span className="break-words">{a.title}</span>
             {userEdited && (
               <span
                 className="text-[10px] text-emerald-700 font-medium"
@@ -1236,7 +1236,7 @@ function ActivityCard({
           </div>
         </div>
         <div
-          className="text-right text-xs shrink-0"
+          className="text-left sm:text-right text-xs sm:shrink-0 border-t sm:border-t-0 border-slate-100 pt-2 sm:pt-0 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 sm:block"
           title={
             a.price_per_person_eur === 0
               ? 'Activité officielle gratuite. GetYourGuide propose des visites guidées payantes en supplément.'
@@ -1738,69 +1738,79 @@ function TripRow({ trip, dayDate, dayIndex, tripIndex, onUpdateItinerary }) {
         </div>
       </div>
       {isFlight && (
-        <div className="mt-2 text-xs text-slate-600 border-t border-slate-100 pt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span>✈️</span>
-          <span className="text-slate-500">Compagnie :</span>
-          {canEdit ? (
-            <EditableValue
-              value={flight.airline && flight.airline !== 'N/A' ? flight.airline : ''}
-              type="text"
-              placeholder="Ex: AF, Iberia…"
-              label="Code IATA ou nom de compagnie (cliquer pour modifier)"
-              allowEmpty
-              onSave={(v) => commitFlightField('airline', v)}
-            />
-          ) : (
-            <span>{flight.airline || '—'}</span>
-          )}
-          <span className="text-slate-300">·</span>
-          <span className="text-slate-500">N° vol :</span>
-          {canEdit ? (
-            <EditableValue
-              value={flight.flight_number || ''}
-              type="text"
-              placeholder="Ex: 1234"
-              label="Numéro de vol (cliquer pour modifier)"
-              allowEmpty
-              onSave={(v) => commitFlightField('flight_number', v)}
-            />
-          ) : (
-            <span>{flight.flight_number || '—'}</span>
-          )}
-          <span className="text-slate-300">·</span>
-          <span className="text-slate-500">Départ :</span>
-          {canEdit ? (
-            <EditableValue
-              value={flightTime || ''}
-              type="time"
-              placeholder="HH:MM"
-              label="Heure de départ — heure locale du lieu de départ"
-              allowEmpty
-              onSave={(v) => commitFlightField('departure_at', v)}
-            />
-          ) : (
-            <span>{flightTime || '—'}</span>
-          )}
-          <span className="text-slate-300">·</span>
-          <span className="text-slate-500">Arrivée :</span>
-          {canEdit ? (
-            <EditableValue
-              value={arrivalTime || ''}
-              type="time"
-              placeholder="HH:MM"
-              label="Heure d'arrivée — heure locale du lieu d'arrivée"
-              allowEmpty
-              onSave={(v) => commitFlightField('arrival_at', v)}
-            />
-          ) : (
-            <span>{arrivalTime || '—'}</span>
-          )}
-          <span
-            className="text-[10px] text-slate-400 italic"
-            title="Toutes les heures sont en heure locale de l'aéroport correspondant."
-          >
-            (heure locale)
-          </span>
+        <div className="mt-2 text-xs text-slate-600 border-t border-slate-100 pt-2">
+          <div className="flex items-center gap-1.5 text-slate-700 font-medium mb-1.5">
+            <span>✈️</span>
+            <span>Détails du vol</span>
+            <span
+              className="text-[10px] text-slate-400 italic font-normal ml-auto"
+              title="Toutes les heures sont en heure locale de l'aéroport correspondant."
+            >
+              (heure locale)
+            </span>
+          </div>
+          <div className="grid grid-cols-[auto_1fr] sm:grid-cols-[auto_1fr_auto_1fr] gap-x-3 gap-y-1 items-baseline">
+            <span className="text-slate-500">Compagnie :</span>
+            <span>
+              {canEdit ? (
+                <EditableValue
+                  value={flight.airline && flight.airline !== 'N/A' ? flight.airline : ''}
+                  type="text"
+                  placeholder="Ex: AF, Iberia…"
+                  label="Code IATA ou nom de compagnie (cliquer pour modifier)"
+                  allowEmpty
+                  onSave={(v) => commitFlightField('airline', v)}
+                />
+              ) : (
+                flight.airline || '—'
+              )}
+            </span>
+            <span className="text-slate-500">N° vol :</span>
+            <span>
+              {canEdit ? (
+                <EditableValue
+                  value={flight.flight_number || ''}
+                  type="text"
+                  placeholder="Ex: 1234"
+                  label="Numéro de vol (cliquer pour modifier)"
+                  allowEmpty
+                  onSave={(v) => commitFlightField('flight_number', v)}
+                />
+              ) : (
+                flight.flight_number || '—'
+              )}
+            </span>
+            <span className="text-slate-500">Départ :</span>
+            <span>
+              {canEdit ? (
+                <EditableValue
+                  value={flightTime || ''}
+                  type="time"
+                  placeholder="HH:MM"
+                  label="Heure de départ — heure locale du lieu de départ"
+                  allowEmpty
+                  onSave={(v) => commitFlightField('departure_at', v)}
+                />
+              ) : (
+                flightTime || '—'
+              )}
+            </span>
+            <span className="text-slate-500">Arrivée :</span>
+            <span>
+              {canEdit ? (
+                <EditableValue
+                  value={arrivalTime || ''}
+                  type="time"
+                  placeholder="HH:MM"
+                  label="Heure d'arrivée — heure locale du lieu d'arrivée"
+                  allowEmpty
+                  onSave={(v) => commitFlightField('arrival_at', v)}
+                />
+              ) : (
+                arrivalTime || '—'
+              )}
+            </span>
+          </div>
         </div>
       )}
       {isAiEstimatedFlight && (

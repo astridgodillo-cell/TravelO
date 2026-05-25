@@ -113,8 +113,8 @@ export default function EditableValue({
             }
           }}
           onBlur={commit}
-          className={`min-w-[3rem] max-w-[14rem] rounded border border-brand-400 bg-white px-1.5 py-0.5 outline-none focus:ring-2 focus:ring-brand-300 ${inputClassName}`}
-          style={{ width: `${Math.max(3, String(draft).length + 1)}ch` }}
+          className={`min-w-[3rem] max-w-full sm:max-w-[14rem] rounded border border-brand-400 bg-white px-1.5 py-1 sm:py-0.5 outline-none focus:ring-2 focus:ring-brand-300 text-sm ${inputClassName}`}
+          style={{ width: `${Math.min(Math.max(4, String(draft).length + 2), 18)}ch` }}
         />
         {suffix && <span className="text-slate-500">{suffix}</span>}
         {saving && (
@@ -147,7 +147,7 @@ export default function EditableValue({
         {suffix && <span className="ml-0.5">{suffix}</span>}
       </span>
       <span
-        className="opacity-0 group-hover:opacity-60 text-[10px] transition-opacity print:hidden"
+        className="opacity-40 sm:opacity-0 sm:group-hover:opacity-60 text-[10px] transition-opacity print:hidden"
         aria-hidden="true"
       >
         ✏️
