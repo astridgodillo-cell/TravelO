@@ -16,6 +16,7 @@ import {
   COOKING_OPTIONS,
   suggestStayPrefs,
 } from '../lib/preferenceOptions';
+import { CAR_RENTAL_POSSIBLE_TRIP_TYPES } from '../lib/preferenceOptions';
 import { DEFAULTS, computeTotalDays } from './PreferencesForm';
 import Icon from './Icon';
 import { getAppConfig } from '../lib/supabase';
@@ -403,6 +404,7 @@ function StepTravelers({ values, update }) {
 }
 
 function StepTripType({ values, update }) {
+  const showLicenseQuestion = CAR_RENTAL_POSSIBLE_TRIP_TYPES.has(values.tripType);
   return (
     <div>
       <StepHeader
@@ -425,7 +427,7 @@ function StepTripType({ values, update }) {
               }`}
             >
               <span
-                className={`inline-grid place-items-center h-10 w-10 rounded-xl ${
+                className={`inline-grid place-items-center h-10 w-10 rounded-xl shrink-0 ${
                   active ? 'bg-brand-600 text-white' : 'bg-slate-900 text-white'
                 }`}
               >
@@ -442,6 +444,29 @@ function StepTripType({ values, update }) {
           );
         })}
       </div>
+
+      {showLicenseQuestion && (
+        <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <label className="flex items-start gap-3 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={values.hasDrivingLicense !== false}
+              onChange={(e) => update('hasDrivingLicense', e.target.checked)}
+              className="mt-0.5 h-5 w-5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+            />
+            <div className="text-sm">
+              <div className="font-medium text-slate-900">
+                J'ai (ou nous avons) le permis de conduire
+              </div>
+              <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">
+                Coché : l'IA pourra proposer une location de voiture comme
+                option de transport. Décoché : on se limitera aux transports
+                en commun, taxi, vélo, marche et excursions organisées.
+              </p>
+            </div>
+          </label>
+        </div>
+      )}
     </div>
   );
 }

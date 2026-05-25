@@ -8,6 +8,7 @@ export const TRIP_TYPES = [
   { id: 'roadtrip-van', label: 'Road trip van / camping-car', icon: 'van' },
   { id: 'avion-voiture', label: 'Avion + voiture de location', icon: 'plane-car' },
   { id: 'avion-citybreak', label: 'Avion + city break (à pied / TC)', icon: 'plane-walk' },
+  { id: 'avion-itinerant', label: 'Avion + itinérant (multi-modes sur place)', icon: 'plane' },
   { id: 'train-international', label: 'Train international', icon: 'train' },
   { id: 'circuit-train', label: 'Circuit train', icon: 'train-circle' },
   { id: 'velo', label: 'Vélo / cyclotourisme', icon: 'bike' },
@@ -24,6 +25,7 @@ export const MOTORIZED_TRIP_TYPES = new Set([
   'roadtrip-van',
   'roadtrip-camping-car',
   'avion-voiture',
+  'avion-itinerant',
 ]);
 
 export const ROAD_TRIP_TYPES = new Set([
@@ -39,8 +41,23 @@ export const ROAD_TRIP_TYPES = new Set([
 export const SCHEDULED_TRIP_TYPES = new Set([
   'avion-voiture',
   'avion-citybreak',
+  'avion-itinerant',
   'train-international',
   'croisiere',
+]);
+
+// Types où l'IA PEUT proposer une location de voiture (sous réserve que
+// l'utilisateur ait le permis de conduire). Si hasDrivingLicense est false,
+// on instruit l'IA de ne proposer QUE des modes alternatifs (TC, taxi,
+// vélo, marche, excursions organisées). Pour les autres types (croisière,
+// vélo, trek…) la voiture est intrinsèquement hors sujet.
+export const CAR_RENTAL_POSSIBLE_TRIP_TYPES = new Set([
+  'itinerant',
+  'roadtrip-voiture',
+  'roadtrip-van',
+  'roadtrip-camping-car',
+  'avion-voiture',
+  'avion-itinerant',
 ]);
 
 // Mapping pour normaliser l'id de trip type au cas où on lirait un

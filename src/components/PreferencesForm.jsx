@@ -39,6 +39,11 @@ export const DEFAULTS = {
     fuel: 'diesel',
     consumption: '',
   },
+  // Permis de conduire — si false, l'IA ne propose AUCUNE location voiture
+  // ni scooter, uniquement transports en commun, taxi, vélo, marche,
+  // excursions organisées. Coche par défaut car la majorité des adultes
+  // ont le permis ; on le décoche seulement si l'utilisateur le précise.
+  hasDrivingLicense: true,
   nightStayPreferences: ['Hôtel'],
   cooking: 'restaurants',
   needsServicePoints: false,

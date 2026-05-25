@@ -422,7 +422,11 @@ Horaires impératifs (contrainte FORTE — utilise ces valeurs pour caler J1 et 
   - Marge OBLIGATOIRE avant le départ : ${buffer}
   ⇒ Sur J1 : prévois récupération bagages + transfert depuis ${arrivalGw} (s'il diffère de la destination) + check-in / installation (1-2 h) avant toute activité. Si arrivée après 18h : check-in + dîner uniquement. Si vol >5 fuseaux : J1 reste très léger (décalage horaire).
   ⇒ Sur le dernier jour : termine toutes les activités avec la marge ci-dessus + transfert vers ${departureGw}. Si heure de départ tôt (avant 10h) : check-out + transfert uniquement. Programme les visites importantes la veille au soir.`;
-  } else if (p.tripType === 'avion-voiture' || p.tripType === 'avion-citybreak') {
+  } else if (
+    p.tripType === 'avion-voiture' ||
+    p.tripType === 'avion-citybreak' ||
+    p.tripType === 'avion-itinerant'
+  ) {
     // Voyage avion-* SANS horaires précis saisis : il faut éviter d'inventer
     // une heure d'arrivée précoce et de bâtir la journée dessus (cas typique
     // hallucination "atterrissage à 7h"). On force un programme léger et
@@ -448,6 +452,32 @@ L'utilisateur n'a PAS encore réservé son vol ou n'a pas saisi l'heure exacte d
 Les jours du MILIEU (J2 à J_avant-dernier) gardent leur programme habituel, RICHE et DÉTAILLÉ.`;
   }
 
+  // Bloc PERMIS DE CONDUIRE — n'apparaît que si l'utilisateur a explicitement
+  // dit qu'il n'a pas le permis (true par défaut, donc rien à dire si le
+  // groupe peut conduire).
+  const carRentalPossibleTypes = new Set([
+    'itinerant',
+    'roadtrip-voiture',
+    'roadtrip-van',
+    'roadtrip-camping-car',
+    'avion-voiture',
+    'avion-itinerant',
+  ]);
+  let licenseBlock = '';
+  if (p.hasDrivingLicense === false && carRentalPossibleTypes.has(p.tripType)) {
+    licenseBlock = `
+
+PERMIS DE CONDUIRE — RÈGLE STRICTE :
+L'utilisateur a précisé qu'il N'A PAS le permis de conduire. Cela signifie :
+  ❌ NE PROPOSE JAMAIS de location de voiture, de scooter ou de van.
+  ❌ NE PROPOSE PAS de trips de mode "Voiture", "Voiture de location", "Scooter", "Van" ou "Camping-car".
+  ❌ Aucun coût "fuel_cost_eur" ou "toll_cost_eur" (puisqu'aucun véhicule en autonomie).
+  ✅ Utilise UNIQUEMENT : transports en commun (bus, métro, train régional), taxi / VTC, train longue distance, ferry, vélo, marche, excursions organisées avec chauffeur, transferts privés.
+  ✅ Les "trips" entre villes doivent être en TRAIN, BUS ou TAXI (ou avion pour les longues distances).
+  ✅ Si la destination est mal desservie en TC, privilégie les excursions guidées organisées (avec chauffeur fourni).
+  ✅ Le budget transport peut être ajusté à la hausse (taxis, transferts privés sont plus chers qu'une location).`;
+  }
+
   return `Destination(s) : ${p.destinations}
 Période : du ${p.startDate} au ${p.endDate} (durée = ${expectedDays} jours inclusifs, à respecter EXACTEMENT — ne change AUCUNE date)
 Départ : ${p.departureLocation}
@@ -457,7 +487,7 @@ Arrivée finale : ${p.returnLocation || p.departureLocation}${
       : ' (aller-retour)'
   }
 Participants : ${p.adults} adulte(s), ${children}${travelersBlock}
-Type de voyage : ${p.tripType}${vehicleBlock}${scheduleBlock}
+Type de voyage : ${p.tripType}${vehicleBlock}${scheduleBlock}${licenseBlock}
 Centres d'intérêt : ${(p.interests || []).join(', ')}${specificActivities}
 Niveau de budget : ${p.budget}${practicalBlock}${offBlock}${constraintsBlock}${visitedBlock}${wishlistBlock}
 Étapes IMPÉRATIVES : ${p.mustInclude || '(aucune)'}
@@ -468,7 +498,11 @@ Niveau de budget : ${p.budget}${practicalBlock}${offBlock}${constraintsBlock}${v
 // tripType quand l'utilisateur n'a pas explicitement sélectionné dans le
 // formulaire. Utilisé uniquement pour calibrer la marge de départ.
 function inferTransport(tripType: string): string {
-  if (tripType === 'avion-voiture' || tripType === 'avion-citybreak') {
+  if (
+    tripType === 'avion-voiture' ||
+    tripType === 'avion-citybreak' ||
+    tripType === 'avion-itinerant'
+  ) {
     return 'avion-intl';
   }
   if (tripType === 'train-international') return 'train';
@@ -2101,7 +2135,11 @@ async function getApprovedUser(req: Request): Promise<
 // 2) puis ré-injectées physiquement dans l'itinéraire (trips J1 + J_final)
 //    après génération, pour garantir qu'elles apparaissent dans le budget.
 
-const AIR_TRIP_TYPES = new Set(['avion-voiture', 'avion-citybreak']);
+const AIR_TRIP_TYPES = new Set([
+  'avion-voiture',
+  'avion-citybreak',
+  'avion-itinerant',
+]);
 
 /**
  * Cherche-t-on un vol pour ce voyage ? On agrège plusieurs signaux pour
