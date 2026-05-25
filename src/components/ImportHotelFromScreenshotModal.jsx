@@ -130,14 +130,14 @@ export default function ImportHotelFromScreenshotModal({
     if (file) handleFile(file);
   }
 
-  async function applyReplace() {
+  async function applyAction(mode) {
     if (!extracted) return;
     setBusy(true);
     try {
-      await onConfirm(extracted);
+      await onConfirm(extracted, mode);
       onClose();
     } catch (e) {
-      setError(e?.message || "Le remplacement a échoué.");
+      setError(e?.message || "L'opération a échoué.");
     } finally {
       setBusy(false);
     }
@@ -357,14 +357,26 @@ export default function ImportHotelFromScreenshotModal({
             Annuler
           </button>
           {phase === 'preview' && (
-            <button
-              type="button"
-              onClick={applyReplace}
-              disabled={busy || !extracted?.name}
-              className="rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-4 py-2 text-sm font-semibold"
-            >
-              {busy ? 'Application…' : "✓ Remplacer l'hôtel"}
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => applyAction('add_alternative')}
+                disabled={busy || !extracted?.name}
+                className="rounded-lg bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-800 px-4 py-2 text-sm font-semibold"
+                title="Ajouter comme option supplémentaire sans changer l'hôtel principal"
+              >
+                ➕ Ajouter comme option
+              </button>
+              <button
+                type="button"
+                onClick={() => applyAction('replace')}
+                disabled={busy || !extracted?.name}
+                className="rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-4 py-2 text-sm font-semibold"
+                title="Remplacer l'hôtel actuel (priorité 1, utilisé dans le budget)"
+              >
+                {busy ? 'Application…' : "✓ Mettre en priorité 1"}
+              </button>
+            </>
           )}
         </footer>
       </div>

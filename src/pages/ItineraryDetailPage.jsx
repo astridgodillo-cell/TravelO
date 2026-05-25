@@ -8,7 +8,11 @@ import {
   removeActivity,
   suggestMomentAlternatives,
 } from '../lib/ai';
-import { replaceMoment, replaceAccommodation } from '../lib/itineraryEdits';
+import {
+  replaceMoment,
+  replaceAccommodation,
+  addAccommodationAlternative,
+} from '../lib/itineraryEdits';
 import { fetchSpecialties } from '../lib/photos';
 import ItineraryView from '../components/ItineraryView';
 import MomentAlternativesModal from '../components/MomentAlternativesModal';
@@ -228,12 +232,18 @@ export default function ItineraryDetailPage() {
     });
   }
 
-  async function handleApplyImportedHotel(hotel) {
+  async function handleApplyImportedHotel(hotel, mode = 'replace') {
     if (!trip || !importHotelState) return;
     const { dayIndex } = importHotelState;
-    await handleUpdateItinerary((it) =>
-      replaceAccommodation(it, dayIndex, hotel)
-    );
+    if (mode === 'add_alternative') {
+      await handleUpdateItinerary((it) =>
+        addAccommodationAlternative(it, dayIndex, hotel)
+      );
+    } else {
+      await handleUpdateItinerary((it) =>
+        replaceAccommodation(it, dayIndex, hotel)
+      );
+    }
   }
 
   if (loading) return <p className="text-slate-500">Chargement…</p>;

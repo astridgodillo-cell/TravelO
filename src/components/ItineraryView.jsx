@@ -7,6 +7,8 @@ import {
   updateActivityPricePerPerson,
   updateAccommodationPrice,
   updateMealsBudget,
+  promoteAccommodationAlternative,
+  removeAccommodationAlternative,
 } from '../lib/itineraryEdits';
 import { useDayLayout } from '../hooks/useDayLayout';
 import EditableValue from './EditableValue';
@@ -1090,21 +1092,116 @@ function LodgingCard({
           )}
         </div>
       )}
+      {/* Section "Autres options" : la shortlist d'hôtels candidats */}
+      {Array.isArray(day.accommodation_alternatives) &&
+        day.accommodation_alternatives.length > 0 && (
+          <div className="print:hidden mt-3 pt-3 border-t border-slate-100">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-[10px] uppercase tracking-wide font-semibold text-slate-500">
+                Autres options ({day.accommodation_alternatives.length})
+              </span>
+              <span className="text-[10px] text-slate-400 italic">
+                — n'entrent pas dans le budget tant qu'elles ne sont pas en priorité 1
+              </span>
+            </div>
+            <ul className="space-y-2">
+              {day.accommodation_alternatives.map((alt, i) => (
+                <AlternativeAccommodationRow
+                  key={i}
+                  alt={alt}
+                  rank={i + 2}
+                  onPromote={() =>
+                    canEdit
+                      ? onUpdateItinerary((it) =>
+                          promoteAccommodationAlternative(it, dayIndex, i)
+                        )
+                      : null
+                  }
+                  onRemove={() =>
+                    canEdit
+                      ? onUpdateItinerary((it) =>
+                          removeAccommodationAlternative(it, dayIndex, i)
+                        )
+                      : null
+                  }
+                  canEdit={canEdit}
+                />
+              ))}
+            </ul>
+          </div>
+        )}
+
       {typeof onImportHotelFromImage === 'function' && (
         <div className="print:hidden mt-3 pt-2 border-t border-slate-100">
           <button
             type="button"
             onClick={() =>
-              onImportHotelFromImage(dayIndex, day.accommodation?.name, day.location)
+              onImportHotelFromImage(
+                dayIndex,
+                day.accommodation?.name,
+                day.location
+              )
             }
             className="inline-flex items-center gap-1.5 rounded-full bg-indigo-100 text-indigo-800 hover:bg-indigo-200 transition-colors px-3 py-1.5 text-xs font-medium"
-            title="Remplacer cet hôtel par celui que vous avez trouvé sur Booking via une capture d'écran"
+            title="Importer un hôtel via une capture d'écran (Booking, Airbnb…)"
           >
-            📸 Remplacer par une capture Booking
+            📸 Ajouter / remplacer via une capture Booking
           </button>
         </div>
       )}
     </div>
+  );
+}
+
+function AlternativeAccommodationRow({ alt, rank, onPromote, onRemove, canEdit }) {
+  return (
+    <li className="rounded-lg border border-slate-200 bg-white p-2.5 text-xs">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="inline-flex items-center gap-1.5 text-[10px] text-slate-500 uppercase tracking-wide font-semibold mb-0.5">
+            <span className="rounded bg-slate-100 px-1.5 py-0.5">Priorité {rank}</span>
+            {alt.type && <span className="text-slate-400 normal-case">{alt.type}</span>}
+          </div>
+          <div className="font-medium text-slate-900">{alt.name}</div>
+          {(alt.coordinates_hint || alt.address_hint) && (
+            <div className="text-slate-500 italic mt-0.5">
+              📍 {alt.coordinates_hint || alt.address_hint}
+            </div>
+          )}
+          <div className="text-slate-600 mt-0.5">
+            {alt.price_eur > 0
+              ? `≈ ${alt.price_eur.toLocaleString('fr-FR')} € / nuit`
+              : 'Gratuit'}
+            {alt.rating && (
+              <span className="text-slate-400 ml-2">
+                · {alt.rating}/10
+                {alt.rating_count && ` (${alt.rating_count} avis)`}
+              </span>
+            )}
+          </div>
+        </div>
+        {canEdit && (
+          <div className="flex flex-col sm:flex-row gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={onPromote}
+              className="inline-flex items-center gap-1 rounded-md bg-brand-100 text-brand-800 hover:bg-brand-200 transition-colors px-2 py-1 text-[11px] font-medium"
+              title="Mettre cet hôtel en priorité 1 (utilisé dans le budget)"
+            >
+              ★ Priorité 1
+            </button>
+            <button
+              type="button"
+              onClick={onRemove}
+              className="inline-flex items-center gap-1 rounded-md bg-red-50 text-red-700 hover:bg-red-100 transition-colors px-2 py-1 text-[11px] font-medium"
+              title="Supprimer cette option"
+            >
+              🗑️
+            </button>
+          </div>
+        )}
+      </div>
+    </li>
   );
 }
 

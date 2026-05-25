@@ -179,6 +179,77 @@ export function replaceAccommodation(itinerary, dayIndex, newAccommodation) {
 }
 
 /**
+ * Ajoute un hôtel comme ALTERNATIVE au choix actuel (ne change pas la
+ * priorité 1 ni le budget). Utile pour empiler plusieurs candidats trouvés
+ * sur Booking et trancher plus tard.
+ *
+ * Les alternatives sont stockées dans day.accommodation_alternatives (un
+ * tableau qui n'existe pas par défaut). day.accommodation reste la priorité 1.
+ */
+export function addAccommodationAlternative(itinerary, dayIndex, newAccommodation) {
+  const next = deepClone(itinerary);
+  const day = next.days?.[dayIndex];
+  if (!day) return next;
+  // Si aucun hôtel n'est encore défini comme priorité 1, le nouveau le devient
+  // directement (cas peu probable mais cohérent).
+  if (!day.accommodation || !day.accommodation.name) {
+    return replaceAccommodation(next, dayIndex, newAccommodation);
+  }
+  if (!Array.isArray(day.accommodation_alternatives)) {
+    day.accommodation_alternatives = [];
+  }
+  day.accommodation_alternatives.push({
+    ...newAccommodation,
+    price_eur: Math.max(0, Math.round(Number(newAccommodation.price_eur) || 0)),
+    _user_edited: true,
+  });
+  return next;
+}
+
+/**
+ * Promeut une alternative en priorité 1 : l'hôtel actuel descend en
+ * alternative, et l'alternative choisie devient l'actif (utilisé pour le
+ * budget et l'affichage principal). Recalcule le budget en conséquence.
+ */
+export function promoteAccommodationAlternative(itinerary, dayIndex, altIndex) {
+  const next = deepClone(itinerary);
+  const day = next.days?.[dayIndex];
+  if (!day) return next;
+  const alts = Array.isArray(day.accommodation_alternatives)
+    ? day.accommodation_alternatives
+    : [];
+  if (altIndex < 0 || altIndex >= alts.length) return next;
+  const newPrimary = alts[altIndex];
+  const oldPrimary = day.accommodation;
+  // Retire l'alternative qu'on promeut
+  alts.splice(altIndex, 1);
+  // L'ancien priorité 1 part en tête des alternatives (toujours accessible)
+  if (oldPrimary && oldPrimary.name) {
+    alts.unshift(oldPrimary);
+  }
+  day.accommodation_alternatives = alts;
+  day.accommodation = newPrimary;
+  // Recalcul budget : delta = nouveau prix - ancien prix
+  const oldPrice = Number(oldPrimary?.price_eur) || 0;
+  const newPrice = Number(newPrimary?.price_eur) || 0;
+  applyDelta(next, dayIndex, 'accommodation', newPrice - oldPrice);
+  return next;
+}
+
+/**
+ * Supprime une alternative (sans toucher la priorité 1). Pas d'impact
+ * budget. Utilisé pour nettoyer la shortlist quand l'utilisateur a tranché.
+ */
+export function removeAccommodationAlternative(itinerary, dayIndex, altIndex) {
+  const next = deepClone(itinerary);
+  const day = next.days?.[dayIndex];
+  if (!day || !Array.isArray(day.accommodation_alternatives)) return next;
+  if (altIndex < 0 || altIndex >= day.accommodation_alternatives.length) return next;
+  day.accommodation_alternatives.splice(altIndex, 1);
+  return next;
+}
+
+/**
  * Modifie le titre d'un moment (matin / midi / aprem / soir) de la journée.
  *   momentKey ∈ 'morning' | 'noon' | 'afternoon' | 'evening'
  */
