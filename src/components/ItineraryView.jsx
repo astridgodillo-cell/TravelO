@@ -1364,13 +1364,34 @@ function DayCardsContent({
       )}
 
       {day.trips?.length > 0 && (
-        <div className="mt-4">
-          <CategoryHeader
-            category="trip"
-            title="Trajets"
-            count={day.trips.length}
-          />
-          <ul className="space-y-2 text-sm">
+        <details className="mt-4 group">
+          <summary className="cursor-pointer list-none select-none flex items-center justify-between gap-2 rounded-lg hover:bg-slate-50 -mx-2 px-2 py-1 transition-colors print:hover:bg-transparent">
+            <div className="min-w-0 flex-1">
+              <CategoryHeader
+                category="trip"
+                title="Trajets"
+                count={day.trips.length}
+              />
+              <div className="text-xs text-slate-500 ml-10 -mt-1.5 truncate">
+                {summarizeTrips(day.trips)}
+              </div>
+            </div>
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="text-slate-400 shrink-0 transition-transform group-open:rotate-180 print:hidden"
+              aria-hidden="true"
+            >
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </summary>
+          <ul className="space-y-2 text-sm mt-2">
             {day.trips.map((t, i) => (
               <TripRow
                 key={i}
@@ -1382,7 +1403,7 @@ function DayCardsContent({
               />
             ))}
           </ul>
-        </div>
+        </details>
       )}
 
       {day.service_stops?.length > 0 && (
@@ -2010,6 +2031,30 @@ const TRANSPORT_ICONS = {
   Croisière: '🛳️',
   Autre: '🧭',
 };
+
+/**
+ * Résumé en une ligne des trajets du jour, affiché dans le <summary>
+ * quand la section "Trajets" est repliée — permet de savoir d'un coup
+ * d'œil ce qui est caché sans avoir à déplier.
+ *
+ * Exemples :
+ *   - 1 trip Avion :  "✈️ Marseille → Pékin"
+ *   - 2 trips       :  "✈️ Marseille → Pékin · 🚕 PEK → Hôtel"
+ *   - 4+            :  "✈️ Marseille → Pékin + 3 autres trajets"
+ */
+function summarizeTrips(trips) {
+  if (!Array.isArray(trips) || trips.length === 0) return '';
+  const fmt = (t) => {
+    const cat = categorizeMode(t.mode);
+    const icon = TRANSPORT_ICONS[cat] || '🧭';
+    const from = (t.from || '').toString().slice(0, 18);
+    const to = (t.to || '').toString().slice(0, 18);
+    return from && to ? `${icon} ${from} → ${to}` : `${icon} ${t.mode || 'Trajet'}`;
+  };
+  if (trips.length === 1) return fmt(trips[0]);
+  if (trips.length === 2) return `${fmt(trips[0])} · ${fmt(trips[1])}`;
+  return `${fmt(trips[0])} + ${trips.length - 1} autres trajets`;
+}
 
 function categorizeMode(mode) {
   const m = (mode || '').toLowerCase();
