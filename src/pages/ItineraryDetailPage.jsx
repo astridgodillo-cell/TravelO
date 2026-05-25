@@ -137,6 +137,27 @@ export default function ItineraryDetailPage() {
     }
   }
 
+  /**
+   * Handler générique pour les éditions manuelles inline (prix de vol corrigé
+   * sur Google Flights, vrai prix d'hôtel sur Booking, etc.).
+   * L'appelant fournit une fonction `updater(itinerary) -> nouvel itinerary`
+   * (pure), on persiste et on rafraîchit le state.
+   *
+   * Pas de régénération IA ici : c'est une simple écriture en DB.
+   */
+  async function handleUpdateItinerary(updater) {
+    if (!trip) throw new Error('Itinéraire non chargé');
+    const next = updater(trip.itinerary);
+    const { data, error: dbError } = await updateItinerary(trip.id, {
+      itinerary: next,
+    });
+    if (dbError) {
+      setError(dbError.message);
+      throw dbError;
+    }
+    setTrip(data);
+  }
+
   if (loading) return <p className="text-slate-500">Chargement…</p>;
   if (error)
     return (
@@ -187,6 +208,7 @@ export default function ItineraryDetailPage() {
         onRegenerateActivity={handleRegenerateActivity}
         onRemoveActivity={handleRemoveActivity}
         onFetchSpecialties={handleFetchSpecialties}
+        onUpdateItinerary={handleUpdateItinerary}
         regenerating={regenerating}
       />
     </div>

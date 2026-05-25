@@ -1,7 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { listPackingLists } from '../lib/supabase';
 import { costEur } from '../lib/ai';
+import {
+  updateTripPrice,
+  updateFlightField,
+  updateActivityPricePerPerson,
+  updateAccommodationPrice,
+  updateAccommodationName,
+  updateMealsBudget,
+} from '../lib/itineraryEdits';
 import { useDayLayout } from '../hooks/useDayLayout';
+import EditableValue from './EditableValue';
 import RouteMap from './RouteMap';
 import DayMiniMap from './DayMiniMap';
 import RegenerateDayModal from './RegenerateDayModal';
@@ -76,6 +85,7 @@ export default function ItineraryView({
   onRegenerateActivity,
   onRemoveActivity,
   onFetchSpecialties,
+  onUpdateItinerary,
   regenerating,
 }) {
   const [tab, setTab] = useState('planning');
@@ -311,6 +321,7 @@ export default function ItineraryView({
             loadingSpecialtiesIdx={loadingSpecialtiesIdx}
             canRegenerate={typeof onRegenerateDay === 'function'}
             canEditActivities={typeof onRegenerateActivity === 'function'}
+            onUpdateItinerary={onUpdateItinerary}
           />
         </div>
         <div className={tab === 'table' ? '' : 'hidden'}>
@@ -381,6 +392,7 @@ function Planning({
   loadingSpecialtiesIdx,
   canRegenerate,
   canEditActivities,
+  onUpdateItinerary,
 }) {
   // Tous les jours fermés par défaut : on voit la liste d'un coup d'œil
   // et on déplie au besoin.
@@ -445,6 +457,7 @@ function Planning({
           loadingSpecialties={loadingSpecialtiesIdx === i}
           canRegenerate={canRegenerate}
           canEditActivities={canEditActivities}
+          onUpdateItinerary={onUpdateItinerary}
         />
       ))}
     </section>
@@ -633,6 +646,7 @@ function DayCard({
   loadingSpecialties,
   canRegenerate,
   canEditActivities,
+  onUpdateItinerary,
 }) {
   // Détecte les jours d'arrivée/départ d'un voyage avion-* sans horaire
   // confirmé : on a une trip de mode "Avion" mais sans heure de départ
@@ -837,12 +851,20 @@ function DayCard({
             {day.accommodation && (
               <LodgingCard
                 day={day}
+                dayIndex={dayIndex}
                 isVanTrip={isVanTrip}
                 accomLink={accomLink}
                 isBookingCta={isBookingCta}
+                onUpdateItinerary={onUpdateItinerary}
               />
             )}
-            {day.meals && <MealsCard day={day} />}
+            {day.meals && (
+              <MealsCard
+                day={day}
+                dayIndex={dayIndex}
+                onUpdateItinerary={onUpdateItinerary}
+              />
+            )}
           </div>
 
           {layout === 'timeline' ? (
@@ -852,6 +874,7 @@ function DayCard({
               canEditActivities={canEditActivities}
               onEditActivity={onEditActivity}
               onRemoveActivity={onRemoveActivity}
+              onUpdateItinerary={onUpdateItinerary}
             />
           ) : (
             <DayCardsContent
@@ -860,6 +883,7 @@ function DayCard({
               canEditActivities={canEditActivities}
               onEditActivity={onEditActivity}
               onRemoveActivity={onRemoveActivity}
+              onUpdateItinerary={onUpdateItinerary}
             />
           )}
 
@@ -881,8 +905,17 @@ function DayCard({
  * pour identifier sa catégorie d'un coup d'œil.
  * ------------------------------------------------------------------------- */
 
-function LodgingCard({ day, isVanTrip, accomLink, isBookingCta }) {
+function LodgingCard({
+  day,
+  dayIndex,
+  isVanTrip,
+  accomLink,
+  isBookingCta,
+  onUpdateItinerary,
+}) {
   const s = CATEGORY_STYLES.lodging;
+  const canEdit = typeof onUpdateItinerary === 'function';
+  const userEdited = !!day.accommodation._user_edited;
   return (
     <div className={`rounded-xl border border-slate-200 border-l-4 ${s.border} ${s.tint} p-3 text-sm`}>
       <div className="flex items-center gap-2 mb-1.5">
@@ -892,9 +925,30 @@ function LodgingCard({ day, isVanTrip, accomLink, isBookingCta }) {
         <span className={`text-xs uppercase tracking-wide font-semibold ${s.headerText}`}>
           Hébergement / nuit
         </span>
+        {userEdited && (
+          <span
+            className="ml-auto text-[10px] text-emerald-700 font-medium"
+            title="Vous avez personnalisé ce bloc"
+          >
+            ✓ corrigé
+          </span>
+        )}
       </div>
       <div className="font-medium text-slate-900">
-        {day.accommodation.name}
+        {canEdit ? (
+          <EditableValue
+            value={day.accommodation.name}
+            type="text"
+            label="Cliquer pour saisir le vrai nom d'hôtel (celui que vous avez réservé)"
+            onSave={(newName) =>
+              onUpdateItinerary((it) =>
+                updateAccommodationName(it, dayIndex, newName)
+              )
+            }
+          />
+        ) : (
+          day.accommodation.name
+        )}
         <HotelRating
           hotelName={day.accommodation.name}
           location={day.location}
@@ -902,18 +956,30 @@ function LodgingCard({ day, isVanTrip, accomLink, isBookingCta }) {
       </div>
       <div className="text-slate-600">
         {day.accommodation.type}
-        {day.accommodation.price_eur > 0 ? (
-          <>
-            {' — à partir de '}
-            <span
-              className="font-medium text-slate-800"
-              title="Estimation calculée par TravelO. Le prix réel dépend de la saison et des disponibilités — vérifiez sur Booking."
-            >
-              ≈ {formatEurOrFree(day.accommodation.price_eur)} / nuit
-            </span>
-          </>
+        {' — '}
+        {canEdit ? (
+          <EditableValue
+            value={Number(day.accommodation.price_eur) || 0}
+            type="number"
+            min={0}
+            step={5}
+            suffix=" € / nuit"
+            prefix={userEdited ? '' : '≈ '}
+            label="Prix par nuit — cliquez pour saisir le vrai prix (celui de votre réservation)"
+            format={(v) => (v === 0 ? 'Gratuit' : v.toLocaleString('fr-FR'))}
+            onSave={(newPrice) =>
+              onUpdateItinerary((it) =>
+                updateAccommodationPrice(it, dayIndex, newPrice)
+              )
+            }
+            className="font-medium text-slate-800"
+          />
         ) : (
-          <> — {formatEurOrFree(day.accommodation.price_eur)}</>
+          <span className="font-medium text-slate-800">
+            {day.accommodation.price_eur > 0
+              ? `≈ ${formatEurOrFree(day.accommodation.price_eur)} / nuit`
+              : formatEurOrFree(day.accommodation.price_eur)}
+          </span>
         )}
       </div>
       {day.accommodation.coordinates_hint && (
@@ -1026,8 +1092,10 @@ function LodgingCard({ day, isVanTrip, accomLink, isBookingCta }) {
   );
 }
 
-function MealsCard({ day }) {
+function MealsCard({ day, dayIndex, onUpdateItinerary }) {
   const s = CATEGORY_STYLES.meal;
+  const canEdit = typeof onUpdateItinerary === 'function';
+  const userEdited = !!day.meals._user_edited;
   return (
     <div className={`rounded-xl border border-slate-200 border-l-4 ${s.border} ${s.tint} p-3 text-sm`}>
       <div className="flex items-center gap-2 mb-1.5">
@@ -1037,12 +1105,38 @@ function MealsCard({ day }) {
         <span className={`text-xs uppercase tracking-wide font-semibold ${s.headerText}`}>
           Repas (famille)
         </span>
+        {userEdited && (
+          <span
+            className="ml-auto text-[10px] text-emerald-700 font-medium"
+            title="Budget repas corrigé manuellement"
+          >
+            ✓ corrigé
+          </span>
+        )}
       </div>
       <div
         className="font-medium text-slate-900"
-        title="Estimation TravelO du budget repas. Le coût réel dépend des restaurants choisis."
+        title="Estimation TravelO du budget repas. Cliquez pour saisir le vrai budget."
       >
-        {formatEurEstimate(day.meals.daily_family_budget_eur)} / jour
+        {canEdit ? (
+          <EditableValue
+            value={Number(day.meals.daily_family_budget_eur) || 0}
+            type="number"
+            min={0}
+            step={5}
+            prefix={userEdited ? '' : '≈ '}
+            suffix=" € / jour"
+            label="Budget repas famille pour la journée — cliquez pour saisir le vrai montant"
+            format={(v) => (v === 0 ? 'Gratuit' : v.toLocaleString('fr-FR'))}
+            onSave={(newBudget) =>
+              onUpdateItinerary((it) =>
+                updateMealsBudget(it, dayIndex, newBudget)
+              )
+            }
+          />
+        ) : (
+          `${formatEurEstimate(day.meals.daily_family_budget_eur)} / jour`
+        )}
       </div>
       {day.meals.style && (
         <div className="text-xs text-slate-600 capitalize">{day.meals.style}</div>
@@ -1062,13 +1156,26 @@ function ActivityCard({
   canEditActivities,
   onEditActivity,
   onRemoveActivity,
+  onUpdateItinerary,
 }) {
   const s = CATEGORY_STYLES.activity;
+  const canEdit = typeof onUpdateItinerary === 'function';
+  const userEdited = !!a._user_edited;
   return (
     <div className={`rounded-lg border border-slate-200 border-l-4 ${s.border} ${s.tint} p-3 text-sm`}>
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
-          <div className="font-medium text-slate-900">{a.title}</div>
+          <div className="font-medium text-slate-900 inline-flex items-center gap-2">
+            <span>{a.title}</span>
+            {userEdited && (
+              <span
+                className="text-[10px] text-emerald-700 font-medium"
+                title="Activité corrigée manuellement"
+              >
+                ✓ corrigé
+              </span>
+            )}
+          </div>
           <div className="text-xs text-slate-500">
             {a.schedule}
             {a.duration ? ` · ${a.duration}` : ''}
@@ -1123,13 +1230,38 @@ function ActivityCard({
           title={
             a.price_per_person_eur === 0
               ? 'Activité officielle gratuite. GetYourGuide propose des visites guidées payantes en supplément.'
-              : 'Estimation TravelO. Le prix réel peut différer — vérifiez sur GetYourGuide.'
+              : 'Cliquez sur le prix pour saisir le vrai tarif (celui de GetYourGuide / du site officiel).'
           }
         >
           <div className="text-slate-500">
-            {a.price_per_person_eur > 0 && 'à partir de '}
-            {formatEurOrFree(a.price_per_person_eur)}
-            {a.price_per_person_eur > 0 ? ' / pers.' : ''}
+            {canEdit ? (
+              <EditableValue
+                value={Number(a.price_per_person_eur) || 0}
+                type="number"
+                min={0}
+                step={1}
+                prefix={a.price_per_person_eur > 0 && !userEdited ? 'à partir de ' : ''}
+                suffix={a.price_per_person_eur > 0 || canEdit ? ' € / pers.' : ''}
+                label="Prix par personne — cliquez pour saisir le vrai tarif"
+                format={(v) => (v === 0 ? 'Gratuit' : v.toLocaleString('fr-FR'))}
+                onSave={(newPrice) =>
+                  onUpdateItinerary((it) =>
+                    updateActivityPricePerPerson(
+                      it,
+                      dayIndex,
+                      activityIndex,
+                      newPrice
+                    )
+                  )
+                }
+              />
+            ) : (
+              <>
+                {a.price_per_person_eur > 0 && 'à partir de '}
+                {formatEurOrFree(a.price_per_person_eur)}
+                {a.price_per_person_eur > 0 ? ' / pers.' : ''}
+              </>
+            )}
           </div>
           <div className="font-semibold text-slate-800">
             Famille :{' '}
@@ -1172,6 +1304,7 @@ function DayCardsContent({
   canEditActivities,
   onEditActivity,
   onRemoveActivity,
+  onUpdateItinerary,
 }) {
   return (
     <>
@@ -1203,6 +1336,7 @@ function DayCardsContent({
                   canEditActivities={canEditActivities}
                   onEditActivity={onEditActivity}
                   onRemoveActivity={onRemoveActivity}
+                  onUpdateItinerary={onUpdateItinerary}
                 />
               </li>
             ))}
@@ -1219,7 +1353,14 @@ function DayCardsContent({
           />
           <ul className="space-y-2 text-sm">
             {day.trips.map((t, i) => (
-              <TripRow key={i} trip={t} dayDate={day.date} />
+              <TripRow
+                key={i}
+                trip={t}
+                dayDate={day.date}
+                dayIndex={dayIndex}
+                tripIndex={i}
+                onUpdateItinerary={onUpdateItinerary}
+              />
             ))}
           </ul>
         </div>
@@ -1297,7 +1438,7 @@ function buildDayEvents(day) {
   }
 
   // Trajets / vols
-  for (const t of day.trips || []) {
+  (day.trips || []).forEach((t, idx) => {
     const isFlight = /avion|vol|flight|plane/i.test(t.mode || '');
     const flightTime =
       t._flight?.departure_at && typeof t._flight.departure_at === 'string'
@@ -1309,9 +1450,9 @@ function buildDayEvents(day) {
       time: flightTime || fallback,
       category: isFlight ? 'flight' : 'trip',
       type: 'trip',
-      payload: { trip: t, dayDate: day.date },
+      payload: { trip: t, tripIndex: idx, dayDate: day.date },
     });
-  }
+  });
 
   // Activités
   (day.activities || []).forEach((a, idx) => {
@@ -1344,6 +1485,7 @@ function DayTimeline({
   canEditActivities,
   onEditActivity,
   onRemoveActivity,
+  onUpdateItinerary,
 }) {
   const events = useMemo(() => buildDayEvents(day), [day]);
 
@@ -1368,6 +1510,7 @@ function DayTimeline({
             canEditActivities={canEditActivities}
             onEditActivity={onEditActivity}
             onRemoveActivity={onRemoveActivity}
+            onUpdateItinerary={onUpdateItinerary}
           />
         ))}
       </ol>
@@ -1382,6 +1525,7 @@ function TimelineRow({
   canEditActivities,
   onEditActivity,
   onRemoveActivity,
+  onUpdateItinerary,
 }) {
   const s = CATEGORY_STYLES[event.category] || CATEGORY_STYLES.moment;
   return (
@@ -1416,11 +1560,18 @@ function TimelineRow({
           canEditActivities={canEditActivities}
           onEditActivity={onEditActivity}
           onRemoveActivity={onRemoveActivity}
+          onUpdateItinerary={onUpdateItinerary}
         />
       )}
       {event.type === 'trip' && (
         <ul className="space-y-2 text-sm">
-          <TripRow trip={event.payload.trip} dayDate={event.payload.dayDate} />
+          <TripRow
+            trip={event.payload.trip}
+            dayDate={event.payload.dayDate}
+            dayIndex={dayIndex}
+            tripIndex={event.payload.tripIndex}
+            onUpdateItinerary={onUpdateItinerary}
+          />
         </ul>
       )}
       {event.type === 'service' && (
@@ -1450,7 +1601,7 @@ function flightDeeplinkLabel(source) {
   return 'Voir & comparer ce vol';
 }
 
-function TripRow({ trip, dayDate }) {
+function TripRow({ trip, dayDate, dayIndex, tripIndex, onUpdateItinerary }) {
   const hasBreakdown =
     trip.fuel_cost_eur != null ||
     trip.toll_cost_eur != null ||
@@ -1467,20 +1618,34 @@ function TripRow({ trip, dayDate }) {
     typeof flight.source === 'string' &&
     (flight.source.startsWith('travelpayouts') ||
       flight.source.startsWith('duffel'));
-  const isAiEstimatedFlight = isFlight && !isFlightPriceReal;
+  const userEditedPrice = !!trip._user_edited;
+  const isAiEstimatedFlight =
+    isFlight && !isFlightPriceReal && !userEditedPrice;
   const providerLabel = flightProviderName(flight.source);
+  const canEdit =
+    typeof onUpdateItinerary === 'function' &&
+    typeof dayIndex === 'number' &&
+    typeof tripIndex === 'number';
   // "HH:MM" depuis "YYYY-MM-DDTHH:MM:SS"
   const flightTime =
     flight.departure_at && typeof flight.departure_at === 'string'
       ? flight.departure_at.substring(11, 16)
       : null;
-  const flightLine = [
-    flight.airline && flight.airline !== 'N/A' ? flight.airline : null,
-    flight.flight_number ? `vol ${flight.airline || ''}${flight.flight_number}`.trim() : null,
-    flightTime ? `départ ${flightTime}` : null,
-  ]
-    .filter(Boolean)
-    .join(' · ');
+
+  function commitFlightField(field, value) {
+    if (!canEdit) return Promise.resolve();
+    // Pour departure_at on garde la date du jour et on remplace HH:MM
+    if (field === 'departure_at') {
+      const base = dayDate || flight.departure_at?.substring(0, 10) || '';
+      const composed = base && value ? `${base}T${value}:00` : null;
+      return onUpdateItinerary((it) =>
+        updateFlightField(it, dayIndex, tripIndex, 'departure_at', composed)
+      );
+    }
+    return onUpdateItinerary((it) =>
+      updateFlightField(it, dayIndex, tripIndex, field, value)
+    );
+  }
 
   return (
     <li className="rounded-lg border border-slate-100 bg-white p-3">
@@ -1496,37 +1661,96 @@ function TripRow({ trip, dayDate }) {
         <div
           className="text-right"
           title={
-            isFlightPriceReal
-              ? `Prix ${providerLabel} — peut varier en temps réel selon la disponibilité.`
-              : isFlight
-                ? `Prix INVENTÉ par l'IA — peut être très éloigné de la réalité. Vérifiez sur ${providerLabel}.`
-                : 'Estimation TravelO basée sur le mode et la distance. Carburant et péages peuvent varier.'
+            userEditedPrice
+              ? 'Prix corrigé manuellement.'
+              : isFlightPriceReal
+                ? `Prix ${providerLabel} — peut varier en temps réel. Cliquez pour le corriger si le vrai prix est différent.`
+                : isFlight
+                  ? `Prix INVENTÉ par l'IA — cliquez pour saisir le vrai prix (de votre recherche / réservation).`
+                  : 'Estimation TravelO. Cliquez pour saisir le vrai prix.'
           }
         >
           <div className="font-semibold">
-            {formatEurEstimate(trip.estimated_cost_eur)}
+            {canEdit ? (
+              <EditableValue
+                value={Number(trip.estimated_cost_eur) || 0}
+                type="number"
+                min={0}
+                step={10}
+                suffix=" €"
+                label="Prix total famille — cliquez pour saisir le vrai prix"
+                format={(v) => (v === 0 ? 'Gratuit' : v.toLocaleString('fr-FR'))}
+                onSave={(newPrice) =>
+                  onUpdateItinerary((it) =>
+                    updateTripPrice(it, dayIndex, tripIndex, newPrice)
+                  )
+                }
+              />
+            ) : (
+              formatEurEstimate(trip.estimated_cost_eur)
+            )}
           </div>
-          {trip.cost_note && (
+          {userEditedPrice && (
+            <div className="text-[10px] text-emerald-700 font-medium">
+              ✓ corrigé manuellement
+            </div>
+          )}
+          {trip.cost_note && !userEditedPrice && (
             <div className="text-xs text-slate-400">{trip.cost_note}</div>
           )}
         </div>
       </div>
-      {isFlight && flightLine && (
-        <div className="mt-2 text-xs text-slate-600 border-t border-slate-100 pt-2">
-          ✈️ {flightLine}
+      {isFlight && (
+        <div className="mt-2 text-xs text-slate-600 border-t border-slate-100 pt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span>✈️</span>
+          <span className="text-slate-500">Compagnie :</span>
+          {canEdit ? (
+            <EditableValue
+              value={flight.airline && flight.airline !== 'N/A' ? flight.airline : ''}
+              type="text"
+              placeholder="Ex: AF, Iberia…"
+              label="Code IATA ou nom de compagnie (cliquer pour modifier)"
+              allowEmpty
+              onSave={(v) => commitFlightField('airline', v)}
+            />
+          ) : (
+            <span>{flight.airline || '—'}</span>
+          )}
+          <span className="text-slate-300">·</span>
+          <span className="text-slate-500">N° vol :</span>
+          {canEdit ? (
+            <EditableValue
+              value={flight.flight_number || ''}
+              type="text"
+              placeholder="Ex: 1234"
+              label="Numéro de vol (cliquer pour modifier)"
+              allowEmpty
+              onSave={(v) => commitFlightField('flight_number', v)}
+            />
+          ) : (
+            <span>{flight.flight_number || '—'}</span>
+          )}
+          <span className="text-slate-300">·</span>
+          <span className="text-slate-500">Départ :</span>
+          {canEdit ? (
+            <EditableValue
+              value={flightTime || ''}
+              type="time"
+              placeholder="HH:MM"
+              label="Heure de départ (cliquer pour modifier)"
+              allowEmpty
+              onSave={(v) => commitFlightField('departure_at', v)}
+            />
+          ) : (
+            <span>{flightTime || '—'}</span>
+          )}
         </div>
       )}
       {isAiEstimatedFlight && (
         <div className="mt-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 print:hidden">
           ⚠️ <strong>Prix de vol estimé par IA</strong> — souvent éloigné du
-          vrai prix (à la hausse ou à la baisse). Cliquez sur le bouton
-          {' '}{providerLabel} ci-dessous pour voir les vrais tarifs en temps réel.
-        </div>
-      )}
-      {isFlight && !flightLine && isFlightPriceReal && (
-        <div className="mt-2 text-xs text-slate-500 italic border-t border-slate-100 pt-2">
-          Prix {providerLabel} sans horaire — cliquez sur {providerLabel} ci-dessous
-          pour voir compagnie, horaires et escales en temps réel.
+          vrai prix. Cliquez sur le prix à droite pour saisir le vrai tarif,
+          ou utilisez le bouton {providerLabel} ci-dessous pour comparer.
         </div>
       )}
       {hasBreakdown && (
