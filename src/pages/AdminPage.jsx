@@ -35,6 +35,11 @@ const BACKEND_OPTIONS = [
   { id: 'claude', label: 'Claude Sonnet + Haiku', dot: 'bg-orange-500', hint: 'Meilleure qualité narrative. Plus cher, quotas plus stricts.' },
 ];
 
+const FLIGHT_PROVIDER_OPTIONS = [
+  { id: 'travelpayouts', label: 'Aviasales (Travelpayouts)', dot: 'bg-sky-500', hint: 'Affiliation Aviasales. Bon pour les long-courriers. Deeplink réservation Aviasales.' },
+  { id: 'kiwi', label: 'Kiwi.com (Tequila)', dot: 'bg-fuchsia-500', hint: 'Très fort sur les low-cost (Ryanair, easyJet, Wizz). Données plus à jour, deeplink Kiwi.' },
+];
+
 const TABS = [
   { id: 'users', label: 'Utilisateurs', icon: 'users' },
   { id: 'trips', label: 'Tous les itinéraires', icon: 'plane' },
@@ -49,6 +54,8 @@ export default function AdminPage() {
   const [busyId, setBusyId] = useState(null);
   const [backend, setBackend] = useState(null);
   const [backendBusy, setBackendBusy] = useState(false);
+  const [flightProvider, setFlightProvider] = useState(null);
+  const [flightProviderBusy, setFlightProviderBusy] = useState(false);
   const [stats, setStats] = useState(null);
   const [allTrips, setAllTrips] = useState([]);
   const [tripsLoading, setTripsLoading] = useState(false);
@@ -74,6 +81,11 @@ export default function AdminPage() {
     setBackend(value || 'gemini');
   }
 
+  async function refreshFlightProvider() {
+    const { value } = await getAppConfig('flight_provider');
+    setFlightProvider(value || 'travelpayouts');
+  }
+
   async function refreshAllTrips() {
     setTripsLoading(true);
     const { data, error } = await adminListAllItineraries();
@@ -90,6 +102,7 @@ export default function AdminPage() {
   useEffect(() => {
     refreshStats();
     refreshBackend();
+    refreshFlightProvider();
   }, []);
 
   useEffect(() => {
@@ -113,6 +126,16 @@ export default function AdminPage() {
     if (error) setError(error.message);
     else setBackend(newBackend);
     setBackendBusy(false);
+  }
+
+  async function changeFlightProvider(newProvider) {
+    if (newProvider === flightProvider) return;
+    setFlightProviderBusy(true);
+    setError(null);
+    const { error } = await setAppConfig('flight_provider', newProvider);
+    if (error) setError(error.message);
+    else setFlightProvider(newProvider);
+    setFlightProviderBusy(false);
   }
 
   const counts = useMemo(() => {
@@ -182,6 +205,59 @@ export default function AdminPage() {
             ANTHROPIC_API_KEY
           </code>
           .
+        </p>
+      </section>
+
+      {/* Paramètres globaux : choix du fournisseur de vols */}
+      <section className="card">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-3 inline-flex items-center gap-1.5">
+          <Icon name="plane" className="h-4 w-4" />
+          Fournisseur de vols (recherche prix + horaires réels)
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {FLIGHT_PROVIDER_OPTIONS.map((b) => {
+            const active = flightProvider === b.id;
+            return (
+              <button
+                key={b.id}
+                onClick={() => changeFlightProvider(b.id)}
+                disabled={flightProviderBusy}
+                className={`rounded-xl border p-3 text-left transition-all ${
+                  active
+                    ? 'border-brand-600 bg-brand-50 ring-1 ring-brand-600'
+                    : 'border-slate-200 bg-white hover:bg-slate-50'
+                }`}
+              >
+                <div className="inline-flex items-center gap-2 text-sm font-semibold text-slate-900">
+                  <span className={`h-2 w-2 rounded-full ${b.dot}`} />
+                  {b.label}
+                </div>
+                <div className="text-xs text-slate-500 mt-1">{b.hint}</div>
+                {active && (
+                  <div className="text-xs text-brand-700 mt-1 font-medium inline-flex items-center gap-1">
+                    <Icon name="check" className="h-3 w-3" />
+                    Actif
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-xs text-slate-500 mt-3">
+          Effectif sous 15 secondes. Si le fournisseur choisi n'a pas sa clé
+          configurée dans Supabase Secrets (
+          <code className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded">
+            TRAVELPAYOUTS_TOKEN
+          </code>
+          {' / '}
+          <code className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded">
+            TRAVELPAYOUTS_MARKER
+          </code>
+          {' '}ou{' '}
+          <code className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded">
+            KIWI_API_KEY
+          </code>
+          ), TravelO bascule automatiquement sur l'autre.
         </p>
       </section>
 

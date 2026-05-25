@@ -11,15 +11,20 @@
 // deno-lint-ignore-file no-explicit-any
 import { jsonrepair } from 'https://esm.sh/jsonrepair@3.10.0';
 import {
-  searchFlight,
   cityToIata,
   buildAviasalesDeeplink,
   type FlightData,
 } from '../_shared/travelpayouts.ts';
+import {
+  searchFlightAny,
+  isRealFlightSource,
+  type AnyFlightData,
+} from '../_shared/flightProvider.ts';
 
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
 const TRAVELPAYOUTS_TOKEN = Deno.env.get('TRAVELPAYOUTS_TOKEN') || '';
 const TRAVELPAYOUTS_MARKER = Deno.env.get('TRAVELPAYOUTS_MARKER') || '';
+const KIWI_API_KEY = Deno.env.get('KIWI_API_KEY') || '';
 const MODEL = Deno.env.get('ANTHROPIC_MODEL') || 'claude-sonnet-4-20250514';
 const EXPAND_MODEL =
   Deno.env.get('ANTHROPIC_EXPAND_MODEL') || 'claude-haiku-4-5-20251001';
@@ -2031,11 +2036,17 @@ const AIR_TRIP_TYPES = new Set(['avion-voiture', 'avion-citybreak']);
 function shouldFetchFlight(p: any): boolean {
   if (!p) return false;
   if (!AIR_TRIP_TYPES.has(p.tripType)) return false;
-  // Si l'utilisateur a déjà saisi son vol à la main, on ne tape pas Travelpayouts
+  // Si l'utilisateur a déjà saisi son vol à la main, on ne tape pas le fournisseur
   if (p.manualFlight && (p.manualFlight.outboundPriceEur || p.manualFlight.returnPriceEur)) {
     return false;
   }
   return true;
+}
+
+function hasAnyFlightProviderConfigured(): boolean {
+  return (
+    !!(TRAVELPAYOUTS_TOKEN && TRAVELPAYOUTS_MARKER) || !!KIWI_API_KEY
+  );
 }
 
 function manualFlightToData(p: any): FlightData | null {
@@ -2070,15 +2081,16 @@ function manualFlightToData(p: any): FlightData | null {
   };
 }
 
-async function resolveFlightData(p: any): Promise<FlightData | null> {
+async function resolveFlightData(p: any): Promise<AnyFlightData | null> {
   // 1) Saisie manuelle prioritaire
   const manual = manualFlightToData(p);
   if (manual) return manual;
 
-  // 2) Recherche Travelpayouts si secrets configurés et tripType compatible
+  // 2) Recherche via le fournisseur actif (Travelpayouts ou Kiwi) si
+  // tripType compatible et qu'au moins un fournisseur a ses secrets.
   if (!shouldFetchFlight(p)) return null;
-  if (!TRAVELPAYOUTS_TOKEN || !TRAVELPAYOUTS_MARKER) {
-    console.warn('[flights] Travelpayouts secrets manquants, skip.');
+  if (!hasAnyFlightProviderConfigured()) {
+    console.warn('[flights] Aucun fournisseur configuré, skip.');
     return null;
   }
   try {
@@ -2088,26 +2100,40 @@ async function resolveFlightData(p: any): Promise<FlightData | null> {
     // l'utilise (utile quand destinations = pays type "Norvège").
     const arrivalCity = p.arrivalGateway || p.destinations;
     const departureCity = p.departureGateway || p.departureLocation;
-    return await searchFlight({
-      originCity: departureCity,
-      destinationCity: arrivalCity,
-      departDate: p.startDate,
-      returnDate:
-        p.returnLocation && p.returnLocation !== p.departureLocation
-          ? null // aller simple
-          : p.endDate,
-      adults,
-      children: childrenCount,
-      token: TRAVELPAYOUTS_TOKEN,
-      marker: TRAVELPAYOUTS_MARKER,
-    });
+    return await searchFlightAny(
+      {
+        originCity: departureCity,
+        destinationCity: arrivalCity,
+        departDate: p.startDate,
+        returnDate:
+          p.returnLocation && p.returnLocation !== p.departureLocation
+            ? null // aller simple
+            : p.endDate,
+        adults,
+        children: childrenCount,
+      },
+      {
+        supabaseUrl: SUPABASE_URL,
+        serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY,
+        travelpayoutsToken: TRAVELPAYOUTS_TOKEN,
+        travelpayoutsMarker: TRAVELPAYOUTS_MARKER,
+        kiwiApiKey: KIWI_API_KEY,
+      }
+    );
   } catch (e) {
-    console.warn('[flights] searchFlight failed:', e);
+    console.warn('[flights] searchFlightAny failed:', e);
     return null;
   }
 }
 
-function formatFlightBlockForPrompt(flight: FlightData, p: any): string {
+function flightSourceLabel(source: string | undefined): string {
+  if (!source) return 'fournisseur de vols';
+  if (source.startsWith('kiwi')) return 'Kiwi.com';
+  if (source.startsWith('travelpayouts')) return 'Aviasales / Travelpayouts';
+  return source;
+}
+
+function formatFlightBlockForPrompt(flight: AnyFlightData, p: any): string {
   if (!flight) return '';
   const adults = Number(p.adults) || 1;
   const childrenCount = Array.isArray(p.childrenAges) ? p.childrenAges.length : 0;
@@ -2115,8 +2141,9 @@ function formatFlightBlockForPrompt(flight: FlightData, p: any): string {
   const pricePerPax = pax > 0 ? Math.round(flight.price_eur / pax) : flight.price_eur;
   const isRoundTrip =
     !p.returnLocation || p.returnLocation === p.departureLocation;
+  const providerLabel = flightSourceLabel(flight.source);
   return `
-VOL RÉEL (récupéré via Aviasales / Travelpayouts — DOIS être utilisé tel quel) :
+VOL RÉEL (récupéré via ${providerLabel} — DOIS être utilisé tel quel) :
   - Trajet : ${p.departureLocation} (${flight.origin_iata || '?'}) → ${p.destinations} (${flight.destination_iata || '?'})${
     isRoundTrip ? ' aller-retour' : ' aller simple'
   }
@@ -2133,7 +2160,7 @@ VOL RÉEL (récupéré via Aviasales / Travelpayouts — DOIS être utilisé tel
  * toujours dans "Trajets (total)" et "Détail par mode" même si le LLM l'a
  * oublié ou mis un prix différent.
  */
-function enrichItineraryWithFlight(itinerary: any, flight: FlightData, p: any) {
+function enrichItineraryWithFlight(itinerary: any, flight: AnyFlightData, p: any) {
   if (!itinerary || !Array.isArray(itinerary.days) || itinerary.days.length === 0) {
     return itinerary;
   }
@@ -2171,7 +2198,7 @@ function enrichItineraryWithFlight(itinerary: any, flight: FlightData, p: any) {
       fuel_cost_eur: null,
       toll_cost_eur: null,
       ferry_cost_eur: null,
-      cost_note: `Vol ${label} ${airlineLabel}${flightNumberLabel}${time ? `, départ ${time}` : ''} — prix Aviasales`,
+      cost_note: `Vol ${label} ${airlineLabel}${flightNumberLabel}${time ? `, départ ${time}` : ''} — prix ${flightSourceLabel(flight.source)}`,
       road_warning: null,
       _flight: {
         airline: flight.airline,
@@ -2267,7 +2294,7 @@ function enrichItineraryWithFlight(itinerary: any, flight: FlightData, p: any) {
  * coût et horaire. Utile pour le mode long (plan-trip + expand-day) où chaque
  * jambe est attachée à un day_plan distinct.
  */
-function splitFlightForLegs(flight: FlightData, isRoundTrip: boolean, p: any) {
+function splitFlightForLegs(flight: AnyFlightData, isRoundTrip: boolean, p: any) {
   const total = flight.price_eur;
   const outboundCost = isRoundTrip ? Math.round(total / 2) : total;
   const returnCost = isRoundTrip ? total - outboundCost : 0;
@@ -2324,7 +2351,7 @@ function buildFlightTrip(leg: FlightLeg, legLabel: 'aller' | 'retour') {
     fuel_cost_eur: null,
     toll_cost_eur: null,
     ferry_cost_eur: null,
-    cost_note: `Vol ${legLabel} ${leg.airlineLabel}${leg.flightNumberLabel}${time ? `, départ ${time}` : ''} — prix Aviasales`,
+    cost_note: `Vol ${legLabel} ${leg.airlineLabel}${leg.flightNumberLabel}${time ? `, départ ${time}` : ''} — prix ${flightSourceLabel(leg.source)}`,
     road_warning: null,
     _flight: {
       airline: leg.airline,
@@ -2503,7 +2530,7 @@ function fixPerPersonFlightCosts(itinerary: any, p: any) {
     for (const t of day.trips) {
       if (!isFlightMode(t.mode)) continue;
       // Skip si c'est un de nos trips enrichis (déjà calculé en total famille)
-      if (t._flight?.source && t._flight.source.startsWith('travelpayouts')) continue;
+      if (isRealFlightSource(t._flight?.source)) continue;
       const cost = Number(t.estimated_cost_eur) || 0;
       if (cost <= 0) continue;
       const note = `${t.cost_note || ''} ${t.mode || ''}`;
@@ -3236,8 +3263,8 @@ Deno.serve(async (req) => {
     if (!preferences?.destinations || !preferences?.startDate) {
       return jsonResponse({ error: 'preferences invalides' }, 400);
     }
-    // Récupère le vol réel (Travelpayouts) avant d'appeler le LLM, pour le
-    // briefer dans le prompt avec des horaires/prix exacts.
+    // Récupère le vol réel (Travelpayouts ou Kiwi, selon app_config) avant
+    // d'appeler le LLM, pour le briefer dans le prompt avec des horaires/prix exacts.
     const flightData = await resolveFlightData(preferences);
     let userPrompt = buildFullPrompt(preferences);
     if (flightData) {

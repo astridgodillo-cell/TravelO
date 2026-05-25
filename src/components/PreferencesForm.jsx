@@ -358,7 +358,7 @@ export default function PreferencesForm({ onSubmit, loading, initialValues }) {
           <>
             <p className="text-xs text-slate-500 -mt-2">
               {isAirTransport
-                ? "Tout est optionnel — plus vous renseignez, plus l'estimation est précise. Sinon, on récupère automatiquement compagnie, prix et horaires via Aviasales. L'IA cale la journée d'arrivée avec le temps d'installation et le dernier jour avec la marge avant l'aéroport (~3 h)."
+                ? "Tout est optionnel — plus vous renseignez, plus l'estimation est précise. Sinon, on récupère automatiquement compagnie, prix et horaires via notre fournisseur de vols (Aviasales ou Kiwi.com). L'IA cale la journée d'arrivée avec le temps d'installation et le dernier jour avec la marge avant l'aéroport (~3 h)."
                 : `Renseignez ces horaires si vous arrivez en train longue distance / croisière / ferry. L'IA calera la journée d'arrivée avec le temps d'installation, et le dernier jour avec la marge nécessaire avant le départ (${
                     DEPARTURE_BUFFER_HINT[effectiveTransport] ||
                     'marge adaptée au type de transport'

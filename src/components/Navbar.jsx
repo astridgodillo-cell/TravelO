@@ -3,6 +3,7 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { signOut } from '../lib/supabase';
 import BackendQuickSwitch from './BackendQuickSwitch';
+import FlightProviderQuickSwitch from './FlightProviderQuickSwitch';
 
 export default function Navbar() {
   const { user, profile, isAdmin } = useAuth();
@@ -109,7 +110,12 @@ export default function Navbar() {
         <div className="hidden lg:flex items-center gap-2">
           {user ? (
             <>
-              {isAdmin && <BackendQuickSwitch />}
+              {isAdmin && (
+                <>
+                  <BackendQuickSwitch />
+                  <FlightProviderQuickSwitch />
+                </>
+              )}
               <span className="hidden xl:flex flex-col items-end text-xs leading-tight">
                 <span className="text-slate-600 truncate max-w-[180px]">
                   {user.email}
@@ -179,11 +185,19 @@ export default function Navbar() {
                   </div>
                 )}
                 {isAdmin && (
-                  <div className="pt-2">
-                    <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">
-                      Backend LLM
+                  <div className="pt-2 space-y-2">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">
+                        Backend LLM
+                      </div>
+                      <BackendQuickSwitch />
                     </div>
-                    <BackendQuickSwitch />
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-1">
+                        Fournisseur de vols
+                      </div>
+                      <FlightProviderQuickSwitch />
+                    </div>
                   </div>
                 )}
                 <button

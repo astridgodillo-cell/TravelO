@@ -672,8 +672,10 @@ function DayCard({
                   <>
                     {' '}
                     Vous pouvez aussi cliquer sur le bouton{' '}
-                    <strong>Aviasales</strong> dans la section Trajets ci-dessous
-                    pour voir les vrais horaires.
+                    <strong>
+                      {flightProviderName(flightTrip._flight.source)}
+                    </strong>{' '}
+                    dans la section Trajets ci-dessous pour voir les vrais horaires.
                   </>
                 )}
               </p>
@@ -1004,6 +1006,13 @@ function DayCard({
   );
 }
 
+function flightProviderName(source) {
+  if (typeof source !== 'string') return 'fournisseur partenaire';
+  if (source.startsWith('kiwi')) return 'Kiwi.com';
+  if (source.startsWith('travelpayouts')) return 'Aviasales';
+  return 'fournisseur partenaire';
+}
+
 function TripRow({ trip, dayDate }) {
   const hasBreakdown =
     trip.fuel_cost_eur != null ||
@@ -1014,13 +1023,15 @@ function TripRow({ trip, dayDate }) {
   const isFlight =
     /avion|vol|flight|plane/.test(modeLower) || !!trip._flight;
   const flight = trip._flight || {};
-  // Le prix vient-il vraiment d'Aviasales (Travelpayouts) ou est-ce
-  // une invention de l'IA ? Si pas de source travelpayouts, l'estimation
+  // Le prix vient-il vraiment d'un fournisseur (Aviasales / Kiwi.com) ou
+  // est-ce une invention de l'IA ? Si pas de source réelle, l'estimation
   // peut être 2-3x au-dessus de la réalité — on doit le signaler.
-  const isFlightPriceFromAviasales =
+  const isFlightPriceReal =
     typeof flight.source === 'string' &&
-    flight.source.startsWith('travelpayouts');
-  const isAiEstimatedFlight = isFlight && !isFlightPriceFromAviasales;
+    (flight.source.startsWith('travelpayouts') ||
+      flight.source.startsWith('kiwi'));
+  const isAiEstimatedFlight = isFlight && !isFlightPriceReal;
+  const providerLabel = flightProviderName(flight.source);
   // "HH:MM" depuis "YYYY-MM-DDTHH:MM:SS"
   const flightTime =
     flight.departure_at && typeof flight.departure_at === 'string'
@@ -1048,10 +1059,10 @@ function TripRow({ trip, dayDate }) {
         <div
           className="text-right"
           title={
-            isFlightPriceFromAviasales
-              ? 'Prix Aviasales — peut varier en temps réel selon la disponibilité.'
+            isFlightPriceReal
+              ? `Prix ${providerLabel} — peut varier en temps réel selon la disponibilité.`
               : isFlight
-                ? 'Prix INVENTÉ par l\'IA — peut être très éloigné de la réalité. Vérifiez sur Aviasales.'
+                ? `Prix INVENTÉ par l'IA — peut être très éloigné de la réalité. Vérifiez sur ${providerLabel}.`
                 : 'Estimation TravelO basée sur le mode et la distance. Carburant et péages peuvent varier.'
           }
         >
@@ -1072,13 +1083,13 @@ function TripRow({ trip, dayDate }) {
         <div className="mt-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 print:hidden">
           ⚠️ <strong>Prix de vol estimé par IA</strong> — souvent éloigné du
           vrai prix (à la hausse ou à la baisse). Cliquez sur le bouton
-          Aviasales ci-dessous pour voir les vrais tarifs en temps réel.
+          {' '}{providerLabel} ci-dessous pour voir les vrais tarifs en temps réel.
         </div>
       )}
-      {isFlight && !flightLine && isFlightPriceFromAviasales && (
+      {isFlight && !flightLine && isFlightPriceReal && (
         <div className="mt-2 text-xs text-slate-500 italic border-t border-slate-100 pt-2">
-          Prix Aviasales sans horaire — cliquez sur Aviasales ci-dessous pour
-          voir compagnie, horaires et escales en temps réel.
+          Prix {providerLabel} sans horaire — cliquez sur {providerLabel} ci-dessous
+          pour voir compagnie, horaires et escales en temps réel.
         </div>
       )}
       {hasBreakdown && (
@@ -1126,8 +1137,8 @@ function TripRow({ trip, dayDate }) {
           >
             ✈️{' '}
             {isAiEstimatedFlight
-              ? 'Vérifier les vrais prix sur Aviasales'
-              : 'Voir & réserver ce vol sur Aviasales'}
+              ? `Vérifier les vrais prix sur ${providerLabel}`
+              : `Voir & réserver ce vol sur ${providerLabel}`}
           </a>
         )}
       </div>
