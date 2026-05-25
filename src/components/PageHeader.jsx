@@ -38,7 +38,7 @@ export default function PageHeader({
 
   if (banner) {
     return (
-      <header className="relative overflow-hidden rounded-2xl sm:rounded-3xl h-44 sm:h-52 lg:h-60 mb-6 sm:mb-8">
+      <header className="relative overflow-hidden rounded-2xl sm:rounded-3xl h-36 sm:h-48 lg:h-60 mb-5 sm:mb-8">
         <img
           src={banner}
           alt=""

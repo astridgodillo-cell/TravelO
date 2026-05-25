@@ -59,7 +59,7 @@ export default function MomentAlternativesModal({
       aria-modal="true"
     >
       <div
-        className="bg-white w-full max-w-2xl max-h-[90vh] rounded-t-2xl sm:rounded-2xl shadow-glow overflow-hidden flex flex-col"
+        className="bg-white w-full max-w-2xl max-h-[92vh] sm:max-h-[90vh] rounded-t-2xl sm:rounded-2xl shadow-glow overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         <header className="px-5 py-4 border-b border-slate-200 flex items-start justify-between gap-3">
