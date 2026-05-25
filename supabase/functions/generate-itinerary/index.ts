@@ -580,6 +580,17 @@ Contraintes :
 - grand_total_eur = somme des day_total_eur.
 - per_person_eur = grand_total / (adults + enfants).
 - Si is_round_trip, dernier jour à departure_location ; sinon à return_location.
+- VOLS — RÈGLE CRITIQUE même si le tripType n'est pas explicitement "avion-*" :
+  si le lieu de DÉPART et la DESTINATION sont géographiquement éloignés (pays
+  différent, continent différent, ou >1500 km de distance terrestre), alors
+  l'utilisateur a forcément pris un AVION pour rejoindre la destination
+  (et un autre pour revenir). Dans ce cas :
+  * Tu DOIS créer dans days[0].trips un trip de mode "Avion" représentant le vol aller
+    (from = lieu de départ, to = ville d'arrivée/destination principale).
+  * Si is_round_trip, tu DOIS créer le même genre de trip en mode "Avion" sur le DERNIER jour.
+  * Ne te contente PAS d'écrire "Arrivée à [ville]" dans morning sans créer le trip Avion.
+  * Si tu n'as pas de prix/horaire fiable, mets "estimated_cost_eur": null + cost_note: "À confirmer après réservation".
+  → TravelO appellera ensuite son fournisseur (Duffel) pour remplacer le prix.
 - culinary_specialties : 3 à 4 spécialités emblématiques par jour, propres à la région/ville du jour. category = "plat", "pâtisserie", "fromage", "vin", "boisson", "rue", etc. description = 1-2 phrases descriptives (ingrédients, contexte). photo_query = expression COURTE (2-3 mots maximum) qui décrit le PLAT/PRODUIT lui-même, SANS nom de ville ni adjectif de provenance. Le moteur de recherche photo (Unsplash) doit retrouver une photo du plat, pas une photo du lieu.
   ✅ "pastel de nata"      ✅ "panettone"           ✅ "risotto"          ✅ "fondue savoyarde"
   ❌ "Panettone de Como"   ❌ "Formaggini di Tresenda"   ❌ "Missultini du lac"
@@ -2187,6 +2198,35 @@ function manualFlightToData(p: any): FlightData | null {
  *
  * Renvoie un FlightData ou null si rien à corriger / pas de vol détecté.
  */
+/**
+ * Détecte un vol "implicite" dans l'itinéraire : l'IA n'a pas créé de trip
+ * de mode "Avion" mais a clairement supposé qu'un vol existait (mention
+ * d'atterrissage / aéroport / arrivée à destination, transfert taxi depuis
+ * un aéroport, etc.). Sans ça on rate les cas où la destination est lointaine
+ * mais le tripType n'est pas "avion-*" (cas typique : "Itinérant" Marseille
+ * → Canada — vu en prod, l'IA décrit "Arrivée à Montréal" + transfer YUL
+ * → hôtel sans créer le moindre trip Avion).
+ */
+function hasImplicitFlightHint(itinerary: any): boolean {
+  if (!itinerary?.days?.length) return false;
+  const airportRe = /aéroport|aeroport|airport|terminal/i;
+  const flightWordsRe = /\b(atterrissage|atterriss|en\s+vol|prise?\s+du\s+vol|vol\s+aller|vol\s+retour|décollage|decollage|arrivée\s+(à|au|aux|en)\s+|landing|takeoff)/i;
+  for (const day of itinerary.days) {
+    // 1) Trip avec aéroport mentionné dans from / to
+    for (const t of day.trips || []) {
+      if (airportRe.test(`${t.from || ''} ${t.to || ''}`)) return true;
+    }
+    // 2) Mentions de vol/atterrissage dans les moments
+    for (const key of ['morning', 'noon', 'afternoon', 'evening']) {
+      const m = day[key];
+      if (!m) continue;
+      const text = `${m.title || ''} ${m.description || ''}`;
+      if (flightWordsRe.test(text)) return true;
+    }
+  }
+  return false;
+}
+
 async function recoverFlightDataIfNeeded(
   itinerary: any,
   preferences: any
@@ -2203,7 +2243,9 @@ async function recoverFlightDataIfNeeded(
       }
     }
   }
-  if (!hasFlightTrip) return null;
+  // Si pas de trip Avion explicite, on cherche des indices implicites
+  // (mention d'aéroport dans un transfert, "Arrivée à Montréal" en J1, etc.)
+  if (!hasFlightTrip && !hasImplicitFlightHint(itinerary)) return null;
   // L'IA a inventé un vol — on essaie de récupérer une vraie cotation
   console.log(
     '[flight-recovery] L\'IA a ajouté un vol sans nos données, fetch fallback…'
