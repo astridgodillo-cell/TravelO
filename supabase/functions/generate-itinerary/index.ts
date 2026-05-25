@@ -2101,9 +2101,12 @@ function manualFlightToData(p: any): FlightData | null {
     price_eur: Math.round(totalPerPax * pax),
     airline: mf.airline || 'N/A',
     flight_number: mf.flightNumber || null,
-    // Réutilise les dates/heures déjà saisies par l'utilisateur dans la
-    // section "Horaires d'arrivée et de départ" pour ne pas dupliquer.
-    departure_at:
+    // arrivalTime saisi par l'utilisateur = heure d'ARRIVÉE locale à
+    // destination J1, et departureTime = heure de DÉPART locale du retour
+    // depuis la destination. departure_at "aller" (depuis l'origine) n'est
+    // pas saisi côté UI manuelle, on le laisse null.
+    departure_at: null,
+    arrival_at:
       p.startDate && p.arrivalTime
         ? `${p.startDate}T${p.arrivalTime}:00`
         : null,
@@ -2111,6 +2114,7 @@ function manualFlightToData(p: any): FlightData | null {
       p.endDate && p.departureTime
         ? `${p.endDate}T${p.departureTime}:00`
         : null,
+    return_arrival_at: null,
     deeplink: '',
     source: 'travelpayouts-cheap',
   };
@@ -2263,6 +2267,19 @@ function formatFlightBlockForPrompt(flight: AnyFlightData, p: any): string {
   const isRoundTrip =
     !p.returnLocation || p.returnLocation === p.departureLocation;
   const providerLabel = flightSourceLabel(flight.source);
+  const arrival = flight.arrival_at
+    ? flight.arrival_at.substring(11, 16)
+    : null;
+  const returnArrival = flight.return_arrival_at
+    ? flight.return_arrival_at.substring(11, 16)
+    : null;
+  const depTime = flight.departure_at
+    ? flight.departure_at.substring(11, 16)
+    : null;
+  const retTime = flight.return_at
+    ? flight.return_at.substring(11, 16)
+    : null;
+
   return `
 VOL RÉEL (récupéré via ${providerLabel} — DOIS être utilisé tel quel) :
   - Trajet : ${p.departureLocation} (${flight.origin_iata || '?'}) → ${p.destinations} (${flight.destination_iata || '?'})${
@@ -2270,9 +2287,29 @@ VOL RÉEL (récupéré via ${providerLabel} — DOIS être utilisé tel quel) :
   }
   - Compagnie : ${flight.airline}${flight.flight_number ? ` (vol ${flight.airline}${flight.flight_number})` : ''}
   - Prix total famille : ${flight.price_eur} € (≈ ${pricePerPax} € par personne)
-  - Heure de départ aller : ${flight.departure_at || '(non précisée)'}
-  ${isRoundTrip ? `- Heure de départ retour : ${flight.return_at || '(non précisée)'}` : ''}
-  ⇒ Tu DOIS créer un trip de mode "Avion" dans le J1 (vol aller) et ${isRoundTrip ? 'dans le dernier jour (vol retour) ' : ''}avec EXACTEMENT ce prix et ces horaires. Cale le timing du jour autour de l'heure d'arrivée/de départ (transfert aéroport, marges, check-in).`;
+  - Heure de départ aller (heure locale ${flight.origin_iata || 'origine'}) : ${depTime || '(non précisée)'}
+  - Heure d'arrivée à destination (HEURE LOCALE ${flight.destination_iata || 'destination'}) : ${arrival || '(non précisée — estime selon la durée typique de vol et le décalage horaire)'}
+  ${isRoundTrip ? `- Heure de départ retour (heure locale destination) : ${retTime || '(non précisée)'}\n  - Heure d'arrivée retour (HEURE LOCALE ${flight.origin_iata || 'origine'}) : ${returnArrival || '(non précisée)'}` : ''}
+
+⇒ Tu DOIS créer un trip de mode "Avion" dans le J1 (vol aller) et ${isRoundTrip ? 'dans le dernier jour (vol retour) ' : ''}avec EXACTEMENT ce prix et ces horaires.
+
+RÈGLES STRICTES À RESPECTER pour caler le J1 — sans EXCEPTION :
+  1. L'heure d'arrivée à destination est en HEURE LOCALE. Tu DOIS utiliser EXACTEMENT cette heure pour caler le programme.
+  2. Après atterrissage, prévois MINIMUM 2 h avant l'installation à l'hôtel (récupération bagages, transfert aéroport → centre, check-in).
+     → Heure d'installation hôtel minimum = heure d'arrivée + 2 h.
+  3. Après installation, prévois MINIMUM 1 h 30 avant toute activité programmée (déballage, douche, repos après vol).
+     → Heure de 1ʳᵉ activité minimum = heure d'installation hôtel + 1 h 30.
+  4. Si l'heure de 1ʳᵉ activité tomberait après 19 h, ou s'il reste moins de 2 h d'activité avant 22 h, alors le J1 NE DOIT CONTENIR QUE :
+     - le vol
+     - le transfert aéroport → hôtel
+     - l'installation
+     - ÉVENTUELLEMENT un dîner simple à proximité de l'hôtel (à pied)
+     → AUCUNE excursion, AUCUNE visite, AUCUN trajet long ne doit figurer ce jour-là.
+  5. Le bloc "morning" / "noon" / "afternoon" / "evening" de J1 doit refléter ces contraintes :
+     - Les blocs antérieurs à l'arrivée doivent dire "Vol vers ${p.destinations} (départ ${depTime || 'matin'} de ${p.departureLocation || 'origine'})" ou "En vol".
+     - Le bloc d'arrivée doit dire "Atterrissage ${arrival ? `vers ${arrival}` : ''} (heure locale)".
+     - Le(s) bloc(s) après installation doivent rester légers (repos, dîner proche).
+  6. Pour le JOUR FINAL (retour) : appliquer le miroir — prévoir minimum 2 h pour rejoindre l'aéroport avant l'heure de départ retour. AUCUNE activité ne doit démarrer moins de 2 h avant cette heure cible aéroport.`;
 }
 
 /**
@@ -2306,6 +2343,7 @@ function enrichItineraryWithFlight(itinerary: any, flight: AnyFlightData, p: any
     to: string,
     cost: number,
     departureIso: string | null,
+    arrivalIso: string | null,
     label: 'aller' | 'retour'
   ) => {
     const time = departureIso ? departureIso.substring(11, 16) : null;
@@ -2325,6 +2363,7 @@ function enrichItineraryWithFlight(itinerary: any, flight: AnyFlightData, p: any
         airline: flight.airline,
         flight_number: flight.flight_number,
         departure_at: departureIso,
+        arrival_at: arrivalIso,
         deeplink: flight.deeplink || null,
         source: flight.source,
       },
@@ -2345,6 +2384,7 @@ function enrichItineraryWithFlight(itinerary: any, flight: AnyFlightData, p: any
         p.destinations || flight.destination_iata,
         outboundCost,
         flight.departure_at,
+        flight.arrival_at,
         'aller'
       )
     );
@@ -2366,6 +2406,7 @@ function enrichItineraryWithFlight(itinerary: any, flight: AnyFlightData, p: any
           p.returnLocation || p.departureLocation || 'Domicile',
           returnCost,
           flight.return_at,
+          flight.return_arrival_at,
           'retour'
         )
       );
@@ -2433,6 +2474,7 @@ function splitFlightForLegs(flight: AnyFlightData, isRoundTrip: boolean, p: any)
       to: p.destinations || flight.destination_iata,
       cost: outboundCost,
       departure_at: flight.departure_at,
+      arrival_at: flight.arrival_at,
       airlineLabel,
       flightNumberLabel,
       airline: flight.airline,
@@ -2447,6 +2489,7 @@ function splitFlightForLegs(flight: AnyFlightData, isRoundTrip: boolean, p: any)
             to: p.returnLocation || p.departureLocation || 'Domicile',
             cost: returnCost,
             departure_at: flight.return_at,
+            arrival_at: flight.return_arrival_at,
             airlineLabel,
             flightNumberLabel,
             airline: flight.airline,
@@ -2478,6 +2521,7 @@ function buildFlightTrip(leg: FlightLeg, legLabel: 'aller' | 'retour') {
       airline: leg.airline,
       flight_number: leg.flight_number,
       departure_at: leg.departure_at,
+      arrival_at: leg.arrival_at,
       deeplink: leg.deeplink,
       source: leg.source,
     },
@@ -2805,6 +2849,7 @@ async function enrichInternalFlights(
           airline: flight.airline,
           flight_number: flight.flight_number,
           departure_at: flight.departure_at,
+          arrival_at: flight.arrival_at,
           deeplink: flight.deeplink || null,
           source: flight.source,
         };

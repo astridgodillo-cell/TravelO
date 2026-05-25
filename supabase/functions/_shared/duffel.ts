@@ -143,11 +143,20 @@ export async function searchFlightDuffel(opts: {
       return null;
     }
 
-    // Extraction du segment aller (1ʳᵉ slice → 1ᵉʳ segment)
+    // Extraction du segment aller (1ʳᵉ slice → 1ᵉʳ segment pour départ ;
+    // dernier segment de la slice pour l'arrivée finale, en cas d'escales).
     const outboundSlice = best.slices?.[0];
-    const outboundSeg = outboundSlice?.segments?.[0];
+    const outboundSegs: any[] = Array.isArray(outboundSlice?.segments)
+      ? outboundSlice.segments
+      : [];
+    const outboundSeg = outboundSegs[0];
+    const outboundLastSeg = outboundSegs[outboundSegs.length - 1];
     const returnSlice = best.slices?.[1];
-    const returnSeg = returnSlice?.segments?.[0];
+    const returnSegs: any[] = Array.isArray(returnSlice?.segments)
+      ? returnSlice.segments
+      : [];
+    const returnSeg = returnSegs[0];
+    const returnLastSeg = returnSegs[returnSegs.length - 1];
 
     const carrier =
       outboundSeg?.marketing_carrier ||
@@ -158,11 +167,13 @@ export async function searchFlightDuffel(opts: {
       ? String(outboundSeg.marketing_carrier_flight_number)
       : null;
 
-    // local_departure : "YYYY-MM-DDTHH:MM:SS" — déjà au bon format pour
-    // que formatFlightBlockForPrompt et ItineraryView en extraient HH:MM
-    // via substring(11,16).
+    // Toutes les heures Duffel sont en HEURE LOCALE de l'aéroport
+    // correspondant (cf. doc Duffel API). Format "YYYY-MM-DDTHH:MM:SS".
     const departureAt: string | null = outboundSeg?.departing_at || null;
+    const arrivalAt: string | null = outboundLastSeg?.arriving_at || null;
     const returnAt: string | null = returnSeg?.departing_at || null;
+    const returnArrivalAt: string | null =
+      returnLastSeg?.arriving_at || null;
 
     // Pas de site consommateur Duffel → on fallback sur Google Flights pour
     // que le bouton "Voir & comparer" reste utile à l'utilisateur.
@@ -180,7 +191,9 @@ export async function searchFlightDuffel(opts: {
       airline: airlineCode,
       flight_number: flightNo,
       departure_at: departureAt,
+      arrival_at: arrivalAt,
       return_at: returnAt,
+      return_arrival_at: returnArrivalAt,
       deeplink,
       source: isTestToken ? 'duffel-test' : 'duffel',
     };

@@ -1631,15 +1631,24 @@ function TripRow({ trip, dayDate, dayIndex, tripIndex, onUpdateItinerary }) {
     flight.departure_at && typeof flight.departure_at === 'string'
       ? flight.departure_at.substring(11, 16)
       : null;
+  const arrivalTime =
+    flight.arrival_at && typeof flight.arrival_at === 'string'
+      ? flight.arrival_at.substring(11, 16)
+      : null;
 
   function commitFlightField(field, value) {
     if (!canEdit) return Promise.resolve();
-    // Pour departure_at on garde la date du jour et on remplace HH:MM
-    if (field === 'departure_at') {
-      const base = dayDate || flight.departure_at?.substring(0, 10) || '';
+    // Pour departure_at / arrival_at on garde la date et on remplace HH:MM
+    if (field === 'departure_at' || field === 'arrival_at') {
+      const baseSource =
+        field === 'departure_at'
+          ? flight.departure_at
+          : flight.arrival_at;
+      const base =
+        (baseSource && baseSource.substring(0, 10)) || dayDate || '';
       const composed = base && value ? `${base}T${value}:00` : null;
       return onUpdateItinerary((it) =>
-        updateFlightField(it, dayIndex, tripIndex, 'departure_at', composed)
+        updateFlightField(it, dayIndex, tripIndex, field, composed)
       );
     }
     return onUpdateItinerary((it) =>
@@ -1737,13 +1746,33 @@ function TripRow({ trip, dayDate, dayIndex, tripIndex, onUpdateItinerary }) {
               value={flightTime || ''}
               type="time"
               placeholder="HH:MM"
-              label="Heure de départ (cliquer pour modifier)"
+              label="Heure de départ — heure locale du lieu de départ"
               allowEmpty
               onSave={(v) => commitFlightField('departure_at', v)}
             />
           ) : (
             <span>{flightTime || '—'}</span>
           )}
+          <span className="text-slate-300">·</span>
+          <span className="text-slate-500">Arrivée :</span>
+          {canEdit ? (
+            <EditableValue
+              value={arrivalTime || ''}
+              type="time"
+              placeholder="HH:MM"
+              label="Heure d'arrivée — heure locale du lieu d'arrivée"
+              allowEmpty
+              onSave={(v) => commitFlightField('arrival_at', v)}
+            />
+          ) : (
+            <span>{arrivalTime || '—'}</span>
+          )}
+          <span
+            className="text-[10px] text-slate-400 italic"
+            title="Toutes les heures sont en heure locale de l'aéroport correspondant."
+          >
+            (heure locale)
+          </span>
         </div>
       )}
       {isAiEstimatedFlight && (

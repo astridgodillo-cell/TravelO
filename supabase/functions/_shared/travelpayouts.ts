@@ -14,8 +14,13 @@ export interface FlightData {
   price_eur: number;
   airline: string;
   flight_number: string | null;
+  // Heures TOUJOURS exprimées en HEURE LOCALE de l'aéroport correspondant :
+  //  - departure_at / arrival_at : aller (départ origine / arrivée destination)
+  //  - return_at / return_arrival_at : retour (départ destination / arrivée origine)
   departure_at: string | null;
+  arrival_at: string | null;
   return_at: string | null;
+  return_arrival_at: string | null;
   deeplink: string;
   source: 'travelpayouts-cheap' | 'travelpayouts-latest';
 }
@@ -184,6 +189,35 @@ export function buildAviasalesDeeplink(params: {
 }
 
 /**
+ * Calcule l'heure d'arrivée locale destination à partir de l'heure de départ
+ * + durée du vol (en minutes côté Travelpayouts cheap).
+ * Travelpayouts renvoie des durées qui sont déjà "perçues" du point de vue
+ * passager — on les ajoute directement sans correction fuseau.
+ */
+function computeArrival(
+  departureAt: string | null | undefined,
+  durationMinutes: number | null | undefined
+): string | null {
+  if (!departureAt) return null;
+  const mins = Number(durationMinutes);
+  if (!Number.isFinite(mins) || mins <= 0) return null;
+  try {
+    const d = new Date(departureAt);
+    if (isNaN(d.getTime())) return null;
+    d.setMinutes(d.getMinutes() + mins);
+    // Format ISO sans fuseau ("YYYY-MM-DDTHH:MM:SS")
+    const yyyy = d.getUTCFullYear();
+    const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(d.getUTCDate()).padStart(2, '0');
+    const hh = String(d.getUTCHours()).padStart(2, '0');
+    const mn = String(d.getUTCMinutes()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}T${hh}:${mn}:00`;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Recherche le vol le moins cher pour une route donnée.
  *
  * Stratégie : on tente d'abord /v1/prices/cheap (renvoie compagnie + n° vol +
@@ -245,6 +279,14 @@ export async function searchFlight(opts: {
           const best = offers[0];
           const pricePerPax = Number(best.price) || 0;
           const totalPax = Math.max(1, opts.adults) + (opts.children || 0);
+          // Travelpayouts ne renvoie pas arrival_at directement → on le
+          // calcule à partir de duration_to (durée aller en minutes).
+          // best.duration peut être en minutes ou secondes selon endpoint —
+          // on tente d'inférer (un vol >24h = secondes).
+          const arrivalAt = computeArrival(best.departure_at, best.duration_to ?? best.duration);
+          const returnArrivalAt = best.return_at
+            ? computeArrival(best.return_at, best.duration_back ?? best.duration)
+            : null;
           return {
             origin_iata: origin,
             destination_iata: destination,
@@ -252,7 +294,9 @@ export async function searchFlight(opts: {
             airline: best.airline || 'N/A',
             flight_number: best.flight_number ? String(best.flight_number) : null,
             departure_at: best.departure_at || null,
+            arrival_at: arrivalAt,
             return_at: best.return_at || null,
+            return_arrival_at: returnArrivalAt,
             deeplink,
             source: 'travelpayouts-cheap',
           };
@@ -291,7 +335,9 @@ export async function searchFlight(opts: {
           airline: best.gate || best.airline || 'N/A',
           flight_number: null,
           departure_at: best.depart_date || null,
+          arrival_at: null, // endpoint latest ne donne pas la durée → arrivée inconnue
           return_at: best.return_date || null,
+          return_arrival_at: null,
           deeplink,
           source: 'travelpayouts-latest',
         };

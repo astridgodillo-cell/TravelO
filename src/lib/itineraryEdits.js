@@ -61,10 +61,10 @@ export function updateTripPrice(itinerary, dayIndex, tripIndex, newPriceEur) {
 }
 
 /**
- * Modifie un champ texte d'un trip "Vol" (compagnie, n° de vol, heure de
- * départ). N'affecte pas les totaux.
+ * Modifie un champ texte d'un trip "Vol" (compagnie, n° de vol, heures
+ * de départ et d'arrivée). N'affecte pas les totaux.
  *
- *   field ∈ 'airline' | 'flight_number' | 'departure_at'
+ *   field ∈ 'airline' | 'flight_number' | 'departure_at' | 'arrival_at'
  */
 export function updateFlightField(
   itinerary,
