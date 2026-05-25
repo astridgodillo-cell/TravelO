@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { listPackingLists } from '../lib/supabase';
 import { costEur } from '../lib/ai';
+import { useDayLayout } from '../hooks/useDayLayout';
 import RouteMap from './RouteMap';
 import DayMiniMap from './DayMiniMap';
 import RegenerateDayModal from './RegenerateDayModal';
@@ -384,6 +385,7 @@ function Planning({
   // Tous les jours fermés par défaut : on voit la liste d'un coup d'œil
   // et on déplie au besoin.
   const [expandedDays, setExpandedDays] = useState(() => new Set());
+  const [layout, setLayout] = useDayLayout();
 
   if (!days?.length) return null;
 
@@ -405,17 +407,20 @@ function Planning({
 
   return (
     <section className="space-y-4">
-      <div className="flex flex-wrap items-baseline justify-between gap-3 print:block">
+      <div className="flex flex-wrap items-center justify-between gap-3 print:block">
         <h2 className="text-xl font-semibold text-slate-900 print:break-before-page">
           Programme jour par jour
         </h2>
-        <button
-          type="button"
-          onClick={toggleAll}
-          className="text-sm text-brand-700 hover:underline print:hidden"
-        >
-          {allExpanded ? '↑ Tout replier' : '↓ Tout déplier'}
-        </button>
+        <div className="flex items-center gap-3">
+          <LayoutToggle value={layout} onChange={setLayout} />
+          <button
+            type="button"
+            onClick={toggleAll}
+            className="text-sm text-brand-700 hover:underline print:hidden"
+          >
+            {allExpanded ? '↑ Tout replier' : '↓ Tout déplier'}
+          </button>
+        </div>
       </div>
       {days.map((d, i) => (
         <DayCard
@@ -429,6 +434,7 @@ function Planning({
           adults={adults}
           childrenCount={childrenCount}
           isVanTrip={isVanTrip}
+          layout={layout}
           onOpenRegen={onOpenRegen ? () => onOpenRegen(i, d) : null}
           onOpenModify={onOpenModify ? () => onOpenModify(i, d) : null}
           onEditActivity={onEditActivity}
@@ -442,6 +448,42 @@ function Planning({
         />
       ))}
     </section>
+  );
+}
+
+/**
+ * Segmented control "Cartes / Timeline" — choix utilisateur du mode
+ * d'affichage des journées (persisté dans localStorage).
+ */
+function LayoutToggle({ value, onChange }) {
+  const options = [
+    { id: 'cards', label: 'Cartes', icon: '🗂️' },
+    { id: 'timeline', label: 'Timeline', icon: '🕒' },
+  ];
+  return (
+    <div
+      className="inline-flex rounded-full bg-slate-100 p-0.5 text-xs print:hidden"
+      role="tablist"
+      aria-label="Mode d'affichage des journées"
+    >
+      {options.map((o) => (
+        <button
+          key={o.id}
+          type="button"
+          role="tab"
+          aria-selected={value === o.id}
+          onClick={() => onChange(o.id)}
+          className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-medium transition-colors ${
+            value === o.id
+              ? 'bg-white text-slate-900 shadow-sm'
+              : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <span>{o.icon}</span>
+          <span>{o.label}</span>
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -479,6 +521,99 @@ function buildFallbackDayTitle(day) {
   return day.morning?.title || null;
 }
 
+// Palette des catégories utilisée à la fois par le mode "cartes" (en-têtes
+// + traits latéraux) et le mode "timeline" (pastilles). Définie une seule
+// fois pour garantir la cohérence visuelle entre les deux.
+const CATEGORY_STYLES = {
+  moment: {
+    label: 'Moment',
+    icon: '🌤️',
+    headerBg: 'bg-violet-100',
+    headerText: 'text-violet-700',
+    border: 'border-l-violet-400',
+    tint: 'bg-violet-50/40',
+    dot: 'bg-violet-500',
+  },
+  activity: {
+    label: 'Activité',
+    icon: '🏛️',
+    headerBg: 'bg-amber-100',
+    headerText: 'text-amber-800',
+    border: 'border-l-amber-400',
+    tint: 'bg-amber-50/40',
+    dot: 'bg-amber-500',
+  },
+  trip: {
+    label: 'Trajet',
+    icon: '🚗',
+    headerBg: 'bg-sky-100',
+    headerText: 'text-sky-800',
+    border: 'border-l-sky-400',
+    tint: 'bg-sky-50/40',
+    dot: 'bg-sky-500',
+  },
+  flight: {
+    label: 'Vol',
+    icon: '✈️',
+    headerBg: 'bg-sky-100',
+    headerText: 'text-sky-800',
+    border: 'border-l-sky-500',
+    tint: 'bg-sky-50/50',
+    dot: 'bg-sky-600',
+  },
+  lodging: {
+    label: 'Hébergement',
+    icon: '🏨',
+    headerBg: 'bg-indigo-100',
+    headerText: 'text-indigo-800',
+    border: 'border-l-indigo-400',
+    tint: 'bg-indigo-50/40',
+    dot: 'bg-indigo-500',
+  },
+  meal: {
+    label: 'Repas',
+    icon: '🍽️',
+    headerBg: 'bg-orange-100',
+    headerText: 'text-orange-800',
+    border: 'border-l-orange-400',
+    tint: 'bg-orange-50/40',
+    dot: 'bg-orange-500',
+  },
+  service: {
+    label: 'Aire / Étape',
+    icon: '⛽',
+    headerBg: 'bg-emerald-100',
+    headerText: 'text-emerald-800',
+    border: 'border-l-emerald-400',
+    tint: 'bg-emerald-50/40',
+    dot: 'bg-emerald-500',
+  },
+};
+
+/**
+ * En-tête de section "cartes" avec badge icône + titre + compteur. Donne
+ * une identité visuelle nette à chaque catégorie pour éviter le mur de
+ * texte.
+ */
+function CategoryHeader({ category, title, count }) {
+  const s = CATEGORY_STYLES[category];
+  if (!s) return null;
+  return (
+    <div className="flex items-center gap-2 mb-2">
+      <div
+        className={`grid place-items-center h-8 w-8 rounded-lg ${s.headerBg} ${s.headerText} shrink-0`}
+        aria-hidden="true"
+      >
+        <span className="text-sm">{s.icon}</span>
+      </div>
+      <h4 className="text-base font-semibold text-slate-900">{title}</h4>
+      {count != null && count > 0 && (
+        <span className="text-xs text-slate-400 tabular-nums">({count})</span>
+      )}
+    </div>
+  );
+}
+
 function DayCard({
   day,
   dayIndex,
@@ -489,6 +624,7 @@ function DayCard({
   adults,
   childrenCount,
   isVanTrip,
+  layout = 'cards',
   onOpenRegen,
   onOpenModify,
   onEditActivity,
@@ -695,102 +831,379 @@ function DayCard({
       </button>
 
       {expanded && (
-      <>
-      <div className="mt-4 grid md:grid-cols-2 gap-3">
-        <Moment label="Matin" m={day.morning} />
-        <Moment label="Midi" m={day.noon} />
-        <Moment label="Après-midi" m={day.afternoon} />
-        <Moment label="Soir" m={day.evening} />
+        <>
+          {/* Bloc résumé 24h — toujours en tête : "où je dors, ce que je mange aujourd'hui" */}
+          <div className="mt-4 grid md:grid-cols-2 gap-3">
+            {day.accommodation && (
+              <LodgingCard
+                day={day}
+                isVanTrip={isVanTrip}
+                accomLink={accomLink}
+                isBookingCta={isBookingCta}
+              />
+            )}
+            {day.meals && <MealsCard day={day} />}
+          </div>
+
+          {layout === 'timeline' ? (
+            <DayTimeline
+              day={day}
+              dayIndex={dayIndex}
+              canEditActivities={canEditActivities}
+              onEditActivity={onEditActivity}
+              onRemoveActivity={onRemoveActivity}
+            />
+          ) : (
+            <DayCardsContent
+              day={day}
+              dayIndex={dayIndex}
+              canEditActivities={canEditActivities}
+              onEditActivity={onEditActivity}
+              onRemoveActivity={onRemoveActivity}
+            />
+          )}
+
+          <DaySpecialties
+            specialties={day.culinary_specialties}
+            location={day.location}
+            onFetch={onFetchSpecialties}
+            loading={loadingSpecialties}
+          />
+        </>
+      )}
+    </article>
+  );
+}
+
+/* -------------------------------------------------------------------------
+ * Helpers extraits du DayCard pour partage entre les modes "Cartes" et
+ * "Timeline". Chaque carte conserve un trait latéral coloré (CATEGORY_STYLES)
+ * pour identifier sa catégorie d'un coup d'œil.
+ * ------------------------------------------------------------------------- */
+
+function LodgingCard({ day, isVanTrip, accomLink, isBookingCta }) {
+  const s = CATEGORY_STYLES.lodging;
+  return (
+    <div className={`rounded-xl border border-slate-200 border-l-4 ${s.border} ${s.tint} p-3 text-sm`}>
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className={`grid place-items-center h-7 w-7 rounded-md ${s.headerBg} ${s.headerText} text-sm`}>
+          {s.icon}
+        </span>
+        <span className={`text-xs uppercase tracking-wide font-semibold ${s.headerText}`}>
+          Hébergement / nuit
+        </span>
+      </div>
+      <div className="font-medium text-slate-900">
+        {day.accommodation.name}
+        <HotelRating
+          hotelName={day.accommodation.name}
+          location={day.location}
+        />
+      </div>
+      <div className="text-slate-600">
+        {day.accommodation.type}
+        {day.accommodation.price_eur > 0 ? (
+          <>
+            {' — à partir de '}
+            <span
+              className="font-medium text-slate-800"
+              title="Estimation calculée par TravelO. Le prix réel dépend de la saison et des disponibilités — vérifiez sur Booking."
+            >
+              ≈ {formatEurOrFree(day.accommodation.price_eur)} / nuit
+            </span>
+          </>
+        ) : (
+          <> — {formatEurOrFree(day.accommodation.price_eur)}</>
+        )}
+      </div>
+      {day.accommodation.coordinates_hint && (
+        <div className="text-slate-500 italic mt-1">
+          📍 {day.accommodation.coordinates_hint}
+        </div>
+      )}
+      {day.accommodation.services?.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {day.accommodation.services.map((sv, i) => (
+            <span
+              key={i}
+              className="inline-block rounded-full bg-white/70 px-2 py-0.5 text-xs text-slate-700"
+            >
+              {sv}
+            </span>
+          ))}
+        </div>
+      )}
+      {isBookingCta && (
+        <div className="mt-3">
+          <a
+            href={accomLink.url}
+            target="_blank"
+            rel="noopener noreferrer sponsored"
+            className="group flex items-center justify-between gap-3 rounded-lg bg-[#003580] hover:bg-[#00224f] transition-colors px-4 py-3 text-white shadow-sm print:bg-white print:text-[#003580] print:border print:border-[#003580] print:shadow-none"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-white/15 text-base font-bold print:bg-[#003580] print:text-white">
+                B.
+              </span>
+              <div className="min-w-0">
+                <div className="font-semibold leading-tight">
+                  Réserver sur Booking.com
+                </div>
+                <div className="text-[11px] text-white/80 leading-tight print:text-slate-600">
+                  Disponibilités & prix en temps réel
+                </div>
+              </div>
+            </div>
+            <span className="shrink-0 text-sm font-medium group-hover:translate-x-0.5 transition-transform print:hidden">
+              →
+            </span>
+          </a>
+          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500 print:hidden">
+            <span className="inline-flex items-center gap-1">
+              <span className="text-emerald-600">✓</span> Annulation gratuite sur la plupart des hôtels
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span className="text-emerald-600">✓</span> Meilleur prix garanti
+            </span>
+            <span
+              className="inline-flex items-center gap-1"
+              title="TravelO touche une petite commission de Booking — aucun coût supplémentaire pour vous."
+            >
+              <span className="text-emerald-600">✓</span> Même prix pour vous
+            </span>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-3 text-[11px] print:hidden">
+            <a
+              href={googleMapsSearch(
+                day.accommodation.name
+                  ? `${day.accommodation.name} ${day.accommodation.coordinates_hint || day.location}`
+                  : day.location
+              )}
+              target="_blank"
+              rel="noreferrer"
+              className="text-slate-400 hover:text-slate-600 hover:underline"
+            >
+              Voir sur Google Maps
+            </a>
+            {isVanTrip && (
+              <a
+                href={park4nightSearch(day.location)}
+                target="_blank"
+                rel="noreferrer"
+                className="text-slate-400 hover:text-slate-600 hover:underline"
+              >
+                🚐 Park4Night
+              </a>
+            )}
+          </div>
+        </div>
+      )}
+      {!isBookingCta && (
+        <div className="print:hidden mt-2 flex flex-wrap gap-3 text-xs">
+          {accomLink && (
+            <a
+              href={accomLink.url}
+              target="_blank"
+              rel="noreferrer"
+              className="text-brand-700 hover:underline"
+            >
+              🔗 Chercher sur {accomLink.provider}
+            </a>
+          )}
+          {isVanTrip && accomLink?.provider !== 'Park4Night' && (
+            <a
+              href={park4nightSearch(day.location)}
+              target="_blank"
+              rel="noreferrer"
+              className="text-emerald-700 hover:underline"
+            >
+              🚐 Park4Night ({day.location})
+            </a>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MealsCard({ day }) {
+  const s = CATEGORY_STYLES.meal;
+  return (
+    <div className={`rounded-xl border border-slate-200 border-l-4 ${s.border} ${s.tint} p-3 text-sm`}>
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className={`grid place-items-center h-7 w-7 rounded-md ${s.headerBg} ${s.headerText} text-sm`}>
+          {s.icon}
+        </span>
+        <span className={`text-xs uppercase tracking-wide font-semibold ${s.headerText}`}>
+          Repas (famille)
+        </span>
+      </div>
+      <div
+        className="font-medium text-slate-900"
+        title="Estimation TravelO du budget repas. Le coût réel dépend des restaurants choisis."
+      >
+        {formatEurEstimate(day.meals.daily_family_budget_eur)} / jour
+      </div>
+      {day.meals.style && (
+        <div className="text-xs text-slate-600 capitalize">{day.meals.style}</div>
+      )}
+      {day.meals.note && (
+        <div className="text-slate-600 mt-1">{day.meals.note}</div>
+      )}
+    </div>
+  );
+}
+
+function ActivityCard({
+  activity: a,
+  dayLocation,
+  dayIndex,
+  activityIndex,
+  canEditActivities,
+  onEditActivity,
+  onRemoveActivity,
+}) {
+  const s = CATEGORY_STYLES.activity;
+  return (
+    <div className={`rounded-lg border border-slate-200 border-l-4 ${s.border} ${s.tint} p-3 text-sm`}>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="flex-1 min-w-0">
+          <div className="font-medium text-slate-900">{a.title}</div>
+          <div className="text-xs text-slate-500">
+            {a.schedule}
+            {a.duration ? ` · ${a.duration}` : ''}
+          </div>
+          {a.description && (
+            <p className="text-slate-700 mt-1">{a.description}</p>
+          )}
+          {isLikelyBookable(a) && (
+            <ActivityBookingCta activity={a} location={dayLocation} compact />
+          )}
+          <div className="print:hidden mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] items-center text-slate-500">
+            {isLikelyBookable(a) && (
+              <a
+                href={tiqetsSearch(a.title, dayLocation)}
+                target="_blank"
+                rel="noreferrer"
+                className="hover:text-slate-700 hover:underline"
+              >
+                🏛️ Tiqets
+              </a>
+            )}
+            <a
+              href={googleMapsSearch(`${a.title} ${dayLocation}`)}
+              target="_blank"
+              rel="noreferrer"
+              className="hover:text-slate-700 hover:underline"
+            >
+              📍 Google Maps
+            </a>
+            {canEditActivities && (
+              <>
+                <button
+                  onClick={() =>
+                    onEditActivity?.(dayIndex, activityIndex, a, dayLocation)
+                  }
+                  className="hover:text-brand-700 hover:underline"
+                >
+                  ✏️ Modifier
+                </button>
+                <button
+                  onClick={() => onRemoveActivity?.(dayIndex, activityIndex)}
+                  className="hover:text-red-600 hover:underline"
+                >
+                  🗑️ Supprimer
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+        <div
+          className="text-right text-xs shrink-0"
+          title={
+            a.price_per_person_eur === 0
+              ? 'Activité officielle gratuite. GetYourGuide propose des visites guidées payantes en supplément.'
+              : 'Estimation TravelO. Le prix réel peut différer — vérifiez sur GetYourGuide.'
+          }
+        >
+          <div className="text-slate-500">
+            {a.price_per_person_eur > 0 && 'à partir de '}
+            {formatEurOrFree(a.price_per_person_eur)}
+            {a.price_per_person_eur > 0 ? ' / pers.' : ''}
+          </div>
+          <div className="font-semibold text-slate-800">
+            Famille :{' '}
+            {a.family_total_eur > 0
+              ? formatEurEstimate(a.family_total_eur)
+              : formatEurOrFree(a.family_total_eur)}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ServiceStopCard({ stop: s }) {
+  const sty = CATEGORY_STYLES.service;
+  return (
+    <div className={`flex flex-wrap items-baseline justify-between gap-2 rounded-lg border border-slate-200 border-l-4 ${sty.border} ${sty.tint} p-3 text-sm`}>
+      <div>
+        <span className="font-medium capitalize text-slate-900">{s.type}</span>
+        <span className="text-slate-700 ml-2">{s.name}</span>
+        {s.location && (
+          <span className="text-slate-500 ml-1">— {s.location}</span>
+        )}
+      </div>
+      <div className="font-semibold text-slate-900">
+        {formatEurOrFree(s.estimated_cost_eur)}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Mode "Cartes par catégorie" : on garde l'ordre habituel mais chaque
+ * section a maintenant un en-tête avec icône colorée + chaque item un
+ * trait de couleur à gauche selon sa catégorie.
+ */
+function DayCardsContent({
+  day,
+  dayIndex,
+  canEditActivities,
+  onEditActivity,
+  onRemoveActivity,
+}) {
+  return (
+    <>
+      <div className="mt-4">
+        <CategoryHeader category="moment" title="Au fil de la journée" />
+        <div className="grid md:grid-cols-2 gap-3">
+          <Moment label="Matin" m={day.morning} />
+          <Moment label="Midi" m={day.noon} />
+          <Moment label="Après-midi" m={day.afternoon} />
+          <Moment label="Soir" m={day.evening} />
+        </div>
       </div>
 
       {day.activities?.length > 0 && (
         <div className="mt-4">
-          <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-2">
-            Activités & excursions
-          </h4>
+          <CategoryHeader
+            category="activity"
+            title="Activités & excursions"
+            count={day.activities.length}
+          />
           <ul className="space-y-2">
             {day.activities.map((a, i) => (
-              <li
-                key={i}
-                className="rounded-lg border border-slate-100 bg-slate-50 p-3 text-sm"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-slate-800">{a.title}</div>
-                    <div className="text-xs text-slate-500">
-                      {a.schedule}
-                      {a.duration ? ` · ${a.duration}` : ''}
-                    </div>
-                    {a.description && (
-                      <p className="text-slate-600 mt-1">{a.description}</p>
-                    )}
-                    {isLikelyBookable(a) && (
-                      <ActivityBookingCta
-                        activity={a}
-                        location={day.location}
-                        compact
-                      />
-                    )}
-                    <div className="print:hidden mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] items-center text-slate-400">
-                      {isLikelyBookable(a) && (
-                        <a
-                          href={tiqetsSearch(a.title, day.location)}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="hover:text-slate-600 hover:underline"
-                        >
-                          🏛️ Tiqets
-                        </a>
-                      )}
-                      <a
-                        href={googleMapsSearch(`${a.title} ${day.location}`)}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="hover:text-slate-600 hover:underline"
-                      >
-                        📍 Google Maps
-                      </a>
-                      {canEditActivities && (
-                        <>
-                          <button
-                            onClick={() =>
-                              onEditActivity?.(dayIndex, i, a, day.location)
-                            }
-                            className="hover:text-brand-700 hover:underline"
-                          >
-                            ✏️ Modifier
-                          </button>
-                          <button
-                            onClick={() => onRemoveActivity?.(dayIndex, i)}
-                            className="hover:text-red-600 hover:underline"
-                          >
-                            🗑️ Supprimer
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                  <div
-                    className="text-right text-xs shrink-0"
-                    title={
-                      a.price_per_person_eur === 0
-                        ? 'Activité officielle gratuite. GetYourGuide propose des visites guidées payantes en supplément.'
-                        : 'Estimation TravelO. Le prix réel peut différer — vérifiez sur GetYourGuide.'
-                    }
-                  >
-                    <div className="text-slate-500">
-                      {a.price_per_person_eur > 0 && 'à partir de '}
-                      {formatEurOrFree(a.price_per_person_eur)}
-                      {a.price_per_person_eur > 0 ? ' / pers.' : ''}
-                    </div>
-                    <div className="font-semibold text-slate-800">
-                      Famille :{' '}
-                      {a.family_total_eur > 0
-                        ? formatEurEstimate(a.family_total_eur)
-                        : formatEurOrFree(a.family_total_eur)}
-                    </div>
-                  </div>
-                </div>
+              <li key={i}>
+                <ActivityCard
+                  activity={a}
+                  dayLocation={day.location}
+                  dayIndex={dayIndex}
+                  activityIndex={i}
+                  canEditActivities={canEditActivities}
+                  onEditActivity={onEditActivity}
+                  onRemoveActivity={onRemoveActivity}
+                />
               </li>
             ))}
           </ul>
@@ -799,9 +1212,11 @@ function DayCard({
 
       {day.trips?.length > 0 && (
         <div className="mt-4">
-          <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-2">
-            Trajets
-          </h4>
+          <CategoryHeader
+            category="trip"
+            title="Trajets"
+            count={day.trips.length}
+          />
           <ul className="space-y-2 text-sm">
             {day.trips.map((t, i) => (
               <TripRow key={i} trip={t} dayDate={day.date} />
@@ -812,197 +1227,206 @@ function DayCard({
 
       {day.service_stops?.length > 0 && (
         <div className="mt-4">
-          <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-2">
-            Aires de service & courses
-          </h4>
-          <ul className="space-y-2 text-sm">
+          <CategoryHeader
+            category="service"
+            title="Aires de service & courses"
+            count={day.service_stops.length}
+          />
+          <ul className="space-y-2">
             {day.service_stops.map((s, i) => (
-              <li
-                key={i}
-                className="flex flex-wrap items-baseline justify-between gap-2 rounded-lg border border-emerald-100 bg-emerald-50 p-3"
-              >
-                <div>
-                  <span className="font-medium capitalize">{s.type}</span>
-                  <span className="text-slate-700 ml-2">{s.name}</span>
-                  {s.location && (
-                    <span className="text-slate-500 ml-1">— {s.location}</span>
-                  )}
-                </div>
-                <div className="font-semibold">
-                  {formatEurOrFree(s.estimated_cost_eur)}
-                </div>
+              <li key={i}>
+                <ServiceStopCard stop={s} />
               </li>
             ))}
           </ul>
         </div>
       )}
+    </>
+  );
+}
 
-      <div className="mt-4 grid md:grid-cols-2 gap-3">
-        {day.accommodation && (
-          <Block title="Hébergement / nuit">
-            <div className="font-medium text-slate-800">
-              {day.accommodation.name}
-              <HotelRating
-                hotelName={day.accommodation.name}
-                location={day.location}
-              />
-            </div>
-            <div className="text-slate-500">
-              {day.accommodation.type}
-              {day.accommodation.price_eur > 0 ? (
-                <>
-                  {' — à partir de '}
-                  <span
-                    className="font-medium text-slate-700"
-                    title="Estimation calculée par TravelO. Le prix réel dépend de la saison et des disponibilités — vérifiez sur Booking."
-                  >
-                    ≈ {formatEurOrFree(day.accommodation.price_eur)} / nuit
-                  </span>
-                </>
-              ) : (
-                <> — {formatEurOrFree(day.accommodation.price_eur)}</>
-              )}
-            </div>
-            {day.accommodation.coordinates_hint && (
-              <div className="text-slate-400 italic mt-1">
-                📍 {day.accommodation.coordinates_hint}
-              </div>
-            )}
-            {day.accommodation.services?.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-1">
-                {day.accommodation.services.map((s, i) => (
-                  <span
-                    key={i}
-                    className="inline-block rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600"
-                  >
-                    {s}
-                  </span>
-                ))}
-              </div>
-            )}
-            {isBookingCta && (
-              <div className="mt-3">
-                <a
-                  href={accomLink.url}
-                  target="_blank"
-                  rel="noopener noreferrer sponsored"
-                  className="group flex items-center justify-between gap-3 rounded-lg bg-[#003580] hover:bg-[#00224f] transition-colors px-4 py-3 text-white shadow-sm print:bg-white print:text-[#003580] print:border print:border-[#003580] print:shadow-none"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-white/15 text-base font-bold print:bg-[#003580] print:text-white">
-                      B.
-                    </span>
-                    <div className="min-w-0">
-                      <div className="font-semibold leading-tight">
-                        Réserver sur Booking.com
-                      </div>
-                      <div className="text-[11px] text-white/80 leading-tight print:text-slate-600">
-                        Disponibilités & prix en temps réel
-                      </div>
-                    </div>
-                  </div>
-                  <span className="shrink-0 text-sm font-medium group-hover:translate-x-0.5 transition-transform print:hidden">
-                    →
-                  </span>
-                </a>
-                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500 print:hidden">
-                  <span className="inline-flex items-center gap-1">
-                    <span className="text-emerald-600">✓</span> Annulation
-                    gratuite sur la plupart des hôtels
-                  </span>
-                  <span className="inline-flex items-center gap-1">
-                    <span className="text-emerald-600">✓</span> Meilleur prix
-                    garanti
-                  </span>
-                  <span
-                    className="inline-flex items-center gap-1"
-                    title="TravelO touche une petite commission de Booking — aucun coût supplémentaire pour vous."
-                  >
-                    <span className="text-emerald-600">✓</span> Même prix pour
-                    vous
-                  </span>
-                </div>
-                <div className="mt-2 flex flex-wrap gap-3 text-[11px] print:hidden">
-                  <a
-                    href={googleMapsSearch(
-                      day.accommodation.name
-                        ? `${day.accommodation.name} ${day.accommodation.coordinates_hint || day.location}`
-                        : day.location
-                    )}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-slate-400 hover:text-slate-600 hover:underline"
-                  >
-                    Voir sur Google Maps
-                  </a>
-                  {isVanTrip && (
-                    <a
-                      href={park4nightSearch(day.location)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-slate-400 hover:text-slate-600 hover:underline"
-                    >
-                      🚐 Park4Night
-                    </a>
-                  )}
-                </div>
-              </div>
-            )}
-            {!isBookingCta && (
-              <div className="print:hidden mt-2 flex flex-wrap gap-3 text-xs">
-                {accomLink && (
-                  <a
-                    href={accomLink.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-brand-700 hover:underline"
-                  >
-                    🔗 Chercher sur {accomLink.provider}
-                  </a>
-                )}
-                {isVanTrip && accomLink?.provider !== 'Park4Night' && (
-                  <a
-                    href={park4nightSearch(day.location)}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-emerald-700 hover:underline"
-                  >
-                    🚐 Park4Night ({day.location})
-                  </a>
-                )}
-              </div>
-            )}
-          </Block>
-        )}
-        {day.meals && (
-          <Block title="Repas (famille)">
-            <div
-              className="font-medium text-slate-800"
-              title="Estimation TravelO du budget repas. Le coût réel dépend des restaurants choisis."
-            >
-              {formatEurEstimate(day.meals.daily_family_budget_eur)} / jour
-            </div>
-            {day.meals.style && (
-              <div className="text-xs text-slate-500 capitalize">
-                {day.meals.style}
-              </div>
-            )}
-            {day.meals.note && (
-              <div className="text-slate-500 mt-1">{day.meals.note}</div>
-            )}
-          </Block>
-        )}
+/* -------------------------------------------------------------------------
+ * Mode "Timeline chronologique"
+ * ------------------------------------------------------------------------- */
+
+// Heures par défaut quand un moment/activité/trajet n'a pas d'horaire
+// extractible : permet de placer tout de même l'item à un endroit
+// raisonnable de la journée.
+const MOMENT_DEFAULT_TIME = {
+  Matin: '08:00',
+  Midi: '12:30',
+  'Après-midi': '14:30',
+  Soir: '19:30',
+};
+
+/**
+ * Extrait "HH:MM" depuis une chaîne du type "10:30 - 11:30", "10h30",
+ * "10h", "10:30 → 11:30"… Renvoie null si rien trouvé.
+ */
+function parseScheduleStart(schedule) {
+  if (!schedule || typeof schedule !== 'string') return null;
+  const m = schedule.match(/(\d{1,2})\s*[:hH]\s*(\d{2})?/);
+  if (!m) return null;
+  const hh = m[1].padStart(2, '0');
+  const mm = (m[2] || '00').padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+/**
+ * Construit la liste des évènements d'une journée pour affichage
+ * chronologique. Chaque évènement a : { time, category, render }.
+ */
+function buildDayEvents(day) {
+  const events = [];
+
+  // 4 moments
+  for (const [label, key] of [
+    ['Matin', 'morning'],
+    ['Midi', 'noon'],
+    ['Après-midi', 'afternoon'],
+    ['Soir', 'evening'],
+  ]) {
+    const m = day[key];
+    if (!m || (!m.title && !m.description)) continue;
+    events.push({
+      time: MOMENT_DEFAULT_TIME[label],
+      category: 'moment',
+      type: 'moment',
+      payload: { label, m },
+    });
+  }
+
+  // Trajets / vols
+  for (const t of day.trips || []) {
+    const isFlight = /avion|vol|flight|plane/i.test(t.mode || '');
+    const flightTime =
+      t._flight?.departure_at && typeof t._flight.departure_at === 'string'
+        ? t._flight.departure_at.substring(11, 16)
+        : null;
+    // Fallback : vol aller en début de journée, retour en fin
+    const fallback = isFlight ? '07:00' : '09:00';
+    events.push({
+      time: flightTime || fallback,
+      category: isFlight ? 'flight' : 'trip',
+      type: 'trip',
+      payload: { trip: t, dayDate: day.date },
+    });
+  }
+
+  // Activités
+  (day.activities || []).forEach((a, idx) => {
+    events.push({
+      time: parseScheduleStart(a.schedule) || '10:00',
+      category: 'activity',
+      type: 'activity',
+      payload: { activity: a, activityIndex: idx, dayLocation: day.location },
+    });
+  });
+
+  // Aires de service / courses (van) — répartis en fin de matinée
+  (day.service_stops || []).forEach((s, idx) => {
+    events.push({
+      time: '11:00',
+      category: 'service',
+      type: 'service',
+      payload: { stop: s, idx },
+    });
+  });
+
+  // Tri stable par heure (HH:MM > comparaison lexicographique OK)
+  events.sort((a, b) => a.time.localeCompare(b.time));
+  return events;
+}
+
+function DayTimeline({
+  day,
+  dayIndex,
+  canEditActivities,
+  onEditActivity,
+  onRemoveActivity,
+}) {
+  const events = useMemo(() => buildDayEvents(day), [day]);
+
+  if (events.length === 0) {
+    return (
+      <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
+        Aucun évènement détaillé pour cette journée.
       </div>
+    );
+  }
 
-      <DaySpecialties
-        specialties={day.culinary_specialties}
-        location={day.location}
-        onFetch={onFetchSpecialties}
-        loading={loadingSpecialties}
+  return (
+    <div className="mt-4">
+      <CategoryHeader category="moment" title="Déroulé de la journée" />
+      <ol className="relative ml-4 sm:ml-6 border-l-2 border-slate-200 space-y-4 py-2">
+        {events.map((e, i) => (
+          <TimelineRow
+            key={i}
+            event={e}
+            day={day}
+            dayIndex={dayIndex}
+            canEditActivities={canEditActivities}
+            onEditActivity={onEditActivity}
+            onRemoveActivity={onRemoveActivity}
+          />
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+function TimelineRow({
+  event,
+  day,
+  dayIndex,
+  canEditActivities,
+  onEditActivity,
+  onRemoveActivity,
+}) {
+  const s = CATEGORY_STYLES[event.category] || CATEGORY_STYLES.moment;
+  return (
+    <li className="relative pl-6 sm:pl-8">
+      {/* Pastille colorée sur le rail */}
+      <span
+        className={`absolute -left-[9px] top-1.5 grid place-items-center h-4 w-4 rounded-full ${s.dot} ring-4 ring-white shadow-sm`}
+        aria-hidden="true"
       />
-      </>
+      {/* Bandeau horaire + icône catégorie */}
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className="text-xs font-bold text-slate-900 tabular-nums">
+          {event.time}
+        </span>
+        <span
+          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${s.headerBg} ${s.headerText}`}
+        >
+          <span>{s.icon}</span>
+          <span>{s.label}</span>
+        </span>
+      </div>
+      {/* Contenu de l'évènement, réutilisant les cartes du mode "Cartes" */}
+      {event.type === 'moment' && (
+        <Moment label={event.payload.label} m={event.payload.m} />
       )}
-    </article>
+      {event.type === 'activity' && (
+        <ActivityCard
+          activity={event.payload.activity}
+          dayLocation={event.payload.dayLocation}
+          dayIndex={dayIndex}
+          activityIndex={event.payload.activityIndex}
+          canEditActivities={canEditActivities}
+          onEditActivity={onEditActivity}
+          onRemoveActivity={onRemoveActivity}
+        />
+      )}
+      {event.type === 'trip' && (
+        <ul className="space-y-2 text-sm">
+          <TripRow trip={event.payload.trip} dayDate={event.payload.dayDate} />
+        </ul>
+      )}
+      {event.type === 'service' && (
+        <ServiceStopCard stop={event.payload.stop} />
+      )}
+    </li>
   );
 }
 
