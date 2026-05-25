@@ -6,9 +6,12 @@ import {
   replanFromDay,
   regenerateActivity,
   removeActivity,
+  suggestMomentAlternatives,
 } from '../lib/ai';
+import { replaceMoment } from '../lib/itineraryEdits';
 import { fetchSpecialties } from '../lib/photos';
 import ItineraryView from '../components/ItineraryView';
+import MomentAlternativesModal from '../components/MomentAlternativesModal';
 import SharePanel from '../components/SharePanel';
 import AdminTemplatePanel from '../components/AdminTemplatePanel';
 import { useAuth } from '../context/AuthContext';
@@ -20,6 +23,10 @@ export default function ItineraryDetailPage() {
   const [loading, setLoading] = useState(true);
   const [regenerating, setRegenerating] = useState(false);
   const [error, setError] = useState(null);
+  // État de la modale "Proposer d'autres options" sur un moment
+  const [momentSuggestState, setMomentSuggestState] = useState(null);
+  // { open: bool, context: {dayIndex, momentKey, label, m, dayLocation},
+  //   alternatives: array | null, loading: bool }
 
   useEffect(() => {
     let active = true;
@@ -158,6 +165,52 @@ export default function ItineraryDetailPage() {
     setTrip(data);
   }
 
+  /**
+   * Demande à l'IA des alternatives pour un moment de la journée. Ouvre la
+   * modale en mode "loading" puis injecte les alternatives quand elles arrivent.
+   */
+  async function handleSuggestMomentAlternatives(
+    dayIndex,
+    momentKey,
+    label,
+    m,
+    dayLocation
+  ) {
+    if (!trip) return;
+    setMomentSuggestState({
+      open: true,
+      context: { dayIndex, momentKey, label, m, dayLocation },
+      alternatives: null,
+      loading: true,
+    });
+    try {
+      const alternatives = await suggestMomentAlternatives(
+        trip.itinerary,
+        dayIndex,
+        momentKey
+      );
+      setMomentSuggestState((s) =>
+        s ? { ...s, alternatives, loading: false } : s
+      );
+    } catch (err) {
+      console.error('[suggest-moment-alternatives] failed', err);
+      setMomentSuggestState((s) =>
+        s ? { ...s, alternatives: [], loading: false } : s
+      );
+      setError(
+        err.message || 'Impossible de générer des alternatives pour ce moment.'
+      );
+    }
+  }
+
+  async function handlePickMomentAlternative(alt) {
+    if (!trip || !momentSuggestState?.context) return;
+    const { dayIndex, momentKey } = momentSuggestState.context;
+    await handleUpdateItinerary((it) =>
+      replaceMoment(it, dayIndex, momentKey, alt)
+    );
+  }
+
   if (loading) return <p className="text-slate-500">Chargement…</p>;
   if (error)
     return (
@@ -209,7 +262,17 @@ export default function ItineraryDetailPage() {
         onRemoveActivity={handleRemoveActivity}
         onFetchSpecialties={handleFetchSpecialties}
         onUpdateItinerary={handleUpdateItinerary}
+        onSuggestMomentAlternatives={handleSuggestMomentAlternatives}
         regenerating={regenerating}
+      />
+
+      <MomentAlternativesModal
+        open={!!momentSuggestState?.open}
+        onClose={() => setMomentSuggestState(null)}
+        context={momentSuggestState?.context}
+        alternatives={momentSuggestState?.alternatives}
+        loading={momentSuggestState?.loading}
+        onPick={handlePickMomentAlternative}
       />
     </div>
   );

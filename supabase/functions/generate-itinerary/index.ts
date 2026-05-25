@@ -691,6 +691,46 @@ function buildRegenerateDayPrompt(
   const prev = itinerary.days?.[dayIndex - 1];
   const next = itinerary.days?.[dayIndex + 1];
 
+  // Si la journée contient un trip "Avion" avec des horaires déjà figés
+  // (par notre fournisseur ou corrigés manuellement par l'utilisateur), on
+  // les injecte comme contraintes IMPÉRATIVES + on rappelle les règles
+  // strictes de marge (2 h après atterrissage, 1 h 30 avant activités,
+  // J1 light si trop tard).
+  const flightTrip = (day.trips || []).find((t: any) =>
+    /avion|vol|flight|plane/i.test(t?.mode || '')
+  );
+  let flightConstraintsBlock = '';
+  if (flightTrip?._flight) {
+    const f = flightTrip._flight;
+    const depTime = f.departure_at ? String(f.departure_at).substring(11, 16) : null;
+    const arrTime = f.arrival_at ? String(f.arrival_at).substring(11, 16) : null;
+    const isFirstDay = dayIndex === 0;
+    const isLastDay = dayIndex === (itinerary.days?.length || 0) - 1;
+    const role = isFirstDay
+      ? 'jour d\'ARRIVÉE'
+      : isLastDay
+        ? 'jour de DÉPART'
+        : 'jour avec un VOL INTERNE';
+
+    flightConstraintsBlock = `
+
+CONTRAINTES VOL — ${role} (à respecter SANS exception) :
+  - Trajet : ${flightTrip.from} → ${flightTrip.to}${f.airline ? ` (${f.airline}${f.flight_number || ''})` : ''}
+  - Heure de DÉPART (heure locale de l'aéroport de départ) : ${depTime || '(non précisée)'}
+  - Heure d'ARRIVÉE (heure locale de l'aéroport d'arrivée) : ${arrTime || '(non précisée)'}
+  - Prix : ${flightTrip.estimated_cost_eur || 0} € (total famille) — NE PAS MODIFIER
+
+  → Tu DOIS conserver ce trip "Avion" tel quel dans la sortie, AVEC EXACTEMENT ces horaires et ce prix.
+  → Tu DOIS organiser le reste de la journée autour de ces contraintes :
+    ${isFirstDay && arrTime ? `* Atterrissage à ${arrTime}. Installation hôtel possible à partir de ${addHours(arrTime, 2)} (= arrivée + 2 h pour bagages/transfert/check-in).
+    * 1ʳᵉ activité programmée possible à partir de ${addHours(arrTime, 3.5)} minimum (= installation + 1 h 30 pour repos/douche).
+    * Si ${addHours(arrTime, 3.5)} tombe après 19 h, ou s'il reste moins de 2 h avant 22 h → JOURNÉE LIGHT : SEULEMENT vol + transfert + installation + dîner à proximité de l'hôtel. AUCUNE excursion, AUCUNE visite.` : ''}
+    ${isLastDay && depTime ? `* Départ vol à ${depTime}. Arrivée à l'aéroport requise au plus tard à ${addHours(depTime, -2)} (= départ - 2 h).
+    * Toute activité doit se TERMINER au plus tard 30 min avant cette heure pour permettre check-out hôtel + transfert vers aéroport.
+    * Si peu de temps disponible : JOURNÉE LIGHT — uniquement petit-déj, check-out, transfert aéroport.` : ''}
+    ${!isFirstDay && !isLastDay ? '* Vol interne : prévoir 1 h 30 avant le vol pour rejoindre l\'aéroport. Activités cohérentes autour du décollage et de l\'atterrissage.' : ''}`;
+  }
+
   return `Régénère UNE SEULE journée d'un itinéraire existant en tenant compte d'une consigne utilisateur.
 
 Contexte itinéraire :
@@ -702,13 +742,30 @@ Jour suivant : ${next ? next.location : '(dernier jour)'}
 
 Journée actuelle :
 ${JSON.stringify(day, null, 2)}
+${flightConstraintsBlock}
 
-CONSIGNE :
+CONSIGNE UTILISATEUR :
 """
 ${instructions}
 """
 
-Renvoie UNIQUEMENT le JSON de la nouvelle journée selon le même schéma. Garde label, date et weekday. Recalcule day_total_eur. Cohérence avec le départ du jour suivant.`;
+Renvoie UNIQUEMENT le JSON de la nouvelle journée selon le même schéma. Garde label, date et weekday. Recalcule day_total_eur. Cohérence avec le départ du jour suivant.${flightConstraintsBlock ? ' RESPECTE IMPÉRATIVEMENT LES CONTRAINTES VOL CI-DESSUS.' : ''}`;
+}
+
+/**
+ * Ajoute h heures (ou heures décimales : 1.5 = 1h30) à une heure "HH:MM"
+ * et renvoie le résultat au format "HH:MM" (sans dépasser 24h / sans
+ * gérer le débordement de jour — suffisant pour le prompt LLM).
+ */
+function addHours(hhmm: string, hours: number): string {
+  const [hStr, mStr] = hhmm.split(':');
+  const total = (Number(hStr) || 0) * 60 + (Number(mStr) || 0) + hours * 60;
+  let mins = Math.round(total);
+  while (mins < 0) mins += 24 * 60;
+  while (mins >= 24 * 60) mins -= 24 * 60;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
 function buildFetchSpecialtiesPrompt(location: string, count = 4): string {
@@ -2950,6 +3007,87 @@ Deno.serve(async (req) => {
       await enrichInternalFlights(wrapped, preferences);
       day = wrapped.days[0];
       return jsonResponse({ day, usage, model: modelUsed });
+    }
+
+    if (mode === 'suggest-moment-alternatives') {
+      // Body : { day, moment_key, day_index, total_days }
+      // day   = la journée complète (objet) — pour conserver la cohérence
+      // moment_key ∈ 'morning' | 'noon' | 'afternoon' | 'evening'
+      const { day, moment_key, day_index, total_days } = body;
+      if (!day || typeof moment_key !== 'string') {
+        return jsonResponse(
+          { error: 'Body invalide : day + moment_key requis.' },
+          400
+        );
+      }
+      const labelMap: Record<string, string> = {
+        morning: 'Matin',
+        noon: 'Midi',
+        afternoon: 'Après-midi',
+        evening: 'Soir',
+      };
+      const slotLabel = labelMap[moment_key] || moment_key;
+      const current = day[moment_key] || { title: '', description: '' };
+      const flightTrip = (day.trips || []).find((t: any) =>
+        /avion|vol|flight|plane/i.test(t?.mode || '')
+      );
+      const flightConstraintsLine = flightTrip?._flight
+        ? `\n⚠️ Cette journée comporte un vol (${flightTrip.from} → ${flightTrip.to}, départ ${
+            flightTrip._flight.departure_at
+              ? flightTrip._flight.departure_at.substring(11, 16)
+              : '?'
+          }, arrivée ${
+            flightTrip._flight.arrival_at
+              ? flightTrip._flight.arrival_at.substring(11, 16)
+              : '?'
+          }, heure locale). Les alternatives doivent respecter : 2 h entre atterrissage et hôtel + 1 h 30 avant activités.`
+        : '';
+
+      const prompt = `Tu es un planificateur de voyage. L'utilisateur veut REMPLACER un moment de sa journée par une autre option. Propose 5 alternatives variées, cohérentes avec le reste de la journée.
+
+LIEU : ${day.location}
+DATE : ${day.date}${day.weather ? `\nMÉTÉO : ${day.weather.emoji} ${day.weather.temperature_c}°C — ${day.weather.description || ''}` : ''}
+JOUR ${typeof day_index === 'number' ? day_index + 1 : '?'} / ${total_days || '?'}
+
+MOMENT À REMPLACER : ${slotLabel}
+Titre actuel : "${current.title || '(vide)'}"
+Description actuelle : "${current.description || '(vide)'}"
+
+CONTEXTE DE LA JOURNÉE (pour rester cohérent) :
+- Matin : ${day.morning?.title || '(vide)'}
+- Midi : ${day.noon?.title || '(vide)'}
+- Après-midi : ${day.afternoon?.title || '(vide)'}
+- Soir : ${day.evening?.title || '(vide)'}
+- Hôtel ce soir : ${day.accommodation?.name || '(non précisé)'}${flightConstraintsLine}
+
+CONSIGNES — TRÈS IMPORTANT :
+- Propose EXACTEMENT 5 alternatives DIFFÉRENTES entre elles.
+- VARIE les profils — au moins : 1 option "REPOS / DÉTENTE", 1 option "CULTURE", 1 option "GASTRONOMIE / MARCHÉ", 1 option "NATURE / EXTÉRIEUR", 1 option "GRATUIT OU TRÈS PEU CHER".
+- Chaque alternative doit être RÉALISABLE depuis "${day.accommodation?.name || day.location}" et compatible avec les moments adjacents (pas de téléportation à l'autre bout de la ville quand le moment d'après doit être à proximité).
+- Garde la durée raisonnable pour le slot (Matin ≈ 3 h max, Midi ≈ 1h30, Après-midi ≈ 4 h max, Soir ≈ 3 h max).
+- Ne propose JAMAIS de répéter ce qui est déjà prévu dans un autre moment du jour.
+- Titre : court, accrocheur, 4-8 mots.
+- Description : 1-2 phrases concrètes (où précisément, quoi faire, pourquoi c'est sympa pour ce slot).
+
+Renvoie UNIQUEMENT du JSON valide selon ce schéma (rien autour) :
+
+{
+  "alternatives": [
+    {
+      "type": "repos | culture | gastronomie | nature | gratuit",
+      "title": "...",
+      "description": "...",
+      "estimated_duration": "1h30"
+    }
+  ]
+}`;
+      const { text, usage, modelUsed } = await callExpansion(prompt, 2500);
+      const parsed = await parseOrRepair(text, callExpansionSafe);
+      return jsonResponse({
+        alternatives: parsed?.alternatives || [],
+        usage,
+        model: modelUsed,
+      });
     }
 
     if (mode === 'fetch-specialties') {

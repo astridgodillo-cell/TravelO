@@ -548,6 +548,27 @@ export function removeActivity(itinerary, dayIndex, activityIndex) {
   };
 }
 
+/**
+ * Demande au backend des alternatives pour UN moment de la journée
+ * (matin / midi / aprem / soir). Renvoie un tableau d'alternatives, à
+ * afficher dans une modale pour que l'utilisateur en choisisse une.
+ *
+ * Pas de mutation de l'itinéraire ici — c'est l'appelant (handler dans
+ * ItineraryDetailPage) qui appliquera le choix via replaceMoment().
+ */
+export async function suggestMomentAlternatives(itinerary, dayIndex, momentKey) {
+  const day = itinerary?.days?.[dayIndex];
+  if (!day) throw new Error(`Jour ${dayIndex} introuvable`);
+  const data = await invoke({
+    mode: 'suggest-moment-alternatives',
+    day,
+    moment_key: momentKey,
+    day_index: dayIndex,
+    total_days: itinerary.days?.length || 0,
+  });
+  return Array.isArray(data?.alternatives) ? data.alternatives : [];
+}
+
 export async function regenerateDay(itinerary, dayIndex, instructions) {
   const data = await invoke({
     mode: 'regenerate-day',

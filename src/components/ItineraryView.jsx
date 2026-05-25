@@ -8,6 +8,9 @@ import {
   updateAccommodationPrice,
   updateAccommodationName,
   updateMealsBudget,
+  updateMomentTitle,
+  updateMomentDescription,
+  replaceMoment,
 } from '../lib/itineraryEdits';
 import { useDayLayout } from '../hooks/useDayLayout';
 import EditableValue from './EditableValue';
@@ -86,6 +89,7 @@ export default function ItineraryView({
   onRemoveActivity,
   onFetchSpecialties,
   onUpdateItinerary,
+  onSuggestMomentAlternatives,
   regenerating,
 }) {
   const [tab, setTab] = useState('planning');
@@ -322,6 +326,7 @@ export default function ItineraryView({
             canRegenerate={typeof onRegenerateDay === 'function'}
             canEditActivities={typeof onRegenerateActivity === 'function'}
             onUpdateItinerary={onUpdateItinerary}
+            onSuggestMomentAlternatives={onSuggestMomentAlternatives}
           />
         </div>
         <div className={tab === 'table' ? '' : 'hidden'}>
@@ -393,6 +398,7 @@ function Planning({
   canRegenerate,
   canEditActivities,
   onUpdateItinerary,
+  onSuggestMomentAlternatives,
 }) {
   // Tous les jours fermés par défaut : on voit la liste d'un coup d'œil
   // et on déplie au besoin.
@@ -458,6 +464,7 @@ function Planning({
           canRegenerate={canRegenerate}
           canEditActivities={canEditActivities}
           onUpdateItinerary={onUpdateItinerary}
+          onSuggestMomentAlternatives={onSuggestMomentAlternatives}
         />
       ))}
     </section>
@@ -647,6 +654,7 @@ function DayCard({
   canRegenerate,
   canEditActivities,
   onUpdateItinerary,
+  onSuggestMomentAlternatives,
 }) {
   // Détecte les jours d'arrivée/départ d'un voyage avion-* sans horaire
   // confirmé : on a une trip de mode "Avion" mais sans heure de départ
@@ -875,6 +883,7 @@ function DayCard({
               onEditActivity={onEditActivity}
               onRemoveActivity={onRemoveActivity}
               onUpdateItinerary={onUpdateItinerary}
+              onSuggestMomentAlternatives={onSuggestMomentAlternatives}
             />
           ) : (
             <DayCardsContent
@@ -884,6 +893,7 @@ function DayCard({
               onEditActivity={onEditActivity}
               onRemoveActivity={onRemoveActivity}
               onUpdateItinerary={onUpdateItinerary}
+              onSuggestMomentAlternatives={onSuggestMomentAlternatives}
             />
           )}
 
@@ -1305,16 +1315,23 @@ function DayCardsContent({
   onEditActivity,
   onRemoveActivity,
   onUpdateItinerary,
+  onSuggestMomentAlternatives,
 }) {
+  const momentProps = {
+    dayIndex,
+    dayLocation: day.location,
+    onUpdateItinerary,
+    onSuggestMomentAlternatives,
+  };
   return (
     <>
       <div className="mt-4">
         <CategoryHeader category="moment" title="Au fil de la journée" />
         <div className="grid md:grid-cols-2 gap-3">
-          <Moment label="Matin" m={day.morning} />
-          <Moment label="Midi" m={day.noon} />
-          <Moment label="Après-midi" m={day.afternoon} />
-          <Moment label="Soir" m={day.evening} />
+          <Moment label="Matin" m={day.morning} momentKey="morning" {...momentProps} />
+          <Moment label="Midi" m={day.noon} momentKey="noon" {...momentProps} />
+          <Moment label="Après-midi" m={day.afternoon} momentKey="afternoon" {...momentProps} />
+          <Moment label="Soir" m={day.evening} momentKey="evening" {...momentProps} />
         </div>
       </div>
 
@@ -1433,7 +1450,7 @@ function buildDayEvents(day) {
       time: MOMENT_DEFAULT_TIME[label],
       category: 'moment',
       type: 'moment',
-      payload: { label, m },
+      payload: { label, m, momentKey: key },
     });
   }
 
@@ -1486,6 +1503,7 @@ function DayTimeline({
   onEditActivity,
   onRemoveActivity,
   onUpdateItinerary,
+  onSuggestMomentAlternatives,
 }) {
   const events = useMemo(() => buildDayEvents(day), [day]);
 
@@ -1511,6 +1529,7 @@ function DayTimeline({
             onEditActivity={onEditActivity}
             onRemoveActivity={onRemoveActivity}
             onUpdateItinerary={onUpdateItinerary}
+            onSuggestMomentAlternatives={onSuggestMomentAlternatives}
           />
         ))}
       </ol>
@@ -1526,6 +1545,7 @@ function TimelineRow({
   onEditActivity,
   onRemoveActivity,
   onUpdateItinerary,
+  onSuggestMomentAlternatives,
 }) {
   const s = CATEGORY_STYLES[event.category] || CATEGORY_STYLES.moment;
   return (
@@ -1549,7 +1569,15 @@ function TimelineRow({
       </div>
       {/* Contenu de l'évènement, réutilisant les cartes du mode "Cartes" */}
       {event.type === 'moment' && (
-        <Moment label={event.payload.label} m={event.payload.m} />
+        <Moment
+          label={event.payload.label}
+          m={event.payload.m}
+          momentKey={event.payload.momentKey}
+          dayIndex={dayIndex}
+          dayLocation={day.location}
+          onUpdateItinerary={onUpdateItinerary}
+          onSuggestMomentAlternatives={onSuggestMomentAlternatives}
+        />
       )}
       {event.type === 'activity' && (
         <ActivityCard
@@ -1841,28 +1869,73 @@ function TripRow({ trip, dayDate, dayIndex, tripIndex, onUpdateItinerary }) {
   );
 }
 
-function Moment({ label, m }) {
+function Moment({
+  label,
+  m,
+  dayIndex,
+  momentKey,
+  dayLocation,
+  onUpdateItinerary,
+  onSuggestMomentAlternatives,
+}) {
   if (!m) return null;
-  const hasDetail = !!m.description;
-  // Quand il n'y a pas de description, pas de toggle (le moment reste plat)
-  if (!hasDetail) {
-    return (
-      <div className="rounded-lg border border-slate-100 p-3 bg-white">
-        <div className="text-xs uppercase tracking-wide text-brand-700 font-semibold">
-          {label}
-        </div>
-        <div className="text-slate-800 font-medium mt-1">{m.title}</div>
-      </div>
+  const canEdit =
+    typeof onUpdateItinerary === 'function' &&
+    typeof dayIndex === 'number' &&
+    !!momentKey;
+  const canSuggest =
+    typeof onSuggestMomentAlternatives === 'function' &&
+    typeof dayIndex === 'number' &&
+    !!momentKey;
+  const userEdited = !!m._user_edited;
+
+  function saveTitle(v) {
+    return onUpdateItinerary((it) =>
+      updateMomentTitle(it, dayIndex, momentKey, v)
     );
   }
+  function saveDescription(v) {
+    return onUpdateItinerary((it) =>
+      updateMomentDescription(it, dayIndex, momentKey, v)
+    );
+  }
+
+  // Toujours rendre le bloc dépliable (même sans description) pour donner
+  // accès aux actions d'édition.
   return (
-    <details className="group rounded-lg border border-slate-100 bg-white open:bg-slate-50/50 transition-colors print:open">
+    <details
+      className="group rounded-lg border border-slate-100 bg-white open:bg-slate-50/50 transition-colors print:open"
+      open={userEdited && !m.description}
+    >
       <summary className="cursor-pointer list-none p-3 flex items-start justify-between gap-2 hover:bg-slate-50 rounded-lg select-none">
-        <div className="min-w-0">
-          <div className="text-xs uppercase tracking-wide text-brand-700 font-semibold">
-            {label}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="text-xs uppercase tracking-wide text-brand-700 font-semibold">
+              {label}
+            </span>
+            {userEdited && (
+              <span
+                className="text-[10px] text-emerald-700 font-medium"
+                title="Moment personnalisé par vous"
+              >
+                ✓ corrigé
+              </span>
+            )}
           </div>
-          <div className="text-slate-800 font-medium mt-1">{m.title}</div>
+          <div className="text-slate-800 font-medium mt-1">
+            {canEdit ? (
+              <EditableValue
+                value={m.title || ''}
+                type="text"
+                placeholder="Ex: Repos à l'hôtel, balade tranquille…"
+                label="Cliquez pour modifier le titre de ce moment"
+                allowEmpty
+                onSave={saveTitle}
+              />
+            ) : (
+              m.title || '(à compléter)'
+            )}
+          </div>
         </div>
         <svg
           width="18"
@@ -1878,9 +1951,34 @@ function Moment({ label, m }) {
           <polyline points="6 9 12 15 18 9" />
         </svg>
       </summary>
-      <p className="text-sm text-slate-600 px-3 pb-3 leading-relaxed">
-        {m.description}
-      </p>
+      <div className="px-3 pb-3 text-sm text-slate-600 leading-relaxed space-y-2">
+        {canEdit ? (
+          <EditableValue
+            value={m.description || ''}
+            type="text"
+            placeholder="Détails du moment — ex: 'Détente piscine, sieste, puis dîner room service'"
+            label="Cliquez pour modifier la description"
+            allowEmpty
+            onSave={saveDescription}
+          />
+        ) : (
+          m.description && <p>{m.description}</p>
+        )}
+        {canSuggest && (
+          <div className="pt-2 border-t border-slate-100 flex flex-wrap gap-2 print:hidden">
+            <button
+              type="button"
+              onClick={() =>
+                onSuggestMomentAlternatives(dayIndex, momentKey, label, m, dayLocation)
+              }
+              className="text-xs inline-flex items-center gap-1 rounded-full bg-violet-100 text-violet-800 px-3 py-1 hover:bg-violet-200 transition-colors"
+              title="Voir d'autres options cohérentes avec le reste de la journée"
+            >
+              💡 Proposer d'autres options
+            </button>
+          </div>
+        )}
+      </div>
     </details>
   );
 }

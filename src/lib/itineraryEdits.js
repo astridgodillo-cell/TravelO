@@ -154,6 +154,54 @@ export function updateAccommodationName(itinerary, dayIndex, newName) {
 }
 
 /**
+ * Modifie le titre d'un moment (matin / midi / aprem / soir) de la journée.
+ *   momentKey ∈ 'morning' | 'noon' | 'afternoon' | 'evening'
+ */
+export function updateMomentTitle(itinerary, dayIndex, momentKey, newTitle) {
+  const next = deepClone(itinerary);
+  const day = next.days?.[dayIndex];
+  if (!day) return next;
+  if (!day[momentKey]) day[momentKey] = {};
+  day[momentKey].title = newTitle;
+  day[momentKey]._user_edited = true;
+  return next;
+}
+
+/**
+ * Modifie la description d'un moment (matin / midi / aprem / soir).
+ */
+export function updateMomentDescription(
+  itinerary,
+  dayIndex,
+  momentKey,
+  newDescription
+) {
+  const next = deepClone(itinerary);
+  const day = next.days?.[dayIndex];
+  if (!day) return next;
+  if (!day[momentKey]) day[momentKey] = {};
+  day[momentKey].description = newDescription;
+  day[momentKey]._user_edited = true;
+  return next;
+}
+
+/**
+ * Remplace un moment complet (utilisé par "Proposer d'autres options" :
+ * l'utilisateur choisit une alternative renvoyée par l'IA).
+ */
+export function replaceMoment(itinerary, dayIndex, momentKey, alternative) {
+  const next = deepClone(itinerary);
+  const day = next.days?.[dayIndex];
+  if (!day) return next;
+  day[momentKey] = {
+    title: alternative.title || '',
+    description: alternative.description || '',
+    _user_edited: true,
+  };
+  return next;
+}
+
+/**
  * Modifie le budget repas du jour (total famille pour la journée).
  * Recalcule day_total_eur + budget_summary.meals_eur.
  */
