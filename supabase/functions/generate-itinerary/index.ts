@@ -2035,10 +2035,43 @@ async function getApprovedUser(req: Request): Promise<
 
 const AIR_TRIP_TYPES = new Set(['avion-voiture', 'avion-citybreak']);
 
+/**
+ * Cherche-t-on un vol pour ce voyage ? On agrège plusieurs signaux pour
+ * couvrir le cas "Itinérant / Trek / Circuit train Marseille → Pékin" où
+ * l'utilisateur n'a pas choisi un tripType explicitement aérien mais a
+ * quand même besoin d'un vol pour rejoindre la destination.
+ *
+ * Retourne true si :
+ *  - tripType ∈ AIR_TRIP_TYPES (cas historique)
+ *  - OU scheduledTransport commence par 'avion' (l'utilisateur a déclaré
+ *    voler dans le wizard "horaires/transport")
+ *  - OU manualFlight contient des données (airline, n°, ou prix)
+ */
+function tripExpectsFlight(p: any): boolean {
+  if (!p) return false;
+  if (AIR_TRIP_TYPES.has(p.tripType)) return true;
+  if (
+    typeof p.scheduledTransport === 'string' &&
+    p.scheduledTransport.toLowerCase().startsWith('avion')
+  )
+    return true;
+  const mf = p.manualFlight;
+  if (
+    mf &&
+    (mf.airline ||
+      mf.flightNumber ||
+      mf.outboundPriceEur ||
+      mf.returnPriceEur)
+  )
+    return true;
+  return false;
+}
+
 function shouldFetchFlight(p: any): boolean {
   if (!p) return false;
-  if (!AIR_TRIP_TYPES.has(p.tripType)) return false;
-  // Si l'utilisateur a déjà saisi son vol à la main, on ne tape pas le fournisseur
+  if (!tripExpectsFlight(p)) return false;
+  // Si l'utilisateur a déjà saisi son vol (prix) à la main, on ne tape
+  // pas le fournisseur — sa saisie prime via manualFlightToData.
   if (p.manualFlight && (p.manualFlight.outboundPriceEur || p.manualFlight.returnPriceEur)) {
     return false;
   }
@@ -2081,6 +2114,73 @@ function manualFlightToData(p: any): FlightData | null {
     deeplink: '',
     source: 'travelpayouts-cheap',
   };
+}
+
+/**
+ * Filet de sécurité : si l'IA a placé un trip "Avion" dans l'itinéraire
+ * MAIS qu'on n'a pas réussi à récupérer un vrai vol en amont (cas typique :
+ * tripType "Itinérant" Marseille → Pékin — l'IA réalise qu'un vol est
+ * nécessaire mais nos heuristiques tripExpectsFlight ne l'avaient pas
+ * anticipé), on retape le fournisseur après génération pour remplacer le
+ * prix halluciné par un prix réel.
+ *
+ * Renvoie un FlightData ou null si rien à corriger / pas de vol détecté.
+ */
+async function recoverFlightDataIfNeeded(
+  itinerary: any,
+  preferences: any
+): Promise<AnyFlightData | null> {
+  if (!itinerary?.days?.length) return null;
+  if (!hasAnyFlightProviderConfigured()) return null;
+  // Cherche un trip de mode "Avion" dans n'importe quelle journée
+  let hasFlightTrip = false;
+  outer: for (const d of itinerary.days) {
+    for (const t of d.trips || []) {
+      if (/avion|vol|flight|plane/i.test(t?.mode || '')) {
+        hasFlightTrip = true;
+        break outer;
+      }
+    }
+  }
+  if (!hasFlightTrip) return null;
+  // L'IA a inventé un vol — on essaie de récupérer une vraie cotation
+  console.log(
+    '[flight-recovery] L\'IA a ajouté un vol sans nos données, fetch fallback…'
+  );
+  const adults = Number(preferences.adults) || 1;
+  const childrenCount = Array.isArray(preferences.childrenAges)
+    ? preferences.childrenAges.length
+    : 0;
+  const arrivalCity = preferences.arrivalGateway || preferences.destinations;
+  const departureCity =
+    preferences.departureGateway || preferences.departureLocation;
+  if (!arrivalCity || !departureCity) return null;
+  try {
+    return await searchFlightAny(
+      {
+        originCity: departureCity,
+        destinationCity: arrivalCity,
+        departDate: preferences.startDate,
+        returnDate:
+          preferences.returnLocation &&
+          preferences.returnLocation !== preferences.departureLocation
+            ? null
+            : preferences.endDate,
+        adults,
+        children: childrenCount,
+      },
+      {
+        supabaseUrl: SUPABASE_URL,
+        serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY,
+        travelpayoutsToken: TRAVELPAYOUTS_TOKEN,
+        travelpayoutsMarker: TRAVELPAYOUTS_MARKER,
+        duffelApiToken: DUFFEL_API_TOKEN,
+      }
+    );
+  } catch (e) {
+    console.warn('[flight-recovery] failed:', e);
+    return null;
+  }
 }
 
 async function resolveFlightData(p: any): Promise<AnyFlightData | null> {
@@ -2133,6 +2233,25 @@ function flightSourceLabel(source: string | undefined): string {
   if (source.startsWith('duffel')) return 'Duffel';
   if (source.startsWith('travelpayouts')) return 'Aviasales / Travelpayouts';
   return source;
+}
+
+/**
+ * Bloc anti-hallucination injecté dans le prompt quand on n'a PAS récupéré
+ * de vol réel auprès du fournisseur. Sans ce garde-fou, l'IA "imagine" un
+ * prix totalement irréaliste (vu : 5 400 € pour un Marseille-Pékin par
+ * personne au lieu de ~700 € → utilisateur ridiculisé devant ses prospects).
+ */
+function buildNoFlightDataNotice(): string {
+  return `
+INSTRUCTIONS VOLS — AUCUNE DONNÉE DE VOL FOURNIE :
+  Nous n'avons PAS pu récupérer de données réelles de vol auprès de notre fournisseur partenaire.
+  - Si tu juges utile d'ajouter un trip de mode "Avion" dans l'itinéraire, TU NE DOIS PAS inventer de prix.
+    → Mets "estimated_cost_eur": null  (et NON un chiffre que tu imagines).
+    → Mets dans "cost_note" : "Prix à confirmer après réservation — nos données fournisseur n'étaient pas disponibles pour cette route."
+  - Tu PEUX en revanche estimer un horaire de départ et d'arrivée plausible.
+  - Tu PEUX ajouter dans la description du jour une mention "Réservation du vol à faire de votre côté".
+  - NE FABRIQUE PAS de numéro de vol — laisse "_flight" absent.
+  ⚠️ Tu seras ÉVALUÉ sur la crédibilité du chiffrage : un prix de vol inventé est PIRE qu'un prix manquant.`;
 }
 
 function formatFlightBlockForPrompt(flight: AnyFlightData, p: any): string {
@@ -2415,7 +2534,7 @@ interface DeeplinkPair {
 }
 
 async function resolveDeeplinkPair(p: any): Promise<DeeplinkPair | null> {
-  if (!AIR_TRIP_TYPES.has(p?.tripType)) return null;
+  if (!tripExpectsFlight(p)) return null;
   const adults = Number(p.adults) || 1;
   const childrenCount = Array.isArray(p.childrenAges) ? p.childrenAges.length : 0;
   // Préfère arrivalGateway/departureGateway si saisis (cas pays).
@@ -3167,16 +3286,34 @@ Deno.serve(async (req) => {
       }
       // Récupère le vol réel pour caler J1 et J_final et le transmettre
       // ensuite via day_plans[..]._flight_outbound / _flight_return.
-      const flightData = await resolveFlightData(preferences);
+      let flightData = await resolveFlightData(preferences);
       let prompt = buildPlanPrompt(preferences);
       if (flightData) {
         prompt += `\n\n${formatFlightBlockForPrompt(flightData, preferences)}`;
+      } else {
+        // Anti-hallucination : l'IA ne doit PAS inventer de prix de vol.
+        prompt += `\n\n${buildNoFlightDataNotice()}`;
       }
       // 32000 tokens : Gemini "thinking" peut en consommer une partie,
       // le reste doit suffire pour summary + 30+ day_plans + notes complètes
       // (packing list + phrases + tips). Gemini Flash supporte jusqu'à 65k.
       const { text, usage, modelUsed } = await callMain(prompt, 32000);
       const plan = await parseOrRepair(text, callMainSafe);
+      // Filet de sécurité : si l'IA a quand même ajouté une jambe de vol
+      // dans day_plans (typique sur "Itinérant" longue distance), on retape
+      // le fournisseur pour récupérer une vraie cotation.
+      if (!flightData && plan?.day_plans?.length) {
+        // On construit un faux "itinerary" en synthèse pour réutiliser
+        // recoverFlightDataIfNeeded — chaque day_plan a peut-être un trip avion.
+        const fakeItinerary = {
+          days: plan.day_plans.map((dp: any) => ({
+            trips: dp.transport_summary?.toLowerCase().includes('avion')
+              ? [{ mode: 'Avion' }]
+              : [],
+          })),
+        };
+        flightData = await recoverFlightDataIfNeeded(fakeItinerary, preferences);
+      }
       // Injecte les données vol dans le plan : summary (pour le frontend)
       // ET dans day_plans[0]/last (pour expand-day, qui les recevra via dayPlan)
       if (flightData && plan && Array.isArray(plan.day_plans) && plan.day_plans.length) {
@@ -3298,14 +3435,23 @@ Deno.serve(async (req) => {
     }
     // Récupère le vol réel (Travelpayouts ou Duffel, selon app_config) avant
     // d'appeler le LLM, pour le briefer dans le prompt avec des horaires/prix exacts.
-    const flightData = await resolveFlightData(preferences);
+    let flightData = await resolveFlightData(preferences);
     let userPrompt = buildFullPrompt(preferences);
     if (flightData) {
       userPrompt += `\n\n${formatFlightBlockForPrompt(flightData, preferences)}`;
+    } else {
+      // Anti-hallucination : l'IA ne doit PAS inventer de prix de vol.
+      userPrompt += `\n\n${buildNoFlightDataNotice()}`;
     }
     // Budget large : un voyage 8 jours détaillé peut atteindre 20k tokens.
     const { text, usage, modelUsed } = await callMain(userPrompt, 24000);
     let itinerary = await parseOrRepair(text, callMainSafe);
+    // Filet de sécurité : si l'IA a quand même placé un vol dans l'itinéraire
+    // (cas typique : tripType "Itinérant" avec destination lointaine), on
+    // retape le fournisseur pour remplacer le prix halluciné.
+    if (!flightData) {
+      flightData = await recoverFlightDataIfNeeded(itinerary, preferences);
+    }
     // Post-traitement : injecte physiquement les trips "Vol" et recalcule
     // les totaux, pour garantir l'affichage côté frontend.
     if (flightData) {
