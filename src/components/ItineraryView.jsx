@@ -86,6 +86,7 @@ export default function ItineraryView({
   onFetchSpecialties,
   onUpdateItinerary,
   onSuggestMomentAlternatives,
+  onImportHotelFromImage,
   regenerating,
 }) {
   const [tab, setTab] = useState('planning');
@@ -325,6 +326,7 @@ export default function ItineraryView({
             canEditActivities={typeof onRegenerateActivity === 'function'}
             onUpdateItinerary={onUpdateItinerary}
             onSuggestMomentAlternatives={onSuggestMomentAlternatives}
+            onImportHotelFromImage={onImportHotelFromImage}
           />
         </div>
         <div className={tab === 'table' ? '' : 'hidden'}>
@@ -463,6 +465,7 @@ function Planning({
           canEditActivities={canEditActivities}
           onUpdateItinerary={onUpdateItinerary}
           onSuggestMomentAlternatives={onSuggestMomentAlternatives}
+          onImportHotelFromImage={onImportHotelFromImage}
         />
       ))}
     </section>
@@ -653,6 +656,7 @@ function DayCard({
   canEditActivities,
   onUpdateItinerary,
   onSuggestMomentAlternatives,
+  onImportHotelFromImage,
 }) {
   // Détecte les jours d'arrivée/départ d'un voyage avion-* sans horaire
   // confirmé : on a une trip de mode "Avion" mais sans heure de départ
@@ -862,6 +866,7 @@ function DayCard({
                 accomLink={accomLink}
                 isBookingCta={isBookingCta}
                 onUpdateItinerary={onUpdateItinerary}
+                onImportHotelFromImage={onImportHotelFromImage}
               />
             )}
             {day.meals && (
@@ -920,6 +925,7 @@ function LodgingCard({
   accomLink,
   isBookingCta,
   onUpdateItinerary,
+  onImportHotelFromImage,
 }) {
   const s = CATEGORY_STYLES.lodging;
   const canEdit = typeof onUpdateItinerary === 'function';
@@ -1081,6 +1087,20 @@ function LodgingCard({
               🚐 Park4Night ({day.location})
             </a>
           )}
+        </div>
+      )}
+      {typeof onImportHotelFromImage === 'function' && (
+        <div className="print:hidden mt-3 pt-2 border-t border-slate-100">
+          <button
+            type="button"
+            onClick={() =>
+              onImportHotelFromImage(dayIndex, day.accommodation?.name, day.location)
+            }
+            className="inline-flex items-center gap-1.5 rounded-full bg-indigo-100 text-indigo-800 hover:bg-indigo-200 transition-colors px-3 py-1.5 text-xs font-medium"
+            title="Remplacer cet hôtel par celui que vous avez trouvé sur Booking via une capture d'écran"
+          >
+            📸 Remplacer par une capture Booking
+          </button>
         </div>
       )}
     </div>
@@ -1536,6 +1556,7 @@ function DayTimeline({
             onRemoveActivity={onRemoveActivity}
             onUpdateItinerary={onUpdateItinerary}
             onSuggestMomentAlternatives={onSuggestMomentAlternatives}
+            onImportHotelFromImage={onImportHotelFromImage}
           />
         ))}
       </ol>

@@ -8,10 +8,11 @@ import {
   removeActivity,
   suggestMomentAlternatives,
 } from '../lib/ai';
-import { replaceMoment } from '../lib/itineraryEdits';
+import { replaceMoment, replaceAccommodation } from '../lib/itineraryEdits';
 import { fetchSpecialties } from '../lib/photos';
 import ItineraryView from '../components/ItineraryView';
 import MomentAlternativesModal from '../components/MomentAlternativesModal';
+import ImportHotelFromScreenshotModal from '../components/ImportHotelFromScreenshotModal';
 import SharePanel from '../components/SharePanel';
 import AdminTemplatePanel from '../components/AdminTemplatePanel';
 import { useAuth } from '../context/AuthContext';
@@ -27,6 +28,9 @@ export default function ItineraryDetailPage() {
   const [momentSuggestState, setMomentSuggestState] = useState(null);
   // { open: bool, context: {dayIndex, momentKey, label, m, dayLocation},
   //   alternatives: array | null, loading: bool }
+  // État de la modale "Importer un hôtel depuis une capture d'écran"
+  const [importHotelState, setImportHotelState] = useState(null);
+  // { open: bool, dayIndex, dayLocation, currentHotelName }
 
   useEffect(() => {
     let active = true;
@@ -211,6 +215,27 @@ export default function ItineraryDetailPage() {
     );
   }
 
+  /**
+   * Ouvre la modale "Remplacer cet hôtel par une capture d'écran Booking".
+   * Le composant gère lui-même l'upload + l'extraction LLM + la preview.
+   */
+  function handleImportHotelFromImage(dayIndex, currentHotelName, dayLocation) {
+    setImportHotelState({
+      open: true,
+      dayIndex,
+      currentHotelName,
+      dayLocation,
+    });
+  }
+
+  async function handleApplyImportedHotel(hotel) {
+    if (!trip || !importHotelState) return;
+    const { dayIndex } = importHotelState;
+    await handleUpdateItinerary((it) =>
+      replaceAccommodation(it, dayIndex, hotel)
+    );
+  }
+
   if (loading) return <p className="text-slate-500">Chargement…</p>;
   if (error)
     return (
@@ -263,6 +288,7 @@ export default function ItineraryDetailPage() {
         onFetchSpecialties={handleFetchSpecialties}
         onUpdateItinerary={handleUpdateItinerary}
         onSuggestMomentAlternatives={handleSuggestMomentAlternatives}
+        onImportHotelFromImage={handleImportHotelFromImage}
         regenerating={regenerating}
       />
 
@@ -273,6 +299,13 @@ export default function ItineraryDetailPage() {
         alternatives={momentSuggestState?.alternatives}
         loading={momentSuggestState?.loading}
         onPick={handlePickMomentAlternative}
+      />
+
+      <ImportHotelFromScreenshotModal
+        open={!!importHotelState?.open}
+        onClose={() => setImportHotelState(null)}
+        context={importHotelState}
+        onConfirm={handleApplyImportedHotel}
       />
     </div>
   );

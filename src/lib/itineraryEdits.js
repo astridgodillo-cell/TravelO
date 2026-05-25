@@ -154,6 +154,31 @@ export function updateAccommodationName(itinerary, dayIndex, newName) {
 }
 
 /**
+ * Remplace COMPLÈTEMENT l'hébergement du jour par une nouvelle structure
+ * (utilisé quand l'utilisateur importe un hôtel depuis une capture d'écran
+ * Booking, ou choisit explicitement un autre lieu). Recalcule le budget
+ * accommodation_eur en appliquant le delta de prix.
+ *
+ *   newAccommodation : {
+ *     name, type, price_eur, services?, rating?, address_hint?, ...
+ *   }
+ */
+export function replaceAccommodation(itinerary, dayIndex, newAccommodation) {
+  const next = deepClone(itinerary);
+  const day = next.days?.[dayIndex];
+  if (!day) return next;
+  const oldPrice = Number(day.accommodation?.price_eur) || 0;
+  const newPrice = Math.max(0, Math.round(Number(newAccommodation.price_eur) || 0));
+  day.accommodation = {
+    ...newAccommodation,
+    price_eur: newPrice,
+    _user_edited: true,
+  };
+  applyDelta(next, dayIndex, 'accommodation', newPrice - oldPrice);
+  return next;
+}
+
+/**
  * Modifie le titre d'un moment (matin / midi / aprem / soir) de la journée.
  *   momentKey ∈ 'morning' | 'noon' | 'afternoon' | 'evening'
  */

@@ -549,6 +549,34 @@ export function removeActivity(itinerary, dayIndex, activityIndex) {
 }
 
 /**
+ * Envoie une capture d'écran (Booking / autre site hôtelier) au backend qui
+ * appelle un LLM vision (Gemini Flash ou Claude Haiku) pour extraire les
+ * infos structurées de l'hôtel. Aucune persistance de l'image — extraction
+ * one-shot, retour direct.
+ *
+ *   imageDataUrl : "data:image/png;base64,iVBORw0..."
+ *   context      : { day_location?, current_hotel_name? }
+ *
+ * Renvoie { hotel: {...}, usage, model } ou throw en cas d'échec.
+ */
+export async function extractHotelFromImage(imageDataUrl, context = {}) {
+  if (typeof imageDataUrl !== 'string' || !imageDataUrl.startsWith('data:')) {
+    throw new Error('Image invalide (data URL attendue).');
+  }
+  const match = imageDataUrl.match(/^data:([^;]+);base64,(.+)$/);
+  if (!match) throw new Error('Image invalide : impossible de parser le data URL.');
+  const [, mime, base64] = match;
+  const data = await invoke({
+    mode: 'extract-hotel-from-image',
+    image_base64: base64,
+    mime_type: mime,
+    context,
+  });
+  if (!data?.hotel) throw new Error("L'extraction n'a renvoyé aucune donnée.");
+  return data.hotel;
+}
+
+/**
  * Demande au backend des alternatives pour UN moment de la journée
  * (matin / midi / aprem / soir). Renvoie un tableau d'alternatives, à
  * afficher dans une modale pour que l'utilisateur en choisisse une.

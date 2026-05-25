@@ -1775,6 +1775,119 @@ async function callProvider(
   return { ...r, modelUsed: claudeModel };
 }
 
+/**
+ * Appel LLM avec une IMAGE (vision). Format multimodal. Utilisé pour
+ * extraire des informations structurées depuis une capture d'écran
+ * (ex : extraire les infos d'un hôtel depuis une capture Booking).
+ *
+ * Stratégie : Gemini 2.5 Flash en priorité (vision excellente + très bon
+ * marché), fallback Claude Haiku 4.5 (aussi multimodal).
+ */
+async function callVisionLLM(
+  prompt: string,
+  imageBase64: string,
+  mimeType: string,
+  maxTokens = 1500
+): Promise<LLMResult> {
+  if (GEMINI_API_KEY) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                { inline_data: { mime_type: mimeType, data: imageBase64 } },
+                { text: prompt },
+              ],
+            },
+          ],
+          generationConfig: {
+            maxOutputTokens: maxTokens,
+            temperature: 0.2, // peu de créativité, max de précision OCR
+            responseMimeType: 'application/json',
+          },
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text) {
+          const meta = data?.usageMetadata || {};
+          return {
+            text,
+            usage: {
+              input_tokens: meta.promptTokenCount || 0,
+              output_tokens:
+                (meta.candidatesTokenCount || 0) +
+                (meta.thoughtsTokenCount || 0),
+              cache_read_input_tokens: meta.cachedContentTokenCount || 0,
+            },
+            modelUsed: GEMINI_MODEL,
+          };
+        }
+      } else {
+        const txt = await res.text().catch(() => '');
+        console.warn('[vision] Gemini', res.status, txt.substring(0, 200));
+      }
+    } catch (e) {
+      console.warn('[vision] Gemini error:', (e as Error).message);
+    }
+  }
+  // Fallback Claude (Haiku ou Sonnet selon ce qui est configuré pour expand)
+  if (!ANTHROPIC_API_KEY) {
+    throw new Error('Aucun backend vision configuré (GEMINI_API_KEY ou ANTHROPIC_API_KEY requis).');
+  }
+  const url = 'https://api.anthropic.com/v1/messages';
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'x-api-key': ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: EXPAND_MODEL,
+      max_tokens: maxTokens,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: mimeType,
+                data: imageBase64,
+              },
+            },
+            { type: 'text', text: prompt },
+          ],
+        },
+      ],
+    }),
+  });
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`Claude vision ${res.status} : ${txt}`);
+  }
+  const data = await res.json();
+  const text = data?.content?.[0]?.text;
+  if (!text) throw new Error('Réponse Claude vision vide.');
+  return {
+    text,
+    usage: {
+      input_tokens: data.usage?.input_tokens || 0,
+      output_tokens: data.usage?.output_tokens || 0,
+      cache_read_input_tokens: data.usage?.cache_read_input_tokens || 0,
+    },
+    modelUsed: EXPAND_MODEL,
+  };
+}
+
 // Dispatcher principal (plan, régénération de jour, replan)
 async function callMain(
   userPrompt: string,
@@ -3176,6 +3289,78 @@ Renvoie UNIQUEMENT du JSON valide selon ce schéma (rien autour) :
         usage,
         model: modelUsed,
       });
+    }
+
+    if (mode === 'extract-hotel-from-image') {
+      // Body :
+      //   image_base64    base64 sans préfixe data: (juste les caractères)
+      //   mime_type       'image/png' | 'image/jpeg' | 'image/webp'
+      //   context         { day_location?, current_hotel_name?, currency? }
+      const { image_base64, mime_type, context } = body;
+      if (!image_base64 || typeof image_base64 !== 'string') {
+        return jsonResponse(
+          { error: 'image_base64 requis (base64 de la capture)' },
+          400
+        );
+      }
+      const mime = typeof mime_type === 'string' ? mime_type : 'image/png';
+      const ctxLocation = context?.day_location || '(lieu non précisé)';
+      const ctxCurrent = context?.current_hotel_name || '(non spécifié)';
+
+      const prompt = `Tu es un extracteur d'informations hôtel à partir d'une capture d'écran d'un site de réservation (Booking, Hotels.com, Airbnb, etc.).
+
+CONTEXTE :
+- Le voyageur cherche un hébergement à ${ctxLocation}.
+- L'hôtel actuellement proposé dans l'itinéraire est : "${ctxCurrent}" (sera remplacé par celui que tu extrais).
+
+INSTRUCTIONS — extrais avec PRÉCISION depuis l'image :
+- "name" : nom EXACT de l'hôtel tel qu'écrit (sans abréviation).
+- "type" : type d'hébergement et catégorie ★ si visible (ex : "Hôtel 4★", "Appart-hôtel 3★", "Auberge", "Maison d'hôtes").
+- "price_per_night_eur" : prix par nuit EN EUROS. Si la devise affichée n'est pas l'euro, convertis grossièrement (1 USD ≈ 0,92 €, 1 GBP ≈ 1,17 €, 1 CAD ≈ 0,68 €, 1 CHF ≈ 1,05 €, 1 JPY ≈ 0,006 €). Si le prix affiché est un total séjour, divise par le nombre de nuits si tu peux le déduire de l'image, sinon laisse null et précise dans extraction_note.
+- "currency_detected" : devise détectée sur la capture (ex : "EUR", "USD", "CAD"…).
+- "rating" : note sur 10 ou sur 5 (si sur 5, multiplie par 2 pour la mettre sur 10). Sinon null.
+- "rating_count" : nombre d'avis si visible. Sinon null.
+- "services" : tableau des équipements/services majeurs visibles (ex : ["WiFi gratuit", "Petit-déjeuner inclus", "Climatisation", "Piscine", "Parking", "Animaux acceptés", "Accessible PMR"]). Maximum 8, en français.
+- "address_hint" : indication de quartier / adresse / repère géographique si visible (ex : "Centre-ville", "Près de la Sagrada Familia", "À 5 min du métro"). Sinon null.
+- "booking_url" : URL visible ou identifiant de l'annonce si présent (ex : nom de domaine "booking.com"). Sinon null.
+- "extraction_note" : courte note (1-2 phrases) si certaines infos n'ont pas pu être extraites avec certitude (ex : "Prix affiché en USD converti à 0.92, vérifiez le taux du jour"). Sinon chaîne vide.
+
+Renvoie UNIQUEMENT du JSON valide selon ce schéma (rien d'autre, pas de markdown, pas de texte autour) :
+{
+  "name": "...",
+  "type": "...",
+  "price_per_night_eur": 165,
+  "currency_detected": "EUR",
+  "rating": 8.4,
+  "rating_count": 2228,
+  "services": ["..."],
+  "address_hint": "...",
+  "booking_url": null,
+  "extraction_note": ""
+}
+
+Si tu ne reconnais PAS un hôtel dans l'image (capture floue, page d'erreur, photo non liée), renvoie :
+{ "name": null, "extraction_note": "L'image ne contient pas d'informations d'hôtel exploitables." }`;
+
+      try {
+        const { text, usage, modelUsed } = await callVisionLLM(
+          prompt,
+          image_base64,
+          mime,
+          2000
+        );
+        const parsed = await parseOrRepair(text, async (p, t) => {
+          // pas de retry vision pour la réparation : on garde l'appel texte
+          return await callExpansion(p, t);
+        });
+        return jsonResponse({ hotel: parsed, usage, model: modelUsed });
+      } catch (e) {
+        console.error('[extract-hotel-from-image] error:', e);
+        return jsonResponse(
+          { error: (e as Error).message || 'Extraction échouée' },
+          500
+        );
+      }
     }
 
     if (mode === 'fetch-specialties') {
