@@ -2717,6 +2717,126 @@ function fixPerPersonFlightCosts(itinerary: any, p: any) {
 }
 
 /**
+ * Enrichit TOUS les trips "Avion" de l'itinéraire (pas seulement J1 et
+ * dernier jour) en appelant le fournisseur configuré pour chaque vol
+ * interne. Utile pour les voyages avec plusieurs étapes aériennes (ex :
+ * Tour d'Asie : Paris → Tokyo, puis Tokyo → Séoul à J5, puis Séoul → Paris).
+ *
+ * Stratégie :
+ *  - On saute les trips déjà enrichis par enrichItineraryWithFlight
+ *    (J1 outbound + dernier jour return) — leur _flight.source est déjà set.
+ *  - Pour chaque autre trip Avion, on lit t.from / t.to / day.date
+ *  - On appelle searchFlightAny en aller simple (vol interne ≠ A/R)
+ *  - On REMPLACE le prix halluciné par le prix réel et on recalcule les
+ *    totaux du jour + du budget global.
+ */
+async function enrichInternalFlights(
+  itinerary: any,
+  preferences: any
+): Promise<any> {
+  if (!itinerary?.days?.length) return itinerary;
+  if (!hasAnyFlightProviderConfigured()) return itinerary;
+
+  const adults = Number(preferences.adults) || 1;
+  const childrenCount = Array.isArray(preferences.childrenAges)
+    ? preferences.childrenAges.length
+    : 0;
+  const pax = adults + childrenCount;
+  const secrets = {
+    supabaseUrl: SUPABASE_URL,
+    serviceRoleKey: SUPABASE_SERVICE_ROLE_KEY,
+    travelpayoutsToken: TRAVELPAYOUTS_TOKEN,
+    travelpayoutsMarker: TRAVELPAYOUTS_MARKER,
+    duffelApiToken: DUFFEL_API_TOKEN,
+  };
+  const isFlightMode = (m: string) => /avion|vol|flight|plane/i.test(m || '');
+
+  let totalDelta = 0;
+
+  for (const day of itinerary.days) {
+    if (!Array.isArray(day.trips)) continue;
+    for (const t of day.trips) {
+      if (!isFlightMode(t.mode)) continue;
+      // Skip ceux déjà enrichis avec vraies données (J1 + dernier jour, ou
+      // un précédent passage de cette fonction)
+      if (isRealFlightSource(t._flight?.source)) continue;
+      if (!t.from || !t.to || !day.date) continue;
+      try {
+        console.log(
+          `[internal-flight] fetch ${t.from} → ${t.to} le ${day.date}…`
+        );
+        const flight = await searchFlightAny(
+          {
+            originCity: String(t.from),
+            destinationCity: String(t.to),
+            departDate: String(day.date),
+            returnDate: null, // vols internes = aller simple
+            adults,
+            children: childrenCount,
+          },
+          secrets
+        );
+        if (!flight) {
+          console.log(
+            `[internal-flight] pas de cotation pour ${t.from} → ${t.to}`
+          );
+          continue;
+        }
+        // Remplace le prix halluciné par le vrai prix
+        const oldCost = Number(t.estimated_cost_eur) || 0;
+        const newCost = flight.price_eur;
+        const delta = newCost - oldCost;
+
+        t.estimated_cost_eur = newCost;
+        const airlineLabel =
+          flight.airline && flight.airline !== 'N/A'
+            ? flight.airline
+            : 'compagnie';
+        const flightNumberLabel = flight.flight_number
+          ? ` ${flight.airline || ''}${flight.flight_number}`.trim()
+          : '';
+        const time = flight.departure_at
+          ? flight.departure_at.substring(11, 16)
+          : null;
+        t.cost_note = `Vol interne ${airlineLabel}${flightNumberLabel}${
+          time ? `, départ ${time}` : ''
+        } — prix ${flightSourceLabel(flight.source)}`;
+        t._flight = {
+          airline: flight.airline,
+          flight_number: flight.flight_number,
+          departure_at: flight.departure_at,
+          deeplink: flight.deeplink || null,
+          source: flight.source,
+        };
+        // Recalibrage des totaux journaliers
+        day.day_total_eur = (day.day_total_eur || 0) + delta;
+        totalDelta += delta;
+      } catch (e) {
+        console.warn(
+          `[internal-flight] erreur pour ${t.from} → ${t.to}:`,
+          e
+        );
+      }
+    }
+  }
+
+  // Recalibrage du budget global si on a modifié au moins un prix
+  if (totalDelta !== 0 && itinerary.budget_summary) {
+    itinerary.budget_summary.trips_eur =
+      (itinerary.budget_summary.trips_eur || 0) + totalDelta;
+    itinerary.budget_summary.grand_total_eur =
+      (itinerary.budget_summary.grand_total_eur || 0) + totalDelta;
+    if (pax > 0) {
+      itinerary.budget_summary.per_person_eur = Math.round(
+        itinerary.budget_summary.grand_total_eur / pax
+      );
+    }
+  }
+
+  return itinerary;
+}
+
+/**
  * Variante pour UN jour expand : attache le deeplink correspondant
  * (aller ou retour selon `leg`) aux trips "Avion" du jour.
  */
@@ -2770,7 +2890,20 @@ Deno.serve(async (req) => {
       }
       const prompt = buildRegenerateDayPrompt(itinerary, day_index, instructions);
       const { text, usage, modelUsed } = await callMain(prompt, 6000);
-      const day = await parseOrRepair(text, callMainSafe);
+      let day = await parseOrRepair(text, callMainSafe);
+      // Si la journée régénérée contient un trip Avion (ex : régénération qui
+      // ajoute un vol interne), on enrichit avec vraies données fournisseur.
+      const preferences = itinerary?.summary
+        ? {
+            adults: itinerary.summary.travellers?.adults || 1,
+            childrenAges: itinerary.summary.travellers?.children_ages || [],
+            destinations: itinerary.summary.destinations,
+            departureLocation: itinerary.summary.departure_location,
+          }
+        : {};
+      const wrapped = { days: [day], budget_summary: {} };
+      await enrichInternalFlights(wrapped, preferences);
+      day = wrapped.days[0];
       return jsonResponse({ day, usage, model: modelUsed });
     }
 
@@ -3423,6 +3556,12 @@ Deno.serve(async (req) => {
           'return'
         );
       }
+      // Vols INTERNES sur cette journée : si l'IA a placé un trip Avion
+      // qui n'est ni l'aller J1 ni le retour J_final (cas typique : vol
+      // interne dans un tour multi-villes), on retape le fournisseur.
+      const wrapped = { days: [day], budget_summary: {} };
+      await enrichInternalFlights(wrapped, preferences);
+      day = wrapped.days[0];
       // Garde-fou prix unitaire / total famille (s'applique aussi à un jour seul)
       fixPerPersonFlightCosts({ days: [day] }, preferences);
       return jsonResponse({ day, usage, model: modelUsed });
@@ -3457,6 +3596,10 @@ Deno.serve(async (req) => {
     if (flightData) {
       itinerary = enrichItineraryWithFlight(itinerary, flightData, preferences);
     }
+    // Vols INTERNES : si l'IA a posé d'autres trips Avion au milieu de
+    // l'itinéraire (ex : tour d'Asie Tokyo → Séoul à J5), on retape le
+    // fournisseur pour chacun et on remplace les prix hallucinés.
+    itinerary = await enrichInternalFlights(itinerary, preferences);
     // Fallback : attache un deeplink Aviasales aux trips "Avion" même si
     // on n'a pas trouvé de prix (le bouton "Réserver" reste utilisable).
     const deeplinkPair = await resolveDeeplinkPair(preferences);
