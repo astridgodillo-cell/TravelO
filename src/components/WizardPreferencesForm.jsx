@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { DayPicker } from 'react-day-picker';
 import { fr } from 'date-fns/locale';
 import 'react-day-picker/dist/style.css';
@@ -19,7 +19,13 @@ import {
 import { CAR_RENTAL_POSSIBLE_TRIP_TYPES } from '../lib/preferenceOptions';
 import { DEFAULTS, computeTotalDays } from './PreferencesForm';
 import Icon from './Icon';
-import { getAppConfig } from '../lib/supabase';
+import {
+  FLIGHT_SEARCH_PROVIDERS,
+  getProvider,
+  resolveIata,
+} from '../lib/flightSearchLinks';
+import { findGatewaysForCountry } from '../lib/airportCities';
+import { extractFlightFromImage } from '../lib/ai';
 
 // --- Helpers dates ---
 function toIsoDate(d) {
@@ -53,99 +59,20 @@ function formatFrDate(iso) {
 const AIR_TYPES = new Set(['avion-voiture', 'avion-citybreak']);
 const TRAIN_TYPES = new Set(['train-international', 'circuit-train']);
 
-// Résolution ville → code IATA via l'autocomplete Travelpayouts (public,
-// pas de token requis). On préfère "city" à "airport" pour avoir le code
-// "metropolitan" qui regroupe tous les aéroports de la ville.
-async function resolveIata(query) {
-  if (!query || !query.trim()) return null;
-  try {
-    const url = `https://autocomplete.travelpayouts.com/places2?term=${encodeURIComponent(
-      query
-    )}&locale=fr&types[]=city&types[]=airport&types[]=country`;
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    const arr = await res.json();
-    if (!Array.isArray(arr) || arr.length === 0) return null;
-    // Si premier résultat est un PAYS, on retourne un signal pour demander
-    // à l'utilisateur de choisir une ville précise.
-    if (arr[0].type === 'country') {
-      return { country: true, name: arr[0].name, code: arr[0].code };
-    }
-    const city = arr.find((p) => p.type === 'city');
-    const pick = city || arr[0];
-    return { code: pick.code, name: pick.name, type: pick.type };
-  } catch (e) {
-    console.warn('[wizard] resolveIata failed', e);
-    return null;
-  }
+// Helpers d'affichage pour le récap des vols confirmés
+function formatLegDateTime(iso) {
+  if (!iso || iso.length < 16) return '—';
+  const date = iso.substring(0, 10);
+  const time = iso.substring(11, 16);
+  const d = fromIsoDate(date);
+  if (!d) return `${date} · ${time}`;
+  const dayLabel = d.toLocaleDateString('fr-FR', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  });
+  return `${dayLabel} · ${time}`;
 }
-
-// Construit le deeplink Aviasales au format natif : /search/{ORI}{DD}{MM}{DST}{DD2}{MM2}{pax}
-// → pré-remplit nativement origine, destination ET dates dans l'UI Aviasales.
-function buildAviasalesNativeUrl({
-  originIata,
-  destIata,
-  departDate,
-  returnDate,
-  adults,
-  childrenCount,
-}) {
-  const dd1 = departDate.substring(8, 10);
-  const mm1 = departDate.substring(5, 7);
-  let segment = `${originIata}${dd1}${mm1}${destIata}`;
-  if (returnDate) {
-    const dd2 = returnDate.substring(8, 10);
-    const mm2 = returnDate.substring(5, 7);
-    segment += `${dd2}${mm2}`;
-  }
-  const pax = `${Math.max(1, adults)}${childrenCount > 0 ? childrenCount : ''}`;
-  return `https://www.aviasales.com/search/${segment}${pax}?currency=eur&locale=fr`;
-}
-
-// Construit l'URL Google Flights PRÉ-REMPLIE avec tous les paramètres :
-// origine, destination, dates, aller/retour, nombre d'adultes + enfants,
-// devise EUR et interface française. Utilisé quand l'admin a choisi
-// Duffel (qui n'a pas de site consommateur).
-//
-// On utilise le parser "langage naturel" via q= (le plus stable — le
-// format binaire tfs= change régulièrement et nécessite du protobuf).
-function buildGoogleFlightsNativeUrl({
-  originIata,
-  destIata,
-  departDate,
-  returnDate,
-  adults,
-  childrenCount,
-}) {
-  const a = Math.max(1, Number(adults) || 1);
-  const c = Math.max(0, Number(childrenCount) || 0);
-  let q = `Flights from ${originIata} to ${destIata} on ${departDate}`;
-  if (returnDate) {
-    q += ` returning ${returnDate}`;
-  } else {
-    q += ` one-way`;
-  }
-  const paxParts = [];
-  paxParts.push(`${a} adult${a > 1 ? 's' : ''}`);
-  if (c > 0) paxParts.push(`${c} child${c > 1 ? 'ren' : ''}`);
-  q += ` for ${paxParts.join(' and ')}`;
-  return `https://www.google.com/travel/flights?q=${encodeURIComponent(q)}&hl=fr&curr=EUR`;
-}
-
-// Méta-infos affichées dans le bouton de recherche selon le fournisseur
-// choisi par l'admin (clé app_config.flight_provider).
-const SEARCH_PROVIDER_META = {
-  travelpayouts: {
-    label: 'Aviasales',
-    buildUrl: buildAviasalesNativeUrl,
-    btnClass: 'bg-sky-600 hover:bg-sky-700',
-  },
-  duffel: {
-    label: 'Google Flights',
-    buildUrl: buildGoogleFlightsNativeUrl,
-    btnClass: 'bg-blue-600 hover:bg-blue-700',
-  },
-};
 
 // --- Sous-composants UI ---------------------------------------------------
 
@@ -216,6 +143,23 @@ function NavButtons({ canBack, canNext, isLast, onBack, onNext, loading }) {
 // --- Étapes ---------------------------------------------------------------
 
 function StepDestination({ values, update }) {
+  // Détecte si la saisie correspond à un grand pays multi-aéroports.
+  // Si oui, on propose des vignettes pour aider l'utilisateur à choisir
+  // une ville-aéroport d'entrée précise.
+  const gateways = useMemo(
+    () => findGatewaysForCountry(values.destinations),
+    [values.destinations]
+  );
+
+  function pickGatewayCity(city) {
+    // On garde le pays dans destinations (pour le voyage global) et on
+    // précise la ville d'arrivée dans arrivalGateway (utilisé par l'étape
+    // vol pour la résolution IATA).
+    update('arrivalGateway', `${city.name} (${city.iata})`);
+  }
+
+  const pickedGateway = (values.arrivalGateway || '').trim();
+
   return (
     <div>
       <StepHeader
@@ -230,6 +174,63 @@ function StepDestination({ values, update }) {
         value={values.destinations}
         onChange={(e) => update('destinations', e.target.value)}
       />
+
+      {gateways && (
+        <div className="mt-5 rounded-2xl border-2 border-brand-200 bg-brand-50/40 p-4">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-lg">🛬</span>
+            <h3 className="text-sm font-semibold text-slate-900">
+              Par quelle ville d'arrivée veux-tu démarrer ?
+            </h3>
+          </div>
+          <p className="text-xs text-slate-600 mb-3">
+            Ce pays a plusieurs grands aéroports. Choisis une porte d'entrée —
+            tu pourras toujours visiter d'autres villes ensuite dans ton
+            itinéraire.
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {gateways.cities.map((city) => {
+              const label = `${city.name} (${city.iata})`;
+              const active = pickedGateway === label;
+              return (
+                <button
+                  key={city.iata}
+                  type="button"
+                  onClick={() => pickGatewayCity(city)}
+                  className={`text-left rounded-xl border p-3 transition-all ${
+                    active
+                      ? 'border-brand-600 bg-white ring-2 ring-brand-500 shadow-pop'
+                      : 'border-slate-200 bg-white hover:border-brand-400 hover:shadow-md'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-base">📍</span>
+                    <span
+                      className={`text-sm font-semibold ${
+                        active ? 'text-brand-700' : 'text-slate-900'
+                      }`}
+                    >
+                      {city.name}
+                    </span>
+                  </div>
+                  <div className="mt-0.5 text-[10px] uppercase tracking-wide text-slate-500 font-mono">
+                    {city.iata}
+                  </div>
+                  <div className="mt-1 text-xs text-slate-600 leading-snug">
+                    {city.note}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          {pickedGateway && (
+            <p className="mt-2 text-xs text-emerald-700 font-medium">
+              ✓ Ville d'arrivée : <strong>{pickedGateway}</strong>
+            </p>
+          )}
+        </div>
+      )}
+
       <div className="mt-6">
         <label className="label">D'où pars-tu ?</label>
         <input
@@ -486,43 +487,43 @@ function StepTripType({ values, update }) {
   );
 }
 
-function StepFlight({ values, update, updateManualFlight }) {
-  const [path, setPath] = useState(() => {
+// Mode d'affichage de l'étape "Tes vols". Trois états :
+//   - 'search'  : flux principal (chercher sur Skyscanner puis partager capture)
+//   - 'manual'  : saisie manuelle (utilisateur a déjà les billets)
+//   - 'later'   : skip — on génère sans vol confirmé
+function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight }) {
+  const initialMode = () => {
+    if (values.confirmedFlight?.outbound?.origin_iata) return 'search';
     if (
       values.manualFlight?.outboundPriceEur ||
-      values.manualFlight?.returnPriceEur
-    )
-      return 'known';
-    if (values.arrivalTime || values.departureTime) return 'known';
-    return null;
-  });
-  // État de résolution IATA pour ouvrir la recherche externe avec dates pré-remplies
-  const [resolveStatus, setResolveStatus] = useState('idle'); // 'idle' | 'loading' | 'need_city' | 'error'
-  const [resolveError, setResolveError] = useState(null);
-  // Fournisseur de recherche externe choisi par l'admin (Aviasales ou Google Flights).
-  // Lu une fois au montage depuis app_config.flight_provider. Par défaut Aviasales.
-  const [searchProvider, setSearchProvider] = useState('travelpayouts');
-  useEffect(() => {
-    let active = true;
-    getAppConfig('flight_provider').then(({ value }) => {
-      if (!active) return;
-      setSearchProvider(value === 'duffel' ? 'duffel' : 'travelpayouts');
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
-  const searchMeta = SEARCH_PROVIDER_META[searchProvider] || SEARCH_PROVIDER_META.travelpayouts;
+      values.arrivalTime ||
+      values.departureTime
+    ) return 'manual';
+    return 'search';
+  };
+  const [mode, setMode] = useState(initialMode);
 
-  // Le bloc "type de transport" est implicite (avion-intl ou domestique).
-  // On l'initialise une fois pour qu'il soit transmis au backend.
+  // Provider de recherche externe choisi par l'utilisateur (Skyscanner par défaut)
+  const [providerId, setProviderId] = useState('skyscanner');
+  const provider = getProvider(providerId);
+
+  // Résolution IATA pour ouvrir la recherche externe avec dates pré-remplies
+  const [resolveStatus, setResolveStatus] = useState('idle');
+  const [resolveError, setResolveError] = useState(null);
+
+  // Capture extraction
+  const [uploadPhase, setUploadPhase] = useState('idle'); // 'idle' | 'extracting' | 'done' | 'error'
+  const [uploadError, setUploadError] = useState(null);
+  const [dataUrl, setDataUrl] = useState(null);
+  const fileRef = useRef(null);
+
+  // Transport implicite = avion-intl (transmis au backend pour J1 + buffer retour)
   useEffect(() => {
     if (!values.scheduledTransport) {
       update('scheduledTransport', 'avion-intl');
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Ville d'atterrissage précise = arrivalGateway (existant) ou destinations
   const arrivalCity = values.arrivalGateway || values.destinations;
   const hasMinimumForSearch =
     !!values.departureLocation && !!arrivalCity && !!values.startDate;
@@ -553,7 +554,7 @@ function StepFlight({ values, update, updateManualFlight }) {
       if (dest.country) {
         setResolveStatus('need_city');
         setResolveError(
-          `"${dest.name}" est un pays. Précise une ville d'arrivée précise (ex: Oslo, Bergen, Tromsø…) dans le champ ci-dessous.`
+          `"${dest.name}" est un pays. Précise une ville d'arrivée précise (ex: Oslo, Bergen, Tromsø…) dans le champ "Ville d'arrivée précise" ci-dessous.`
         );
         return;
       }
@@ -564,7 +565,7 @@ function StepFlight({ values, update, updateManualFlight }) {
         );
         return;
       }
-      const url = searchMeta.buildUrl({
+      const url = provider.buildUrl({
         originIata: origin.code,
         destIata: dest.code,
         departDate: values.startDate,
@@ -581,17 +582,113 @@ function StepFlight({ values, update, updateManualFlight }) {
     }
   }
 
+  async function handleCaptureFile(file) {
+    if (!file) return;
+    setUploadError(null);
+    if (!/^image\//.test(file.type)) {
+      setUploadError('Le fichier doit être une image (PNG, JPG, WebP).');
+      return;
+    }
+    const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+    if (file.size > MAX_IMAGE_BYTES) {
+      setUploadError(
+        `L'image dépasse 8 Mo. Compresse-la ou prends une capture plus petite.`
+      );
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const rawUrl = reader.result;
+      setUploadPhase('extracting');
+      try {
+        const compressed = await compressImageDataUrl(rawUrl);
+        setDataUrl(compressed);
+        const flight = await extractFlightFromImage(compressed, {
+          adults: Number(values.adults) || 1,
+          children: Array.isArray(values.childrenAges)
+            ? values.childrenAges.length
+            : 0,
+          origin_hint: values.departureLocation,
+          destination_hint: arrivalCity,
+        });
+        if (!flight?.outbound?.origin_iata) {
+          setUploadError(
+            flight?.extraction_note ||
+              "L'IA n'a pas réussi à lire ta capture. Vérifie qu'elle montre bien un vol (Skyscanner, Google Flights, Kayak…)."
+          );
+          setUploadPhase('error');
+          return;
+        }
+        updateConfirmedFlight({
+          is_round_trip: !!flight.is_round_trip,
+          passengers_total: flight.passengers_total || 1,
+          total_price_eur: Number(flight.total_price_eur) || 0,
+          currency_detected: flight.currency_detected || 'EUR',
+          outbound: { ...flight.outbound },
+          return: flight.return ? { ...flight.return } : null,
+          extraction_note: flight.extraction_note || '',
+        });
+        setUploadPhase('done');
+      } catch (e) {
+        console.error('[wizard extract-flight]', e);
+        setUploadError(e?.message || "Extraction échouée. Réessaie ou change d'image.");
+        setUploadPhase('error');
+      }
+    };
+    reader.onerror = () => setUploadError('Impossible de lire ce fichier.');
+    reader.readAsDataURL(file);
+  }
+
+  function onDrop(e) {
+    e.preventDefault();
+    const file = e.dataTransfer?.files?.[0];
+    if (file) handleCaptureFile(file);
+  }
+
+  // Ctrl+V pour coller une capture
+  useEffect(() => {
+    if (mode !== 'search') return;
+    if (uploadPhase === 'extracting') return;
+    function onPaste(e) {
+      const items = e.clipboardData?.items;
+      if (!items || items.length === 0) return;
+      for (const item of items) {
+        if (item.kind === 'file' && item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) {
+            e.preventDefault();
+            handleCaptureFile(file);
+            return;
+          }
+        }
+      }
+    }
+    document.addEventListener('paste', onPaste);
+    return () => document.removeEventListener('paste', onPaste);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, uploadPhase]);
+
+  function clearConfirmedFlight() {
+    updateConfirmedFlight(null);
+    setUploadPhase('idle');
+    setDataUrl(null);
+    setUploadError(null);
+  }
+
+  const confirmed = values.confirmedFlight;
+
   return (
     <div>
       <StepHeader
         icon="plane"
-        title="Ton vol"
-        subtitle="3 options selon ta situation. Tu peux changer d'avis plus tard."
+        title="Tes vols"
+        subtitle="On t'aide à trouver tes vols, puis l'IA construit ton voyage autour des vraies heures d'arrivée et de départ."
       />
 
-      {/* Champ "Ville d'arrivée précise" — utile quand destinations = pays */}
-      <div className="mb-6 rounded-xl bg-slate-50 border border-slate-200 p-4">
-        <label className="label">
+      {/* Ville d'arrivée précise — utile quand destinations = pays et qu'aucune
+          vignette n'a été cliquée à l'étape précédente */}
+      <div className="mb-5 rounded-xl bg-slate-50 border border-slate-200 p-3">
+        <label className="label text-xs">
           Aéroport / ville d'arrivée exacte
           <span className="text-slate-400 font-normal">
             {' '}
@@ -611,196 +708,51 @@ function StepFlight({ values, update, updateManualFlight }) {
             if (resolveStatus !== 'idle') setResolveStatus('idle');
           }}
         />
-        <p className="text-xs text-slate-500 mt-1">
-          Sert à la recherche de vol et au calage de l'itinéraire. Si vide, on
-          utilise "{values.destinations || '(destination)'}" — ça peut être
-          ambigu pour un pays.
-        </p>
       </div>
 
-      {!path && (
-        <div className="grid grid-cols-1 gap-3">
-          <PathCard
-            icon="✈️"
-            title="J'ai déjà mes horaires de vol"
-            description="Tu as réservé, ou tu connais l'heure exacte d'arrivée/départ. On cale ton itinéraire au minute près."
-            onClick={() => setPath('known')}
-            tone="green"
-          />
-          <PathCard
-            icon="🔍"
-            title="Je veux d'abord chercher mon vol"
-            description={`On t'ouvre ${searchMeta.label} avec tes dates pré-remplies. Tu reviens ici pour saisir tes horaires une fois ton vol choisi.`}
-            onClick={() => setPath('search')}
-            tone="blue"
-            disabled={!hasMinimumForSearch}
-          />
-          <PathCard
-            icon="⏳"
-            title="Je verrai plus tard"
-            description="On génère l'itinéraire avec J1 et dernier jour volontairement légers. Tu pourras les régénérer une fois ton vol réservé."
-            onClick={() => setPath('later')}
-            tone="amber"
-          />
-        </div>
-      )}
+      {/* Onglets de mode */}
+      <div className="mb-5 flex flex-wrap gap-2">
+        <ModeTab active={mode === 'search'} onClick={() => setMode('search')}>
+          🔍 Chercher mes vols
+        </ModeTab>
+        <ModeTab active={mode === 'manual'} onClick={() => setMode('manual')}>
+          ✏️ J'ai déjà mes billets
+        </ModeTab>
+        <ModeTab active={mode === 'later'} onClick={() => setMode('later')}>
+          ⏳ Plus tard
+        </ModeTab>
+      </div>
 
-      {path === 'known' && (
-        <div className="space-y-4">
-          <button
-            type="button"
-            onClick={() => setPath(null)}
-            className="text-sm text-slate-500 hover:underline"
-          >
-            ← Changer de mode
-          </button>
-          <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-4">
-            <h3 className="font-semibold text-emerald-900">
-              ✈️ J'ai mes horaires
-            </h3>
-            <p className="text-xs text-emerald-800 mt-1">
-              Tout est optionnel — mais plus tu renseignes, plus précis sera
-              l'itinéraire.
-            </p>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="label">Compagnie aérienne</label>
-              <input
-                className="input"
-                placeholder="Ex : Air France, Lufthansa…"
-                value={values.manualFlight?.airline || ''}
-                onChange={(e) =>
-                  updateManualFlight('airline', e.target.value)
-                }
-              />
+      {/* Mode SEARCH : Skyscanner principal + capture inline */}
+      {mode === 'search' && !confirmed && (
+        <div className="space-y-5">
+          <div className="rounded-2xl border-2 border-blue-200 bg-gradient-to-br from-blue-50 to-sky-50 p-5">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-xl">1️⃣</span>
+              <h3 className="font-bold text-slate-900">
+                Ouvre {provider.label} dans un nouvel onglet
+              </h3>
             </div>
-            <div>
-              <label className="label">Numéro de vol</label>
-              <input
-                className="input"
-                placeholder="Ex : AF038"
-                value={values.manualFlight?.flightNumber || ''}
-                onChange={(e) =>
-                  updateManualFlight('flightNumber', e.target.value)
-                }
-              />
-            </div>
-          </div>
-          {/* Prix unique aller-retour par personne — comme sur les comparateurs (Aviasales / Google Flights / Skyscanner) */}
-          <div className="rounded-lg bg-brand-50 border border-brand-200 p-4">
-            <label className="label">
-              💶 Prix par personne — vol aller-retour complet (€)
-            </label>
-            <input
-              type="number"
-              min="0"
-              className="input"
-              placeholder="Ex : 320 (le prix affiché sur le comparateur)"
-              value={values.manualFlight?.outboundPriceEur || ''}
-              onChange={(e) => {
-                updateManualFlight('outboundPriceEur', e.target.value);
-                // On stocke uniquement dans outbound : c'est le prix aller-retour
-                // total par personne. Le backend fait outbound × pax.
-                updateManualFlight('returnPriceEur', '');
-              }}
-            />
-            <p className="text-xs text-slate-500 mt-2">
-              C'est le prix tel qu'il apparaît sur les comparateurs : aller +
-              retour cumulés, pour une personne. Le total famille sera calculé
-              automatiquement (× nombre de voyageurs).
-            </p>
-          </div>
-
-          <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 space-y-3">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-              ✈️ Vol aller
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <label className="label">Aéroport d'arrivée</label>
-                <input
-                  className="input"
-                  placeholder="Ex : JFK, CDG…"
-                  value={values.arrivalGateway}
-                  onChange={(e) => update('arrivalGateway', e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="label">Heure d'arrivée</label>
-                <input
-                  type="time"
-                  className="input"
-                  value={values.arrivalTime}
-                  onChange={(e) => update('arrivalTime', e.target.value)}
-                />
-              </div>
-            </div>
-          </div>
-          <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 space-y-3">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-              ✈️ Vol retour
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <label className="label">Aéroport de départ</label>
-                <input
-                  className="input"
-                  placeholder="Identique à l'arrivée"
-                  value={values.departureGateway}
-                  onChange={(e) =>
-                    update('departureGateway', e.target.value)
-                  }
-                />
-              </div>
-              <div>
-                <label className="label">Heure de départ</label>
-                <input
-                  type="time"
-                  className="input"
-                  value={values.departureTime}
-                  onChange={(e) => update('departureTime', e.target.value)}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {path === 'search' && (
-        <div className="space-y-4">
-          <button
-            type="button"
-            onClick={() => setPath(null)}
-            className="text-sm text-slate-500 hover:underline"
-          >
-            ← Changer de mode
-          </button>
-          <div className="rounded-xl bg-sky-50 border border-sky-200 p-5 text-center">
-            <h3 className="font-semibold text-sky-900">
-              🔍 Recherche ton vol sur {searchMeta.label}
-            </h3>
-            <p className="text-sm text-sky-800 mt-2">
-              On pré-remplit tes dates, ton origine et ta destination. Choisis
-              ton vol,{' '}
-              <strong>note l'heure d'arrivée et de départ</strong>, puis reviens
-              ici pour les saisir.
+            <p className="text-sm text-slate-600 mb-3">
+              Tes dates, ton départ et ta destination seront déjà remplis. Tu
+              n'as plus qu'à cliquer "Rechercher" et choisir ton vol.
             </p>
             {hasMinimumForSearch ? (
               <button
                 type="button"
                 onClick={openFlightSearch}
                 disabled={resolveStatus === 'loading'}
-                className={`mt-4 inline-flex items-center gap-2 rounded-xl ${searchMeta.btnClass} disabled:opacity-60 text-white px-5 py-2.5 font-medium transition-colors`}
+                className={`inline-flex items-center gap-2 rounded-xl ${provider.btnClass} disabled:opacity-60 text-white px-6 py-3 text-base font-semibold shadow-pop transition-colors`}
               >
                 {resolveStatus === 'loading'
                   ? 'Préparation…'
-                  : `Ouvrir ${searchMeta.label} dans un nouvel onglet →`}
+                  : `🔍 Chercher mes vols sur ${provider.label} →`}
               </button>
             ) : (
-              <p className="mt-4 text-xs text-sky-700">
-                Renseigne d'abord destination + dates pour activer la
-                recherche.
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                ⚠️ Renseigne d'abord <strong>ville de départ</strong>,{' '}
+                <strong>destination</strong> et <strong>dates</strong> aux étapes
+                précédentes pour activer la recherche.
               </p>
             )}
             {resolveError && (
@@ -814,98 +766,427 @@ function StepFlight({ values, update, updateManualFlight }) {
                 {resolveError}
               </div>
             )}
+
+            {/* Changement de provider — discret */}
+            <div className="mt-3 text-xs text-slate-500">
+              <span>Préfères-tu : </span>
+              {FLIGHT_SEARCH_PROVIDERS.filter((p) => p.id !== providerId).map(
+                (p, i) => (
+                  <span key={p.id}>
+                    {i > 0 && <span> · </span>}
+                    <button
+                      type="button"
+                      onClick={() => setProviderId(p.id)}
+                      className="underline hover:text-slate-700"
+                    >
+                      {p.label}
+                    </button>
+                  </span>
+                )
+              )}
+            </div>
           </div>
-          <p className="text-center text-sm text-slate-600">
-            Une fois ton vol trouvé :
-          </p>
-          <div className="flex flex-col sm:flex-row gap-2 justify-center">
-            <button
-              type="button"
-              onClick={() => setPath('known')}
-              className="rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 text-sm font-medium transition-colors"
-            >
-              ✓ J'ai mes horaires, je les saisis
-            </button>
-            <button
-              type="button"
-              onClick={() => setPath('later')}
-              className="rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 px-5 py-2.5 text-sm font-medium transition-colors"
-            >
-              Finalement, je verrai plus tard
-            </button>
+
+          <div className="rounded-2xl border-2 border-dashed border-slate-300 bg-white p-5">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-xl">2️⃣</span>
+              <h3 className="font-bold text-slate-900">
+                Une fois ton vol choisi, partage ta capture ici
+              </h3>
+            </div>
+            <p className="text-sm text-slate-600 mb-3">
+              Fais une capture d'écran de la fiche du vol que tu as sélectionné,
+              puis dépose-la ici. Notre IA lira automatiquement les horaires, le
+              prix et tout le reste.
+            </p>
+
+            {uploadPhase === 'extracting' ? (
+              <div className="py-6 text-center bg-slate-50 rounded-xl">
+                {dataUrl && (
+                  <img
+                    src={dataUrl}
+                    alt="Capture en cours d'analyse"
+                    className="mx-auto max-h-32 rounded-lg shadow-sm mb-3 object-contain"
+                  />
+                )}
+                <div className="inline-flex items-center gap-2 text-sm text-slate-700">
+                  <span className="inline-block h-2 w-2 rounded-full bg-sky-500 animate-pulse" />
+                  Lecture de ta capture par l'IA…
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  Compagnie, horaires, aéroports, escales, prix…
+                </p>
+              </div>
+            ) : (
+              <div
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={onDrop}
+                onClick={() => fileRef.current?.click()}
+                className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 p-6 text-center cursor-pointer transition-colors"
+              >
+                <div className="text-3xl mb-1">📸</div>
+                <p className="text-sm font-medium text-slate-800">
+                  Glisse ta capture, clique ici ou colle avec{' '}
+                  <kbd className="rounded border border-slate-300 bg-white px-1.5 py-0.5 font-mono text-[11px] text-slate-700">
+                    Ctrl
+                  </kbd>
+                  <span className="mx-0.5 text-slate-400">+</span>
+                  <kbd className="rounded border border-slate-300 bg-white px-1.5 py-0.5 font-mono text-[11px] text-slate-700">
+                    V
+                  </kbd>
+                </p>
+                <p className="text-xs text-slate-500 mt-1">
+                  PNG / JPG / WebP — 8 Mo max
+                </p>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => handleCaptureFile(e.target.files?.[0])}
+                />
+              </div>
+            )}
+
+            {uploadError && (
+              <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {uploadError}
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      {path === 'later' && (
-        <div className="space-y-4">
-          <button
-            type="button"
-            onClick={() => setPath(null)}
-            className="text-sm text-slate-500 hover:underline"
-          >
-            ← Changer de mode
-          </button>
-          <div className="rounded-xl bg-amber-50 border border-amber-200 p-5">
-            <h3 className="font-semibold text-amber-900">
-              ⏳ On verra plus tard
-            </h3>
-            <p className="text-sm text-amber-800 mt-2">
-              Pas de souci. On va générer ton itinéraire avec :
-            </p>
-            <ul className="mt-3 space-y-1.5 text-sm text-amber-800 list-disc list-inside">
-              <li>
-                Une <strong>journée d'arrivée légère</strong> (check-in,
-                balade, dîner — valable quelle que soit l'heure du vol)
-              </li>
-              <li>
-                Un <strong>dernier jour court et flexible</strong> (check-out,
-                temps libre, transfert)
-              </li>
-              <li>
-                Les <strong>jours du milieu détaillés et riches</strong> comme
-                d'habitude
-              </li>
-              <li>
-                Un <strong>bandeau d'avertissement</strong> sur J1 et J_final
-                que tu pourras "Régénérer" une fois ton vol réservé
-              </li>
-            </ul>
-          </div>
+      {/* Mode SEARCH avec confirmation = on a un vol confirmé */}
+      {mode === 'search' && confirmed && (
+        <ConfirmedFlightCard
+          confirmed={confirmed}
+          dataUrl={dataUrl}
+          onClear={clearConfirmedFlight}
+        />
+      )}
+
+      {/* Mode MANUAL : saisie manuelle */}
+      {mode === 'manual' && (
+        <ManualFlightForm
+          values={values}
+          update={update}
+          updateManualFlight={updateManualFlight}
+        />
+      )}
+
+      {/* Mode LATER : skip */}
+      {mode === 'later' && (
+        <div className="rounded-xl bg-amber-50 border border-amber-200 p-5">
+          <h3 className="font-semibold text-amber-900">
+            ⏳ On verra plus tard pour les vols
+          </h3>
+          <p className="text-sm text-amber-800 mt-2">
+            Pas de souci. L'itinéraire sera généré avec :
+          </p>
+          <ul className="mt-3 space-y-1.5 text-sm text-amber-800 list-disc list-inside">
+            <li>
+              Une <strong>journée d'arrivée légère</strong> (check-in, balade,
+              dîner — valable quelle que soit l'heure du vol)
+            </li>
+            <li>
+              Un <strong>dernier jour court et flexible</strong> (check-out,
+              temps libre, transfert)
+            </li>
+            <li>
+              Les <strong>jours du milieu détaillés</strong> comme d'habitude
+            </li>
+          </ul>
+          <p className="text-xs text-amber-700 mt-3">
+            💡 Tu pourras ajouter ta capture de vol plus tard depuis la page du
+            voyage pour recaler J1 et le dernier jour.
+          </p>
         </div>
       )}
     </div>
   );
 }
 
-function PathCard({ icon, title, description, onClick, tone, disabled }) {
-  const tones = {
-    green:
-      'border-emerald-200 hover:border-emerald-500 hover:bg-emerald-50 hover:ring-emerald-500',
-    blue: 'border-sky-200 hover:border-sky-500 hover:bg-sky-50 hover:ring-sky-500',
-    amber:
-      'border-amber-200 hover:border-amber-500 hover:bg-amber-50 hover:ring-amber-500',
-  };
+function ModeTab({ active, onClick, children }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      disabled={disabled}
-      className={`text-left rounded-xl border-2 bg-white p-5 transition-all hover:shadow-md hover:ring-2 ${
-        tones[tone]
-      } ${disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
+      className={`rounded-full px-4 py-2 text-sm font-medium border transition-all ${
+        active
+          ? 'bg-brand-600 text-white border-brand-600 shadow-glow'
+          : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+      }`}
     >
-      <div className="flex items-start gap-3">
-        <div className="text-3xl shrink-0">{icon}</div>
-        <div>
-          <h3 className="font-semibold text-slate-900">{title}</h3>
-          <p className="text-sm text-slate-600 mt-1 leading-relaxed">
-            {description}
-          </p>
-        </div>
-      </div>
+      {children}
     </button>
   );
+}
+
+function ConfirmedFlightCard({ confirmed, dataUrl, onClear }) {
+  const out = confirmed.outbound || {};
+  const ret = confirmed.return || null;
+  const pax = confirmed.passengers_total || 1;
+  const total = Math.round(Number(confirmed.total_price_eur) || 0);
+  const perPerson = pax > 0 ? Math.round(total / pax) : total;
+  const airlineLabel = [out.airline_code, out.flight_number]
+    .filter(Boolean)
+    .join(' ');
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-2xl border-2 border-emerald-300 bg-gradient-to-br from-emerald-50 to-green-50 p-5 shadow-pop">
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-emerald-700 font-bold">
+              ✓ Vol bien enregistré
+            </div>
+            <h3 className="text-lg font-bold text-slate-900 mt-0.5">
+              {airlineLabel || 'Ton vol'}
+            </h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClear}
+            className="text-xs text-slate-500 hover:text-red-600 hover:underline"
+          >
+            🗑 Recommencer
+          </button>
+        </div>
+
+        <FlightLegRow
+          label="✈️ Aller"
+          origin={out.origin_iata}
+          dest={out.destination_iata}
+          departure={out.departure_at}
+          arrival={out.arrival_at}
+          stops={out.stops}
+        />
+        {confirmed.is_round_trip && ret && (
+          <FlightLegRow
+            label="🔄 Retour"
+            origin={ret.origin_iata}
+            dest={ret.destination_iata}
+            departure={ret.departure_at}
+            arrival={ret.arrival_at}
+            stops={ret.stops}
+          />
+        )}
+
+        <div className="mt-3 pt-3 border-t border-emerald-200 flex items-center justify-between text-sm">
+          <div className="text-slate-700">
+            👥 <strong>{pax}</strong> voyageur{pax > 1 ? 's' : ''}
+          </div>
+          <div className="text-right">
+            <div className="text-xl font-bold text-slate-900">{total} €</div>
+            <div className="text-xs text-slate-500">
+              soit {perPerson} € / personne
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {confirmed.currency_detected &&
+        confirmed.currency_detected !== 'EUR' && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+            ⚠️ Prix lu en {confirmed.currency_detected} puis converti. Vérifie
+            le taux du jour si l'écart te paraît gros.
+          </p>
+        )}
+
+      <p className="text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-3">
+        🎯 L'IA va caler le <strong>jour d'arrivée</strong> à partir de l'heure
+        à laquelle tu atterris, et garder une marge avant ton{' '}
+        <strong>vol retour</strong>. Aucune activité ne sera prévue pendant que
+        tu es en l'air.
+      </p>
+
+      {dataUrl && (
+        <details className="rounded-lg border border-slate-200 bg-slate-50">
+          <summary className="cursor-pointer list-none px-3 py-2 text-xs text-slate-600 select-none">
+            📷 Voir la capture utilisée
+          </summary>
+          <div className="p-3 pt-0">
+            <img
+              src={dataUrl}
+              alt="Capture"
+              className="max-h-64 mx-auto rounded object-contain"
+            />
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
+function FlightLegRow({ label, origin, dest, departure, arrival, stops }) {
+  const stopsLabel =
+    stops === 0
+      ? 'direct'
+      : stops === 1
+        ? '1 escale'
+        : stops > 1
+          ? `${stops} escales`
+          : '';
+  return (
+    <div className="rounded-xl bg-white border border-emerald-200 p-3 mb-2 last:mb-0">
+      <div className="text-[10px] uppercase tracking-wide text-emerald-700 font-semibold mb-1.5">
+        {label}
+      </div>
+      <div className="flex items-center gap-3">
+        <div className="flex-1 text-center">
+          <div className="text-base font-bold text-slate-900">{origin || '—'}</div>
+          <div className="text-xs text-slate-600">{formatLegDateTime(departure)}</div>
+        </div>
+        <div className="text-center text-slate-400 text-xs">
+          <div>→</div>
+          {stopsLabel && (
+            <div className="mt-1 text-[10px] uppercase">{stopsLabel}</div>
+          )}
+        </div>
+        <div className="flex-1 text-center">
+          <div className="text-base font-bold text-slate-900">{dest || '—'}</div>
+          <div className="text-xs text-slate-600">{formatLegDateTime(arrival)}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ManualFlightForm({ values, update, updateManualFlight }) {
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-4">
+        <h3 className="font-semibold text-emerald-900">
+          ✏️ J'ai mes horaires de vol
+        </h3>
+        <p className="text-xs text-emerald-800 mt-1">
+          Tout est optionnel — mais plus tu renseignes, plus précis sera
+          l'itinéraire.
+        </p>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label className="label">Compagnie aérienne</label>
+          <input
+            className="input"
+            placeholder="Ex : Air France, Lufthansa…"
+            value={values.manualFlight?.airline || ''}
+            onChange={(e) => updateManualFlight('airline', e.target.value)}
+          />
+        </div>
+        <div>
+          <label className="label">Numéro de vol</label>
+          <input
+            className="input"
+            placeholder="Ex : AF038"
+            value={values.manualFlight?.flightNumber || ''}
+            onChange={(e) => updateManualFlight('flightNumber', e.target.value)}
+          />
+        </div>
+      </div>
+      <div className="rounded-lg bg-brand-50 border border-brand-200 p-4">
+        <label className="label">
+          💶 Prix par personne — vol aller-retour complet (€)
+        </label>
+        <input
+          type="number"
+          min="0"
+          className="input"
+          placeholder="Ex : 320 (le prix affiché sur le comparateur)"
+          value={values.manualFlight?.outboundPriceEur || ''}
+          onChange={(e) => {
+            updateManualFlight('outboundPriceEur', e.target.value);
+            updateManualFlight('returnPriceEur', '');
+          }}
+        />
+        <p className="text-xs text-slate-500 mt-2">
+          Le prix tel qu'affiché sur le comparateur (aller + retour par
+          personne). Le total famille sera calculé automatiquement.
+        </p>
+      </div>
+      <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 space-y-3">
+        <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+          ✈️ Vol aller
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label className="label">Aéroport d'arrivée</label>
+            <input
+              className="input"
+              placeholder="Ex : JFK, CDG…"
+              value={values.arrivalGateway}
+              onChange={(e) => update('arrivalGateway', e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="label">Heure d'arrivée</label>
+            <input
+              type="time"
+              className="input"
+              value={values.arrivalTime}
+              onChange={(e) => update('arrivalTime', e.target.value)}
+            />
+          </div>
+        </div>
+      </div>
+      <div className="rounded-lg bg-slate-50 border border-slate-200 p-4 space-y-3">
+        <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+          ✈️ Vol retour
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label className="label">Aéroport de départ</label>
+            <input
+              className="input"
+              placeholder="Identique à l'arrivée"
+              value={values.departureGateway}
+              onChange={(e) => update('departureGateway', e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="label">Heure de départ</label>
+            <input
+              type="time"
+              className="input"
+              value={values.departureTime}
+              onChange={(e) => update('departureTime', e.target.value)}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Compression locale d'une image avant envoi à DeepSeek Vision.
+// Évite de saturer l'Edge Function avec des PNG de 5 Mo.
+async function compressImageDataUrl(rawUrl, { maxDim = 1400, quality = 0.85 } = {}) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          const ratio = Math.min(maxDim / width, maxDim / height);
+          width = Math.round(width * ratio);
+          height = Math.round(height * ratio);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      } catch (e) {
+        reject(e);
+      }
+    };
+    img.onerror = () => reject(new Error('Impossible de charger cette image.'));
+    img.src = rawUrl;
+  });
 }
 
 function StepVehicle({ values, updateVehicle, pickVehicleType }) {
@@ -1192,18 +1473,55 @@ function StepRecap({ values }) {
           />
           {AIR_TYPES.has(values.tripType) && (
             <>
-              <RecapRow
-                label="✈️ Compagnie"
-                value={values.manualFlight?.airline || 'À déterminer'}
-              />
-              <RecapRow
-                label="⏰ Horaires vol"
-                value={
-                  values.arrivalTime || values.departureTime
-                    ? `Arrivée ${values.arrivalTime || '?'} · Départ ${values.departureTime || '?'}`
-                    : 'Non précisés (J1/J_final en mode léger)'
-                }
-              />
+              {values.confirmedFlight?.outbound?.origin_iata ? (
+                <>
+                  <RecapRow
+                    label="✈️ Vol confirmé (capture)"
+                    value={(() => {
+                      const out = values.confirmedFlight.outbound;
+                      const airline = [out.airline_code, out.flight_number]
+                        .filter(Boolean)
+                        .join(' ');
+                      return `${airline || '—'} · ${out.origin_iata} → ${out.destination_iata}`;
+                    })()}
+                  />
+                  <RecapRow
+                    label="⏰ Horaires"
+                    value={(() => {
+                      const out = values.confirmedFlight.outbound;
+                      const ret = values.confirmedFlight.return;
+                      const dep = (out.departure_at || '').substring(11, 16);
+                      const arr = (out.arrival_at || '').substring(11, 16);
+                      let s = `Aller ${dep}→${arr}`;
+                      if (ret) {
+                        const rd = (ret.departure_at || '').substring(11, 16);
+                        const ra = (ret.arrival_at || '').substring(11, 16);
+                        s += ` · Retour ${rd}→${ra}`;
+                      }
+                      return s;
+                    })()}
+                  />
+                  <RecapRow
+                    label="💶 Prix vol (total famille)"
+                    value={`${Math.round(Number(values.confirmedFlight.total_price_eur) || 0)} €`}
+                  />
+                </>
+              ) : (
+                <>
+                  <RecapRow
+                    label="✈️ Compagnie"
+                    value={values.manualFlight?.airline || 'À déterminer'}
+                  />
+                  <RecapRow
+                    label="⏰ Horaires vol"
+                    value={
+                      values.arrivalTime || values.departureTime
+                        ? `Arrivée ${values.arrivalTime || '?'} · Départ ${values.departureTime || '?'}`
+                        : 'Non précisés (J1/J_final en mode léger)'
+                    }
+                  />
+                </>
+              )}
             </>
           )}
         </dl>
@@ -1256,6 +1574,9 @@ export default function WizardPreferencesForm({
       ...v,
       manualFlight: { ...(v.manualFlight || {}), [field]: value },
     }));
+  }
+  function updateConfirmedFlight(flightOrNull) {
+    setValues((v) => ({ ...v, confirmedFlight: flightOrNull }));
   }
   function toggle(field, value) {
     setValues((v) => ({
@@ -1319,6 +1640,7 @@ export default function WizardPreferencesForm({
             values={values}
             update={update}
             updateManualFlight={updateManualFlight}
+            updateConfirmedFlight={updateConfirmedFlight}
           />
         ),
       });
@@ -1390,8 +1712,41 @@ export default function WizardPreferencesForm({
       if (isAir && !payload.scheduledTransport) {
         payload.scheduledTransport = 'avion-intl';
       }
-      // Active hasFixedSchedule si l'utilisateur a saisi des horaires
-      if (values.arrivalTime || values.departureTime) {
+      // Si l'utilisateur a partagé une capture (confirmedFlight), on dérive
+      // automatiquement arrivalTime, departureTime, gateways et manualFlight
+      // pour que le backend utilise les vraies heures sans rien savoir du
+      // nouveau format.
+      const cf = values.confirmedFlight;
+      if (cf?.outbound?.arrival_at) {
+        const out = cf.outbound;
+        const ret = cf.return || null;
+        const pax = Math.max(1, Number(cf.passengers_total) || 1);
+        const pricePerPerson = Math.round(
+          (Number(cf.total_price_eur) || 0) / pax
+        );
+        payload.scheduledTransport = 'avion-intl';
+        payload.hasFixedSchedule = true;
+        payload.arrivalTime = (out.arrival_at || '').substring(11, 16);
+        payload.arrivalGateway =
+          payload.arrivalGateway ||
+          (out.destination_iata ? out.destination_iata : '');
+        if (ret?.departure_at) {
+          payload.departureTime = (ret.departure_at || '').substring(11, 16);
+          payload.departureGateway =
+            payload.departureGateway ||
+            (ret.origin_iata ? ret.origin_iata : '');
+        }
+        payload.manualFlight = {
+          airline: out.airline_code || payload.manualFlight?.airline || '',
+          flightNumber:
+            out.flight_number || payload.manualFlight?.flightNumber || '',
+          outboundPriceEur: pricePerPerson > 0
+            ? String(pricePerPerson)
+            : payload.manualFlight?.outboundPriceEur || '',
+          returnPriceEur: '',
+        };
+      } else if (values.arrivalTime || values.departureTime) {
+        // Saisie manuelle : on active hasFixedSchedule
         payload.hasFixedSchedule = true;
       }
       onSubmit(payload);

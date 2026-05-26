@@ -66,6 +66,12 @@ export const DEFAULTS = {
     outboundPriceEur: '',
     returnPriceEur: '',
   },
+  // Vol confirmé via une capture (Skyscanner / Google Flights) traitée
+  // par DeepSeek Vision. Si présent, on dérive arrivalTime, departureTime,
+  // gateways et manualFlight au moment de l'envoi au backend.
+  // Structure identique à l'extraction : { outbound, return, is_round_trip,
+  // total_price_eur, passengers_total, ... }
+  confirmedFlight: null,
 };
 
 // Marge conseillée avant l'heure de départ (utilisée pour info dans l'UI ; le
