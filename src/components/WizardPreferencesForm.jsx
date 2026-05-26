@@ -421,6 +421,11 @@ function StepTravelers({ values, update }) {
 
 function StepTripType({ values, update }) {
   const showLicenseQuestion = CAR_RENTAL_POSSIBLE_TRIP_TYPES.has(values.tripType);
+  // L'étape vol s'affiche automatiquement pour les types "avion-*".
+  // Pour les autres (itinérant, road-trip, train…), l'utilisateur peut
+  // forcer son apparition s'il commence/finit son voyage en avion.
+  const isAutoAir = AIR_TYPES.has(values.tripType);
+  const flightChecked = isAutoAir || values.includesFlight === true;
   return (
     <div>
       <StepHeader
@@ -461,8 +466,33 @@ function StepTripType({ values, update }) {
         })}
       </div>
 
+      {/* Toggle vol — toujours visible. Auto-coché et désactivé pour les
+          types avion-*, sinon laissé à l'utilisateur. */}
+      <div className="mt-6 rounded-xl border-2 border-sky-200 bg-sky-50 p-4">
+        <label className={`flex items-start gap-3 ${isAutoAir ? 'opacity-70' : 'cursor-pointer'} select-none`}>
+          <input
+            type="checkbox"
+            checked={flightChecked}
+            disabled={isAutoAir}
+            onChange={(e) => update('includesFlight', e.target.checked)}
+            className="mt-0.5 h-5 w-5 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+          />
+          <div className="text-sm">
+            <div className="font-medium text-slate-900 flex items-center gap-1.5">
+              <span>✈️</span>
+              <span>Ce voyage inclut un vol (aller, retour, ou les deux)</span>
+            </div>
+            <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">
+              {isAutoAir
+                ? 'Activé automatiquement pour ce type de voyage. Tu pourras chercher tes vols à l\'étape suivante.'
+                : 'Coche si tu commences ou termines ton voyage en avion (utile pour un itinérant avec aller-retour avion + tour en voiture/train sur place).'}
+            </p>
+          </div>
+        </label>
+      </div>
+
       {showLicenseQuestion && (
-        <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
           <label className="flex items-start gap-3 cursor-pointer select-none">
             <input
               type="checkbox"
@@ -537,9 +567,12 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
         !values.returnLocation ||
         values.returnLocation === values.departureLocation;
       const adults = Math.max(1, Number(values.adults) || 1);
-      const childrenCount = Array.isArray(values.childrenAges)
-        ? values.childrenAges.length
-        : 0;
+      const childrenAges = Array.isArray(values.childrenAges)
+        ? values.childrenAges.filter((a) => Number(a) >= 2)
+        : [];
+      const infantsAges = Array.isArray(values.childrenAges)
+        ? values.childrenAges.filter((a) => Number(a) >= 0 && Number(a) < 2)
+        : [];
       const [origin, dest] = await Promise.all([
         resolveIata(values.departureLocation),
         resolveIata(arrivalCity),
@@ -571,7 +604,8 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
         departDate: values.startDate,
         returnDate: isRoundTrip ? values.endDate : null,
         adults,
-        childrenCount,
+        childrenAges,
+        infantsAges,
       });
       window.open(url, '_blank', 'noopener,noreferrer');
       setResolveStatus('idle');
@@ -1559,7 +1593,10 @@ export default function WizardPreferencesForm({
   }, [initialValues]);
 
   const tripType = normalizeTripType(values.tripType);
-  const isAir = AIR_TYPES.has(tripType);
+  // L'étape "Tes vols" apparaît si :
+  //   - le type est explicitement avion-* (avion-voiture, avion-citybreak), OU
+  //   - l'utilisateur a coché "Ce voyage inclut un vol" à l'étape précédente
+  const isAir = AIR_TYPES.has(tripType) || values.includesFlight === true;
   const isRoadtrip = ROAD_TRIP_TYPES.has(tripType);
   const isMotorized = MOTORIZED_TRIP_TYPES.has(tripType);
 

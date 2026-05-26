@@ -72,6 +72,11 @@ export const DEFAULTS = {
   // Structure identique à l'extraction : { outbound, return, is_round_trip,
   // total_price_eur, passengers_total, ... }
   confirmedFlight: null,
+  // Force l'apparition de l'étape "Tes vols" même pour les types de voyage
+  // qui ne sont pas explicitement "avion" (itinérant, road-trip…). Utile
+  // quand l'utilisateur fait un voyage itinérant en arrivant/repartant en
+  // avion. Auto-true pour avion-voiture/avion-citybreak.
+  includesFlight: false,
 };
 
 // Marge conseillée avant l'heure de départ (utilisée pour info dans l'UI ; le

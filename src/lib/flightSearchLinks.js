@@ -14,34 +14,36 @@ function toYYMMDD(iso) {
 }
 
 // Skyscanner FR — URL de recherche directe avec dates pré-remplies.
-// Format documenté (observé sur skyscanner.fr/transport/vols/) :
-//   /transport/vols/{ori}/{dst}/{yymmdd-aller}/{yymmdd-retour}/?adults=N&children=N&...
-// Codes IATA en minuscules. Si returnDate vide → one-way (pas de 2e date).
+// Format moderne (paramètres v2) observé sur skyscanner.fr :
+//   /transport/vols/{ori}/{dst}/{yymmdd-aller}/{yymmdd-retour}/
+//     ?adultsv2=N&childrenv2=AGE1,AGE2&infantsv2=&cabinclass=economy&rtn=1
+// Codes IATA en minuscules. Si returnDate vide → one-way + rtn=0.
+// childrenAges = tableau d'âges (Skyscanner exige les âges, pas un compte).
 export function buildSkyscannerUrl({
   originIata,
   destIata,
   departDate,
   returnDate,
   adults,
-  childrenCount,
-  infantsCount,
+  childrenAges,
+  infantsAges,
   directOnly,
 }) {
   const ori = String(originIata || '').toLowerCase();
   const dst = String(destIata || '').toLowerCase();
   if (!ori || !dst || !departDate) return null;
   const a = Math.max(1, Number(adults) || 1);
-  const c = Math.max(0, Number(childrenCount) || 0);
-  const inf = Math.max(0, Number(infantsCount) || 0);
+  const ages = Array.isArray(childrenAges) ? childrenAges.filter((x) => Number.isFinite(Number(x))) : [];
+  const infants = Array.isArray(infantsAges) ? infantsAges.filter((x) => Number.isFinite(Number(x))) : [];
   const dep = toYYMMDD(departDate);
   let path = `/transport/vols/${ori}/${dst}/${dep}/`;
   if (returnDate) {
     path += `${toYYMMDD(returnDate)}/`;
   }
   const params = new URLSearchParams();
-  params.set('adults', String(a));
-  if (c > 0) params.set('children', String(c));
-  if (inf > 0) params.set('infants', String(inf));
+  params.set('adultsv2', String(a));
+  params.set('childrenv2', ages.length > 0 ? ages.map(String).join(',') : '');
+  params.set('infantsv2', infants.length > 0 ? infants.map(String).join(',') : '');
   params.set('cabinclass', 'economy');
   params.set('preferdirects', directOnly ? 'true' : 'false');
   params.set('rtn', returnDate ? '1' : '0');
@@ -56,11 +58,12 @@ export function buildGoogleFlightsUrl({
   departDate,
   returnDate,
   adults,
-  childrenCount,
+  childrenAges,
 }) {
   if (!originIata || !destIata || !departDate) return null;
   const a = Math.max(1, Number(adults) || 1);
-  const c = Math.max(0, Number(childrenCount) || 0);
+  const ages = Array.isArray(childrenAges) ? childrenAges : [];
+  const c = ages.length;
   let q = `Flights from ${originIata} to ${destIata} on ${departDate}`;
   if (returnDate) {
     q += ` returning ${returnDate}`;
@@ -81,7 +84,7 @@ export function buildAviasalesUrl({
   departDate,
   returnDate,
   adults,
-  childrenCount,
+  childrenAges,
 }) {
   if (!originIata || !destIata || !departDate) return null;
   const ori = String(originIata).toUpperCase();
@@ -95,7 +98,7 @@ export function buildAviasalesUrl({
     segment += `${dd2}${mm2}`;
   }
   const a = Math.max(1, Number(adults) || 1);
-  const c = Math.max(0, Number(childrenCount) || 0);
+  const c = Array.isArray(childrenAges) ? childrenAges.length : 0;
   const pax = `${a}${c > 0 ? c : ''}`;
   return `https://www.aviasales.com/search/${segment}${pax}?currency=eur&locale=fr`;
 }
