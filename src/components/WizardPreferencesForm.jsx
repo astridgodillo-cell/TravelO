@@ -625,11 +625,12 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
   // instructions pour combiner manuellement.
   const [multiCityFallback, setMultiCityFallback] = useState(null);
 
-  // Capture extraction
-  const [uploadPhase, setUploadPhase] = useState('idle'); // 'idle' | 'extracting' | 'done' | 'error'
+  // Capture extraction (peut être multi-captures pour les open-jaw réservés
+  // en 2 vols one-way séparés)
+  const [uploadPhase, setUploadPhase] = useState('idle'); // 'idle' | 'extracting' | 'error'
   const [uploadError, setUploadError] = useState(null);
-  const [dataUrl, setDataUrl] = useState(null);
   const fileRef = useRef(null);
+  const fileRef2 = useRef(null);
 
   // Transport implicite = avion-intl (transmis au backend pour J1 + buffer retour)
   useEffect(() => {
@@ -797,7 +798,6 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
       setUploadPhase('extracting');
       try {
         const compressed = await compressImageDataUrl(rawUrl);
-        setDataUrl(compressed);
         const flight = await extractFlightFromImage(compressed, {
           adults: Number(values.adults) || 1,
           children: Array.isArray(values.childrenAges)
@@ -811,23 +811,70 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
             flight?.extraction_note ||
               "L'IA n'a pas réussi à lire ta capture. Vérifie qu'elle montre bien un vol (Skyscanner, Google Flights, Kayak…)."
           );
-          setUploadPhase('error');
+          setUploadPhase('idle');
           return;
         }
-        updateConfirmedFlight({
-          is_round_trip: !!flight.is_round_trip,
-          passengers_total: flight.passengers_total || 1,
+        const existing = values.confirmedFlight;
+        const newCapture = {
+          dataUrl: compressed,
           total_price_eur: Number(flight.total_price_eur) || 0,
-          currency_detected: flight.currency_detected || 'EUR',
-          outbound: { ...flight.outbound },
-          return: flight.return ? { ...flight.return } : null,
-          extraction_note: flight.extraction_note || '',
-        });
-        setUploadPhase('done');
+        };
+        // Fusion intelligente avec une éventuelle capture précédente
+        let merged;
+        const newOut = { ...flight.outbound };
+        const newRet = flight.return ? { ...flight.return } : null;
+        if (
+          existing?.outbound?.origin_iata &&
+          !existing.return &&
+          !newRet
+        ) {
+          // Cas typique : 1re capture = aller seul, 2e capture = retour seul
+          // (2 vols réservés séparément). On détermine la chronologie pour
+          // savoir laquelle est aller / retour.
+          const existingDate = existing.outbound.departure_at || '';
+          const newDate = newOut.departure_at || '';
+          let outbound, returnLeg;
+          if (newDate && existingDate && newDate < existingDate) {
+            outbound = newOut;
+            returnLeg = existing.outbound;
+          } else {
+            outbound = existing.outbound;
+            returnLeg = newOut;
+          }
+          merged = {
+            is_round_trip: true,
+            passengers_total: existing.passengers_total || flight.passengers_total || 1,
+            total_price_eur:
+              (Number(existing.total_price_eur) || 0) + newCapture.total_price_eur,
+            currency_detected: existing.currency_detected || flight.currency_detected || 'EUR',
+            outbound,
+            return: returnLeg,
+            extraction_note: '',
+            _captures: [
+              ...(existing._captures || [{ dataUrl: null, total_price_eur: existing.total_price_eur || 0 }]),
+              newCapture,
+            ],
+          };
+        } else {
+          // Cas standard : 1re capture (ou utilisateur corrige avec une
+          // capture plus complète qui remplace tout).
+          merged = {
+            is_round_trip: !!flight.is_round_trip,
+            passengers_total: flight.passengers_total || 1,
+            total_price_eur: newCapture.total_price_eur,
+            currency_detected: flight.currency_detected || 'EUR',
+            outbound: newOut,
+            return: newRet,
+            extraction_note: flight.extraction_note || '',
+            _captures: [newCapture],
+          };
+        }
+        updateConfirmedFlight(merged);
+        setUploadPhase('idle');
       } catch (e) {
         console.error('[wizard extract-flight]', e);
         setUploadError(e?.message || "Extraction échouée. Réessaie ou change d'image.");
-        setUploadPhase('error');
+        setUploadPhase('idle');
       }
     };
     reader.onerror = () => setUploadError('Impossible de lire ce fichier.');
@@ -866,7 +913,6 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
   function clearConfirmedFlight() {
     updateConfirmedFlight(null);
     setUploadPhase('idle');
-    setDataUrl(null);
     setUploadError(null);
   }
 
@@ -1127,13 +1173,6 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
 
             {uploadPhase === 'extracting' ? (
               <div className="py-6 text-center bg-slate-50 rounded-xl">
-                {dataUrl && (
-                  <img
-                    src={dataUrl}
-                    alt="Capture en cours d'analyse"
-                    className="mx-auto max-h-32 rounded-lg shadow-sm mb-3 object-contain"
-                  />
-                )}
                 <div className="inline-flex items-center gap-2 text-sm text-slate-700">
                   <span className="inline-block h-2 w-2 rounded-full bg-sky-500 animate-pulse" />
                   Lecture de ta capture par l'IA…
@@ -1186,9 +1225,19 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
       {mode === 'search' && confirmed && (
         <ConfirmedFlightCard
           confirmed={confirmed}
-          dataUrl={dataUrl}
           onClear={clearConfirmedFlight}
-        />
+          onAddCapture={() => fileRef2.current?.click()}
+          uploadPhase={uploadPhase}
+          uploadError={uploadError}
+        >
+          <input
+            ref={fileRef2}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => handleCaptureFile(e.target.files?.[0])}
+          />
+        </ConfirmedFlightCard>
       )}
 
       {/* Mode MANUAL : saisie manuelle */}
@@ -1248,7 +1297,14 @@ function ModeTab({ active, onClick, children }) {
   );
 }
 
-function ConfirmedFlightCard({ confirmed, dataUrl, onClear }) {
+function ConfirmedFlightCard({
+  confirmed,
+  onClear,
+  onAddCapture,
+  uploadPhase,
+  uploadError,
+  children,
+}) {
   const out = confirmed.outbound || {};
   const ret = confirmed.return || null;
   const pax = confirmed.passengers_total || 1;
@@ -1257,6 +1313,10 @@ function ConfirmedFlightCard({ confirmed, dataUrl, onClear }) {
   const airlineLabel = [out.airline_code, out.flight_number]
     .filter(Boolean)
     .join(' ');
+  const captures = Array.isArray(confirmed._captures)
+    ? confirmed._captures
+    : [];
+  const needsReturn = !ret;
 
   return (
     <div className="space-y-3">
@@ -1265,6 +1325,11 @@ function ConfirmedFlightCard({ confirmed, dataUrl, onClear }) {
           <div>
             <div className="text-[10px] uppercase tracking-widest text-emerald-700 font-bold">
               ✓ Vol bien enregistré
+              {captures.length > 1 && (
+                <span className="ml-1.5 normal-case font-normal text-slate-500">
+                  ({captures.length} captures)
+                </span>
+              )}
             </div>
             <h3 className="text-lg font-bold text-slate-900 mt-0.5">
               {airlineLabel || 'Ton vol'}
@@ -1287,7 +1352,7 @@ function ConfirmedFlightCard({ confirmed, dataUrl, onClear }) {
           arrival={out.arrival_at}
           stops={out.stops}
         />
-        {confirmed.is_round_trip && ret && (
+        {ret && (
           <FlightLegRow
             label="🔄 Retour"
             origin={ret.origin_iata}
@@ -1319,6 +1384,54 @@ function ConfirmedFlightCard({ confirmed, dataUrl, onClear }) {
           </p>
         )}
 
+      {/* Zone d'ajout d'une 2e capture (ex : aller et retour réservés
+          séparément en 2 vols one-way distincts) */}
+      <div
+        className={`rounded-xl border-2 border-dashed p-4 ${
+          needsReturn
+            ? 'border-amber-300 bg-amber-50'
+            : 'border-slate-200 bg-slate-50'
+        }`}
+      >
+        <div className="flex items-start gap-3">
+          <div className="text-2xl shrink-0">{needsReturn ? '➕' : '📸'}</div>
+          <div className="flex-1">
+            <div className="text-sm font-semibold text-slate-900">
+              {needsReturn
+                ? 'Ajouter le vol retour'
+                : 'Ajouter une capture supplémentaire'}
+            </div>
+            <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">
+              {needsReturn
+                ? 'Tu as enregistré l\'aller. Si ton retour est un vol séparé (réservé à part), partage sa capture ici — les prix seront additionnés automatiquement.'
+                : 'Si tu as plusieurs vols réservés séparément (correspondance non incluse, escale longue…), ajoute leur capture une par une.'}
+            </p>
+            <button
+              type="button"
+              onClick={onAddCapture}
+              disabled={uploadPhase === 'extracting'}
+              className={`mt-2 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-60 ${
+                needsReturn
+                  ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                  : 'bg-slate-200 hover:bg-slate-300 text-slate-700'
+              }`}
+            >
+              {uploadPhase === 'extracting'
+                ? 'Lecture en cours…'
+                : needsReturn
+                  ? '📸 Ajouter la capture du retour'
+                  : '📸 Ajouter une autre capture'}
+            </button>
+          </div>
+        </div>
+        {uploadError && (
+          <div className="mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+            {uploadError}
+          </div>
+        )}
+        {children}
+      </div>
+
       <p className="text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-3">
         🎯 L'IA va caler le <strong>jour d'arrivée</strong> à partir de l'heure
         à laquelle tu atterris, et garder une marge avant ton{' '}
@@ -1326,17 +1439,22 @@ function ConfirmedFlightCard({ confirmed, dataUrl, onClear }) {
         tu es en l'air.
       </p>
 
-      {dataUrl && (
+      {captures.length > 0 && captures.some((c) => c.dataUrl) && (
         <details className="rounded-lg border border-slate-200 bg-slate-50">
           <summary className="cursor-pointer list-none px-3 py-2 text-xs text-slate-600 select-none">
-            📷 Voir la capture utilisée
+            📷 Voir les {captures.length} capture{captures.length > 1 ? 's' : ''} utilisée{captures.length > 1 ? 's' : ''}
           </summary>
-          <div className="p-3 pt-0">
-            <img
-              src={dataUrl}
-              alt="Capture"
-              className="max-h-64 mx-auto rounded object-contain"
-            />
+          <div className="p-3 pt-0 grid grid-cols-1 gap-2">
+            {captures.map((c, i) =>
+              c.dataUrl ? (
+                <img
+                  key={i}
+                  src={c.dataUrl}
+                  alt={`Capture ${i + 1}`}
+                  className="max-h-64 mx-auto rounded object-contain"
+                />
+              ) : null
+            )}
           </div>
         </details>
       )}
