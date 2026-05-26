@@ -60,52 +60,64 @@ export function buildSkyscannerMultiCityUrl() {
   return null;
 }
 
-// Google Flights — parser langage naturel via q=. Plus stable que le
-// format binaire tfs= qui change régulièrement.
+// Google Flights — format fragment #flt= utilisé par l'app interne
+// Google Flights (la requête q= en langage naturel n'est plus parsée
+// depuis ~2024).
+//
+// Format observé :
+//   #flt={ORI}.{DST}.{YYYY-MM-DD}[*{ORI2}.{DST2}.{YYYY-MM-DD}];c:EUR;e:1;sd:1;t:f[;tt:m|tt:o][;px:N]
+//
+//   * = séparateur entre segments
+//   tt:r (round-trip, défaut si 2 segments inverses) | tt:o (one-way) | tt:m (multi-city)
+//   px:N = nombre d'adultes
+function buildGoogleFlightsFragmentUrl(segments, adults, tripTypeHint) {
+  const cleaned = segments
+    .map((s) => ({
+      ori: String(s.originIata || '').toUpperCase(),
+      dst: String(s.destIata || '').toUpperCase(),
+      date: s.date || '',
+    }))
+    .filter((s) => s.ori && s.dst && s.date);
+  if (cleaned.length === 0) return null;
+  const flt = cleaned.map((s) => `${s.ori}.${s.dst}.${s.date}`).join('*');
+  const params = ['c:EUR', 'e:1', 'sd:1', 't:f'];
+  if (tripTypeHint) params.push(`tt:${tripTypeHint}`);
+  const a = Math.max(1, Number(adults) || 1);
+  if (a > 1) params.push(`px:${a}`);
+  const fragment = `flt=${flt};${params.join(';')}`;
+  return `https://www.google.com/travel/flights?hl=fr&curr=EUR&gl=FR#${fragment}`;
+}
+
 export function buildGoogleFlightsUrl({
   originIata,
   destIata,
   departDate,
   returnDate,
   adults,
-  childrenAges,
 }) {
   if (!originIata || !destIata || !departDate) return null;
-  const a = Math.max(1, Number(adults) || 1);
-  const ages = Array.isArray(childrenAges) ? childrenAges : [];
-  const c = ages.length;
-  let q = `Flights from ${originIata} to ${destIata} on ${departDate}`;
+  const segments = [{ originIata, destIata, date: departDate }];
   if (returnDate) {
-    q += ` returning ${returnDate}`;
-  } else {
-    q += ` one-way`;
+    segments.push({
+      originIata: destIata,
+      destIata: originIata,
+      date: returnDate,
+    });
   }
-  const paxParts = [`${a} adult${a > 1 ? 's' : ''}`];
-  if (c > 0) paxParts.push(`${c} child${c > 1 ? 'ren' : ''}`);
-  q += ` for ${paxParts.join(' and ')}`;
-  return `https://www.google.com/travel/flights?q=${encodeURIComponent(q)}&hl=fr&curr=EUR`;
+  return buildGoogleFlightsFragmentUrl(
+    segments,
+    adults,
+    returnDate ? null : 'o'
+  );
 }
 
-// Google Flights multi-villes — on étend la requête langage naturel.
+// Google Flights multi-villes — même format fragment avec tt:m
 export function buildGoogleFlightsMultiCityUrl({
   segments,
   adults,
-  childrenAges,
 }) {
   if (!Array.isArray(segments) || segments.length < 2) return null;
-  const cleaned = segments.filter(
-    (s) => s.originIata && s.destIata && s.date
-  );
-  if (cleaned.length < 2) return null;
-  const a = Math.max(1, Number(adults) || 1);
-  const c = Array.isArray(childrenAges) ? childrenAges.length : 0;
-  const legs = cleaned.map(
-    (s) => `${s.originIata} to ${s.destIata} on ${s.date}`
-  );
-  const paxParts = [`${a} adult${a > 1 ? 's' : ''}`];
-  if (c > 0) paxParts.push(`${c} child${c > 1 ? 'ren' : ''}`);
-  const q = `Multi-city flights: ${legs.join(' then ')} for ${paxParts.join(' and ')}`;
-  return `https://www.google.com/travel/flights?q=${encodeURIComponent(q)}&hl=fr&curr=EUR`;
+  return buildGoogleFlightsFragmentUrl(segments, adults, 'm');
 }
 
 // Aviasales (deeplink natif Travelpayouts) — format compact :
