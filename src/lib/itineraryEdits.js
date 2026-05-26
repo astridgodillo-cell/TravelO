@@ -281,23 +281,70 @@ export function updateMomentDescription(
   return next;
 }
 
+// Fenêtres horaires des 4 moments de la journée. Utilisé pour décider
+// quelles activités appartiennent à quel créneau (basé sur leur "schedule").
+const MOMENT_TIME_RANGES = {
+  morning: { start: '00:00', end: '11:59' },
+  noon: { start: '12:00', end: '13:59' },
+  afternoon: { start: '14:00', end: '18:59' },
+  evening: { start: '19:00', end: '23:59' },
+};
+
+function parseScheduleStart(schedule) {
+  if (!schedule || typeof schedule !== 'string') return null;
+  const m = schedule.match(/(\d{1,2})\s*[:hH]\s*(\d{2})?/);
+  if (!m) return null;
+  const hh = String(m[1]).padStart(2, '0');
+  const mm = (m[2] || '00').padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+function activityIsInMoment(activity, momentKey) {
+  const range = MOMENT_TIME_RANGES[momentKey];
+  if (!range) return false;
+  const start = parseScheduleStart(activity?.schedule);
+  if (!start) return false;
+  return start >= range.start && start <= range.end;
+}
+
 /**
  * Vide un moment de la journée : marque le créneau comme LIBRE / REPOS.
- * Aucune activité prévue, l'utilisateur pourra le remplir plus tard via
- * "Proposer d'autres options" (alternative IA) ou laisser tel quel.
+ * Supprime AUSSI les activités/excursions qui tombent dans ce créneau
+ * horaire (sinon on se retrouve avec un matin "libre" mais une activité
+ * "Visite de la basilique 09h-10h" toujours listée plus bas — incohérent).
  *
- * Pas d'impact budget : les moments ne portent pas de prix.
+ * Recalcule budget_summary.activities_eur et day_total_eur en soustrayant
+ * le total famille des activités retirées.
  */
 export function clearMoment(itinerary, dayIndex, momentKey) {
   const next = deepClone(itinerary);
   const day = next.days?.[dayIndex];
   if (!day) return next;
+
+  // 1) Vide le moment textuel
   day[momentKey] = {
     title: 'Libre / Repos',
     description: '',
     _user_cleared: true,
     _user_edited: true,
   };
+
+  // 2) Retire les activités qui appartenaient à ce créneau horaire
+  if (Array.isArray(day.activities) && day.activities.length > 0) {
+    const removed = day.activities.filter((a) => activityIsInMoment(a, momentKey));
+    if (removed.length > 0) {
+      day.activities = day.activities.filter((a) => !activityIsInMoment(a, momentKey));
+      // 3) Recalibrage budget : delta négatif sur "activities"
+      const removedTotal = removed.reduce(
+        (sum, a) => sum + (Number(a.family_total_eur) || 0),
+        0
+      );
+      if (removedTotal !== 0) {
+        applyDelta(next, dayIndex, 'activities', -removedTotal);
+      }
+    }
+  }
+
   return next;
 }
 
