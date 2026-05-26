@@ -2433,6 +2433,25 @@ function BudgetGlobal({ budget, days, metadata }) {
   if (!budget) return null;
   const aiEur = costEur(metadata?.total_cost_usd);
 
+  // Liste complète des trajets pour le détail dépliable de "Trajets (total)"
+  const allTrips = useMemo(() => {
+    const list = [];
+    (days || []).forEach((d, dayIdx) => {
+      (d.trips || []).forEach((t) => {
+        list.push({
+          dayLabel: d.label || `J${dayIdx + 1}`,
+          dayDate: d.date || '',
+          from: t.from || '',
+          to: t.to || '',
+          mode: t.mode || '—',
+          cost: Number(t.estimated_cost_eur) || 0,
+        });
+      });
+    });
+    return list;
+  }, [days]);
+  const [tripsExpanded, setTripsExpanded] = useState(false);
+
   // Agrégation des trajets par mode de transport (avion/train/voiture/…)
   const modeBreakdown = useMemo(() => {
     const totals = {};
@@ -2454,8 +2473,9 @@ function BudgetGlobal({ budget, days, metadata }) {
     budget.ferries_eur && ['Ferries', budget.ferries_eur],
   ].filter(Boolean);
 
-  const rows = [
-    ['Trajets (total)', budget.trips_eur],
+  // Lignes du tableau principal — on traite "Trajets (total)" à part
+  // pour le rendre cliquable / dépliable.
+  const otherRows = [
     ['Hébergements', budget.accommodation_eur],
     ['Repas', budget.meals_eur],
     ['Excursions & activités', budget.activities_eur],
@@ -2477,7 +2497,72 @@ function BudgetGlobal({ budget, days, metadata }) {
       </p>
       <table className="mt-4 w-full text-sm">
         <tbody>
-          {rows.map(([label, value]) => (
+          {/* Trajets (total) — ligne cliquable qui déplie le détail */}
+          <tr
+            onClick={() => allTrips.length > 0 && setTripsExpanded((v) => !v)}
+            className={`border-b border-slate-100 ${
+              allTrips.length > 0
+                ? 'cursor-pointer hover:bg-slate-50 select-none'
+                : ''
+            }`}
+            title={
+              allTrips.length > 0
+                ? tripsExpanded
+                  ? 'Replier le détail des trajets'
+                  : 'Afficher le détail de chaque trajet'
+                : undefined
+            }
+          >
+            <td className="py-2 text-slate-600 flex items-center gap-1.5">
+              <span>Trajets (total)</span>
+              {allTrips.length > 0 && (
+                <span
+                  className={`text-xs text-slate-400 transition-transform inline-block ${
+                    tripsExpanded ? 'rotate-180' : ''
+                  }`}
+                  aria-hidden="true"
+                >
+                  ▾
+                </span>
+              )}
+              {allTrips.length > 0 && !tripsExpanded && (
+                <span className="text-[10px] text-slate-400">
+                  ({allTrips.length})
+                </span>
+              )}
+            </td>
+            <td className="py-2 text-right font-medium">
+              {formatEurEstimate(budget.trips_eur)}
+            </td>
+          </tr>
+
+          {/* Sous-lignes : un trajet par ligne, indentées */}
+          {tripsExpanded &&
+            allTrips.map((t, i) => (
+              <tr
+                key={`trip-${i}`}
+                className="border-b border-slate-100 last:border-0 bg-slate-50/50"
+              >
+                <td className="py-1.5 pl-6 text-xs text-slate-600">
+                  <span className="mr-1.5">
+                    {TRANSPORT_ICONS[categorizeMode(t.mode)] || '🧭'}
+                  </span>
+                  <span className="font-medium text-slate-700">
+                    {t.dayLabel}
+                  </span>
+                  <span className="text-slate-400 mx-1.5">·</span>
+                  <span>
+                    {t.from} → {t.to}
+                  </span>
+                  <span className="text-slate-400 ml-1.5">({t.mode})</span>
+                </td>
+                <td className="py-1.5 text-right text-xs tabular-nums text-slate-700">
+                  {t.cost > 0 ? formatEur(t.cost) : 'Gratuit'}
+                </td>
+              </tr>
+            ))}
+
+          {otherRows.map(([label, value]) => (
             <tr
               key={label}
               className="border-b border-slate-100 last:border-0"
