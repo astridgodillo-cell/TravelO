@@ -50,6 +50,43 @@ export function buildSkyscannerUrl({
   return `https://www.skyscanner.fr${path}?${params.toString()}`;
 }
 
+// Skyscanner multi-villes (open-jaw) — pour voyages itinérants qui
+// arrivent par une ville et repartent par une autre.
+// segments = [{ originIata, destIata, date (YYYY-MM-DD) }, ...]
+export function buildSkyscannerMultiCityUrl({
+  segments,
+  adults,
+  childrenAges,
+  infantsAges,
+  directOnly,
+}) {
+  if (!Array.isArray(segments) || segments.length < 2) return null;
+  const cleaned = segments
+    .map((s) => ({
+      ori: String(s.originIata || '').toLowerCase(),
+      dst: String(s.destIata || '').toLowerCase(),
+      date: s.date || '',
+    }))
+    .filter((s) => s.ori && s.dst && s.date);
+  if (cleaned.length < 2) return null;
+  const a = Math.max(1, Number(adults) || 1);
+  const ages = Array.isArray(childrenAges) ? childrenAges.filter((x) => Number.isFinite(Number(x))) : [];
+  const infants = Array.isArray(infantsAges) ? infantsAges.filter((x) => Number.isFinite(Number(x))) : [];
+  // Format observé : /transport/vols-multivilles/{ori1}/{dst1}/{yymmdd1}/{ori2}/{dst2}/{yymmdd2}/
+  const pathParts = cleaned
+    .map((s) => `${s.ori}/${s.dst}/${toYYMMDD(s.date)}`)
+    .join('/');
+  const params = new URLSearchParams();
+  params.set('adultsv2', String(a));
+  params.set('childrenv2', ages.length > 0 ? ages.map(String).join(',') : '');
+  params.set('infantsv2', infants.length > 0 ? infants.map(String).join(',') : '');
+  params.set('cabinclass', 'economy');
+  params.set('preferdirects', directOnly ? 'true' : 'false');
+  // rtn=2 = multi-city sur Skyscanner
+  params.set('rtn', '2');
+  return `https://www.skyscanner.fr/transport/vols-multivilles/${pathParts}/?${params.toString()}`;
+}
+
 // Google Flights — parser langage naturel via q=. Plus stable que le
 // format binaire tfs= qui change régulièrement.
 export function buildGoogleFlightsUrl({
@@ -73,6 +110,28 @@ export function buildGoogleFlightsUrl({
   const paxParts = [`${a} adult${a > 1 ? 's' : ''}`];
   if (c > 0) paxParts.push(`${c} child${c > 1 ? 'ren' : ''}`);
   q += ` for ${paxParts.join(' and ')}`;
+  return `https://www.google.com/travel/flights?q=${encodeURIComponent(q)}&hl=fr&curr=EUR`;
+}
+
+// Google Flights multi-villes — on étend la requête langage naturel.
+export function buildGoogleFlightsMultiCityUrl({
+  segments,
+  adults,
+  childrenAges,
+}) {
+  if (!Array.isArray(segments) || segments.length < 2) return null;
+  const cleaned = segments.filter(
+    (s) => s.originIata && s.destIata && s.date
+  );
+  if (cleaned.length < 2) return null;
+  const a = Math.max(1, Number(adults) || 1);
+  const c = Array.isArray(childrenAges) ? childrenAges.length : 0;
+  const legs = cleaned.map(
+    (s) => `${s.originIata} to ${s.destIata} on ${s.date}`
+  );
+  const paxParts = [`${a} adult${a > 1 ? 's' : ''}`];
+  if (c > 0) paxParts.push(`${c} child${c > 1 ? 'ren' : ''}`);
+  const q = `Multi-city flights: ${legs.join(' then ')} for ${paxParts.join(' and ')}`;
   return `https://www.google.com/travel/flights?q=${encodeURIComponent(q)}&hl=fr&curr=EUR`;
 }
 
@@ -104,12 +163,15 @@ export function buildAviasalesUrl({
 }
 
 // Méta des providers — Skyscanner en premier (priorité partenariat).
+// buildMultiCityUrl peut être null si le provider ne supporte pas (fallback
+// vers une recherche aller simple sur le premier segment côté UI).
 export const FLIGHT_SEARCH_PROVIDERS = [
   {
     id: 'skyscanner',
     label: 'Skyscanner',
     short: 'Skyscanner',
     buildUrl: buildSkyscannerUrl,
+    buildMultiCityUrl: buildSkyscannerMultiCityUrl,
     btnClass: 'bg-blue-600 hover:bg-blue-700',
     accent: 'sky',
   },
@@ -118,6 +180,7 @@ export const FLIGHT_SEARCH_PROVIDERS = [
     label: 'Google Flights',
     short: 'Google Flights',
     buildUrl: buildGoogleFlightsUrl,
+    buildMultiCityUrl: buildGoogleFlightsMultiCityUrl,
     btnClass: 'bg-slate-700 hover:bg-slate-800',
     accent: 'slate',
   },
@@ -126,6 +189,7 @@ export const FLIGHT_SEARCH_PROVIDERS = [
     label: 'Aviasales',
     short: 'Aviasales',
     buildUrl: buildAviasalesUrl,
+    buildMultiCityUrl: null,
     btnClass: 'bg-emerald-600 hover:bg-emerald-700',
     accent: 'emerald',
   },

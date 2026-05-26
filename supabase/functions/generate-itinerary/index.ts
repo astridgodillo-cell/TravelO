@@ -453,6 +453,24 @@ Ferries acceptés : ${p.okWithFerry === false ? 'NON' : 'OUI si nécessaire'}`
       confirmedFlightBlock = lines.join('\n');
     }
 
+    // Détecte le mode "open-jaw" (arrivée et départ par villes différentes)
+    // pour adapter la structure de l'itinéraire : linéaire vs boucle.
+    const normGw = (s: string) => String(s || '').trim().toLowerCase().replace(/\s*\([^)]*\)\s*$/, '');
+    const isOpenJaw =
+      Boolean(p.arrivalGateway) &&
+      Boolean(p.departureGateway) &&
+      normGw(p.arrivalGateway) !== normGw(p.departureGateway);
+    const tripStructureBlock = isOpenJaw
+      ? `\n\n📍 STRUCTURE DU VOYAGE : OPEN-JAW (arrivée et départ par villes différentes) :
+   - Arrivée à ${arrivalGw}, départ depuis ${departureGw}
+   - L'itinéraire est LINÉAIRE — pas besoin de revenir au point d'arrivée
+   - Construis une route logique de ${arrivalGw} vers ${departureGw}, en passant par les étapes intermédiaires qui ont du sens géographiquement
+   - Dernière nuit obligatoirement à ${departureGw}`
+      : `\n\n📍 STRUCTURE DU VOYAGE : BOUCLE (arrivée et départ par la même ville ${arrivalGw}) :
+   - L'itinéraire est circulaire : tu pars de ${arrivalGw}, tu y reviens pour le vol retour
+   - Dernière nuit obligatoirement à ${arrivalGw}
+   - Si voyage itinérant : prévois le retour à ${arrivalGw} au plus tard l'avant-dernier jour`;
+
     scheduleBlock = `
 Horaires impératifs (contrainte FORTE — utilise ces valeurs pour caler J1 et le dernier jour) :
   - Type de transport : ${transport || '(non précisé)'}
@@ -462,7 +480,7 @@ Horaires impératifs (contrainte FORTE — utilise ces valeurs pour caler J1 et 
   - Heure de départ du transport (dernier jour) : ${departureT}
   - Marge OBLIGATOIRE avant le départ : ${buffer}
   ⇒ Sur J1 : prévois récupération bagages + transfert depuis ${arrivalGw} (s'il diffère de la destination) + check-in / installation (1-2 h) avant toute activité. Si arrivée après 18h : check-in + dîner uniquement. Si vol >5 fuseaux : J1 reste très léger (décalage horaire).
-  ⇒ Sur le dernier jour : termine toutes les activités avec la marge ci-dessus + transfert vers ${departureGw}. Si heure de départ tôt (avant 10h) : check-out + transfert uniquement. Programme les visites importantes la veille au soir.${confirmedFlightBlock}`;
+  ⇒ Sur le dernier jour : termine toutes les activités avec la marge ci-dessus + transfert vers ${departureGw}. Si heure de départ tôt (avant 10h) : check-out + transfert uniquement. Programme les visites importantes la veille au soir.${tripStructureBlock}${confirmedFlightBlock}`;
   } else if (
     p.tripType === 'avion-voiture' ||
     p.tripType === 'avion-citybreak' ||

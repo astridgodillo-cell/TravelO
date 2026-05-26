@@ -555,17 +555,25 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const arrivalCity = values.arrivalGateway || values.destinations;
+  const returnCity = values.departureGateway || ''; // si vide → même que arrival
+  const isOpenJaw =
+    !!returnCity &&
+    returnCity.trim().toLowerCase() !== arrivalCity.trim().toLowerCase();
   const hasMinimumForSearch =
     !!values.departureLocation && !!arrivalCity && !!values.startDate;
+
+  // Vignettes pour le choix de l'aéroport de retour (open-jaw) : on filtre
+  // par le pays de destination saisi à l'étape précédente.
+  const returnGatewayOptions = useMemo(
+    () => findGatewaysForCountry(values.destinations),
+    [values.destinations]
+  );
 
   async function openFlightSearch() {
     if (!hasMinimumForSearch) return;
     setResolveStatus('loading');
     setResolveError(null);
     try {
-      const isRoundTrip =
-        !values.returnLocation ||
-        values.returnLocation === values.departureLocation;
       const adults = Math.max(1, Number(values.adults) || 1);
       const childrenAges = Array.isArray(values.childrenAges)
         ? values.childrenAges.filter((a) => Number(a) >= 2)
@@ -573,10 +581,16 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
       const infantsAges = Array.isArray(values.childrenAges)
         ? values.childrenAges.filter((a) => Number(a) >= 0 && Number(a) < 2)
         : [];
-      const [origin, dest] = await Promise.all([
+
+      // Résolution IATA en parallèle pour les villes nécessaires
+      const lookups = [
         resolveIata(values.departureLocation),
         resolveIata(arrivalCity),
-      ]);
+      ];
+      if (isOpenJaw) lookups.push(resolveIata(returnCity));
+      const results = await Promise.all(lookups);
+      const [origin, dest, returnDest] = results;
+
       if (!origin || !dest) {
         setResolveStatus('error');
         setResolveError(
@@ -587,7 +601,7 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
       if (dest.country) {
         setResolveStatus('need_city');
         setResolveError(
-          `"${dest.name}" est un pays. Précise une ville d'arrivée précise (ex: Oslo, Bergen, Tromsø…) dans le champ "Ville d'arrivée précise" ci-dessous.`
+          `"${dest.name}" est un pays. Précise une ville d'arrivée précise (ex: Oslo, Bergen, Tromsø…).`
         );
         return;
       }
@@ -598,15 +612,46 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
         );
         return;
       }
-      const url = provider.buildUrl({
-        originIata: origin.code,
-        destIata: dest.code,
-        departDate: values.startDate,
-        returnDate: isRoundTrip ? values.endDate : null,
-        adults,
-        childrenAges,
-        infantsAges,
-      });
+      if (isOpenJaw && (!returnDest || returnDest.country)) {
+        setResolveStatus('need_city');
+        setResolveError(
+          `Impossible de trouver l'aéroport de retour ("${returnCity}"). Précise une ville (ex: Carthagène, Medellín…).`
+        );
+        return;
+      }
+
+      let url;
+      if (isOpenJaw && provider.buildMultiCityUrl && values.endDate) {
+        // Open-jaw : multi-villes en 2 segments (aller + retour open-jaw)
+        url = provider.buildMultiCityUrl({
+          segments: [
+            {
+              originIata: origin.code,
+              destIata: dest.code,
+              date: values.startDate,
+            },
+            {
+              originIata: returnDest.code,
+              destIata: origin.code,
+              date: values.endDate,
+            },
+          ],
+          adults,
+          childrenAges,
+          infantsAges,
+        });
+      } else {
+        // Aller-retour classique (même aéroport au retour)
+        url = provider.buildUrl({
+          originIata: origin.code,
+          destIata: dest.code,
+          departDate: values.startDate,
+          returnDate: values.endDate || null,
+          adults,
+          childrenAges,
+          infantsAges,
+        });
+      }
       window.open(url, '_blank', 'noopener,noreferrer');
       setResolveStatus('idle');
     } catch (e) {
@@ -615,6 +660,27 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
       setResolveError('Une erreur est survenue. Réessaie.');
     }
   }
+
+  function setReturnSameAsArrival() {
+    update('departureGateway', '');
+  }
+  function setReturnDifferent() {
+    // On marque le mode "different" en mettant une valeur même vide pour
+    // déclencher l'affichage du champ. On force une espace pour distinguer
+    // du vide initial — sera trimé à l'envoi.
+    if (!values.departureGateway) update('departureGateway', ' ');
+  }
+  function pickReturnGatewayCity(city) {
+    update('departureGateway', `${city.name} (${city.iata})`);
+  }
+  // Mode UI dérivé : 'same' tant que departureGateway est vide/espaces uniquement,
+  // 'different' sinon
+  const returnAirportMode =
+    !values.departureGateway || values.departureGateway.trim() === ''
+      ? values.departureGateway === ' '
+        ? 'different'
+        : 'same'
+      : 'different';
 
   async function handleCaptureFile(file) {
     if (!file) return;
@@ -721,9 +787,9 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
 
       {/* Ville d'arrivée précise — utile quand destinations = pays et qu'aucune
           vignette n'a été cliquée à l'étape précédente */}
-      <div className="mb-5 rounded-xl bg-slate-50 border border-slate-200 p-3">
+      <div className="mb-3 rounded-xl bg-slate-50 border border-slate-200 p-3">
         <label className="label text-xs">
-          Aéroport / ville d'arrivée exacte
+          🛬 Aéroport / ville d'arrivée
           <span className="text-slate-400 font-normal">
             {' '}
             (essentiel si tu as saisi un pays)
@@ -742,6 +808,92 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
             if (resolveStatus !== 'idle') setResolveStatus('idle');
           }}
         />
+      </div>
+
+      {/* Aéroport de retour — choix "même" / "différent" pour open-jaw */}
+      <div className="mb-5 rounded-xl bg-slate-50 border border-slate-200 p-3">
+        <div className="label text-xs mb-2">🛫 Aéroport de retour</div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={setReturnSameAsArrival}
+            className={`text-left rounded-xl border p-3 transition-all ${
+              returnAirportMode === 'same'
+                ? 'border-brand-600 bg-white ring-2 ring-brand-500 shadow-pop'
+                : 'border-slate-200 bg-white hover:border-brand-400'
+            }`}
+          >
+            <div className="text-sm font-semibold text-slate-900">
+              🔄 Même aéroport
+            </div>
+            <div className="text-xs text-slate-600 mt-0.5 leading-snug">
+              Aller-retour classique. Tu reviens par {arrivalCity || 'la ville d\'arrivée'}.
+            </div>
+          </button>
+          <button
+            type="button"
+            onClick={setReturnDifferent}
+            className={`text-left rounded-xl border p-3 transition-all ${
+              returnAirportMode === 'different'
+                ? 'border-brand-600 bg-white ring-2 ring-brand-500 shadow-pop'
+                : 'border-slate-200 bg-white hover:border-brand-400'
+            }`}
+          >
+            <div className="text-sm font-semibold text-slate-900">
+              ↪️ Un autre aéroport
+            </div>
+            <div className="text-xs text-slate-600 mt-0.5 leading-snug">
+              Tu arrives ici, tu repars d'ailleurs. Idéal pour un itinéraire
+              linéaire (ex : Bogotá → Carthagène).
+            </div>
+          </button>
+        </div>
+
+        {returnAirportMode === 'different' && (
+          <div className="mt-3 space-y-2">
+            <input
+              className="input"
+              placeholder={
+                values.destinations
+                  ? `Ex pour ${values.destinations} : Carthagène, Medellín…`
+                  : 'Ex : Carthagène (CTG), Medellín (MDE)…'
+              }
+              value={
+                values.departureGateway && values.departureGateway !== ' '
+                  ? values.departureGateway
+                  : ''
+              }
+              onChange={(e) => update('departureGateway', e.target.value)}
+            />
+            {returnGatewayOptions && (
+              <div>
+                <p className="text-xs text-slate-500 mb-1.5">
+                  Suggestions pour {values.destinations} :
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {returnGatewayOptions.cities.map((city) => {
+                    const label = `${city.name} (${city.iata})`;
+                    const active = values.departureGateway === label;
+                    return (
+                      <button
+                        key={city.iata}
+                        type="button"
+                        onClick={() => pickReturnGatewayCity(city)}
+                        className={`text-left rounded-full border px-3 py-1.5 text-xs transition-all ${
+                          active
+                            ? 'bg-brand-600 text-white border-brand-600'
+                            : 'bg-white border-slate-300 text-slate-700 hover:border-brand-400'
+                        }`}
+                      >
+                        {city.name} <span className="opacity-60">({city.iata})</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Onglets de mode */}
@@ -768,9 +920,25 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
               </h3>
             </div>
             <p className="text-sm text-slate-600 mb-3">
-              Tes dates, ton départ et ta destination seront déjà remplis. Tu
-              n'as plus qu'à cliquer "Rechercher" et choisir ton vol.
+              {isOpenJaw ? (
+                <>
+                  Mode <strong>multi-villes</strong> : on pré-remplit l'aller
+                  vers {arrivalCity} et le retour depuis {returnCity}.
+                </>
+              ) : (
+                <>
+                  Tes dates, ton départ et ta destination seront déjà remplis.
+                  Tu n'as plus qu'à cliquer "Rechercher" et choisir ton vol.
+                </>
+              )}
             </p>
+            {isOpenJaw && !provider.buildMultiCityUrl && (
+              <div className="mb-3 text-xs rounded-lg p-2.5 bg-amber-50 border border-amber-200 text-amber-800">
+                ⚠️ {provider.label} ne supporte pas la recherche multi-villes.
+                Choisis <strong>Skyscanner</strong> ou <strong>Google Flights</strong>{' '}
+                ci-dessous, ou continue en aller-retour simple.
+              </div>
+            )}
             {hasMinimumForSearch ? (
               <button
                 type="button"
@@ -780,7 +948,9 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
               >
                 {resolveStatus === 'loading'
                   ? 'Préparation…'
-                  : `🔍 Chercher mes vols sur ${provider.label} →`}
+                  : isOpenJaw && provider.buildMultiCityUrl
+                    ? `🔍 Chercher mes vols multi-villes sur ${provider.label} →`
+                    : `🔍 Chercher mes vols sur ${provider.label} →`}
               </button>
             ) : (
               <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
@@ -1753,6 +1923,12 @@ export default function WizardPreferencesForm({
       // automatiquement arrivalTime, departureTime, gateways et manualFlight
       // pour que le backend utilise les vraies heures sans rien savoir du
       // nouveau format.
+      // Nettoie les valeurs de gateway "espace seule" utilisées comme marqueur UI
+      const arrivalGwTrimmed = (payload.arrivalGateway || '').trim();
+      const departureGwTrimmed = (payload.departureGateway || '').trim();
+      payload.arrivalGateway = arrivalGwTrimmed;
+      payload.departureGateway = departureGwTrimmed;
+
       const cf = values.confirmedFlight;
       if (cf?.outbound?.arrival_at) {
         const out = cf.outbound;
