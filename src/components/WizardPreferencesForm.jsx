@@ -152,13 +152,24 @@ function StepDestination({ values, update }) {
   );
 
   function pickGatewayCity(city) {
-    // On garde le pays dans destinations (pour le voyage global) et on
-    // précise la ville d'arrivée dans arrivalGateway (utilisé par l'étape
-    // vol pour la résolution IATA).
     update('arrivalGateway', `${city.name} (${city.iata})`);
+  }
+  function pickReturnGatewayCity(city) {
+    update('departureGateway', `${city.name} (${city.iata})`);
   }
 
   const pickedGateway = (values.arrivalGateway || '').trim();
+  const pickedReturnGateway = (values.departureGateway || '').trim();
+
+  // Mode "ville de fin différente" : on dérive depuis l'existence d'un
+  // departureGateway non vide. La case à cocher l'active/le désactive.
+  const [returnDifferent, setReturnDifferent] = useState(
+    pickedReturnGateway.length > 0
+  );
+  function toggleReturnDifferent(checked) {
+    setReturnDifferent(checked);
+    if (!checked) update('departureGateway', '');
+  }
 
   return (
     <div>
@@ -230,6 +241,75 @@ function StepDestination({ values, update }) {
           )}
         </div>
       )}
+
+      {/* Ville de fin d'itinéraire — open-jaw si différente */}
+      <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <label className="flex items-start gap-3 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={returnDifferent}
+            onChange={(e) => toggleReturnDifferent(e.target.checked)}
+            className="mt-0.5 h-5 w-5 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+          />
+          <div className="text-sm flex-1">
+            <div className="font-medium text-slate-900">
+              🛫 Ma ville de fin d'itinéraire est différente
+            </div>
+            <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">
+              Coche si tu repars d'une autre ville que celle où tu atterris
+              (ex : arrivée à Bogotá → traversée → départ depuis Carthagène).
+              Sinon, on suppose un aller-retour par la même ville.
+            </p>
+          </div>
+        </label>
+
+        {returnDifferent && (
+          <div className="mt-3 space-y-2">
+            <input
+              className="input"
+              placeholder={
+                values.destinations
+                  ? `Ex pour ${values.destinations} : Carthagène, Medellín…`
+                  : 'Ex : Carthagène (CTG), Medellín (MDE)…'
+              }
+              value={values.departureGateway || ''}
+              onChange={(e) => update('departureGateway', e.target.value)}
+            />
+            {gateways && (
+              <div>
+                <p className="text-xs text-slate-500 mb-1.5">
+                  Suggestions pour {values.destinations} :
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {gateways.cities.map((city) => {
+                    const label = `${city.name} (${city.iata})`;
+                    const active = pickedReturnGateway === label;
+                    return (
+                      <button
+                        key={city.iata}
+                        type="button"
+                        onClick={() => pickReturnGatewayCity(city)}
+                        className={`text-left rounded-full border px-3 py-1.5 text-xs transition-all ${
+                          active
+                            ? 'bg-brand-600 text-white border-brand-600'
+                            : 'bg-white border-slate-300 text-slate-700 hover:border-brand-400'
+                        }`}
+                      >
+                        {city.name} <span className="opacity-60">({city.iata})</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {pickedReturnGateway && (
+              <p className="mt-1 text-xs text-emerald-700 font-medium">
+                ✓ Ville de fin / vol retour : <strong>{pickedReturnGateway}</strong>
+              </p>
+            )}
+          </div>
+        )}
+      </div>
 
       <div className="mt-6">
         <label className="label">D'où pars-tu ?</label>
@@ -566,13 +646,6 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
   const hasMinimumForSearch =
     !!values.departureLocation && !!arrivalCity && !!values.startDate;
 
-  // Vignettes pour le choix de l'aéroport de retour (open-jaw) : on filtre
-  // par le pays de destination saisi à l'étape précédente.
-  const returnGatewayOptions = useMemo(
-    () => findGatewaysForCountry(values.destinations),
-    [values.destinations]
-  );
-
   async function openFlightSearch() {
     if (!hasMinimumForSearch) return;
     setResolveStatus('loading');
@@ -703,26 +776,6 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
     }
   }
 
-  function setReturnSameAsArrival() {
-    update('departureGateway', '');
-  }
-  function setReturnDifferent() {
-    // On marque le mode "different" en mettant une valeur même vide pour
-    // déclencher l'affichage du champ. On force une espace pour distinguer
-    // du vide initial — sera trimé à l'envoi.
-    if (!values.departureGateway) update('departureGateway', ' ');
-  }
-  function pickReturnGatewayCity(city) {
-    update('departureGateway', `${city.name} (${city.iata})`);
-  }
-  // Mode UI dérivé : 'same' tant que departureGateway est vide/espaces uniquement,
-  // 'different' sinon
-  const returnAirportMode =
-    !values.departureGateway || values.departureGateway.trim() === ''
-      ? values.departureGateway === ' '
-        ? 'different'
-        : 'same'
-      : 'different';
 
   async function handleCaptureFile(file) {
     if (!file) return;
@@ -827,113 +880,34 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
         subtitle="On t'aide à trouver tes vols, puis l'IA construit ton voyage autour des vraies heures d'arrivée et de départ."
       />
 
-      {/* Ville d'arrivée précise — utile quand destinations = pays et qu'aucune
-          vignette n'a été cliquée à l'étape précédente */}
-      <div className="mb-3 rounded-xl bg-slate-50 border border-slate-200 p-3">
-        <label className="label text-xs">
-          🛬 Aéroport / ville d'arrivée
-          <span className="text-slate-400 font-normal">
-            {' '}
-            (essentiel si tu as saisi un pays)
-          </span>
-        </label>
-        <input
-          className="input"
-          placeholder={
-            values.destinations
-              ? `Ex pour ${values.destinations} : Oslo, Bergen, Tromsø…`
-              : 'Ex : Oslo, JFK, Lisbonne…'
-          }
-          value={values.arrivalGateway || ''}
-          onChange={(e) => {
-            update('arrivalGateway', e.target.value);
-            if (resolveStatus !== 'idle') setResolveStatus('idle');
-          }}
-        />
-      </div>
-
-      {/* Aéroport de retour — choix "même" / "différent" pour open-jaw */}
-      <div className="mb-5 rounded-xl bg-slate-50 border border-slate-200 p-3">
-        <div className="label text-xs mb-2">🛫 Aéroport de retour</div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={setReturnSameAsArrival}
-            className={`text-left rounded-xl border p-3 transition-all ${
-              returnAirportMode === 'same'
-                ? 'border-brand-600 bg-white ring-2 ring-brand-500 shadow-pop'
-                : 'border-slate-200 bg-white hover:border-brand-400'
-            }`}
-          >
-            <div className="text-sm font-semibold text-slate-900">
-              🔄 Même aéroport
-            </div>
-            <div className="text-xs text-slate-600 mt-0.5 leading-snug">
-              Aller-retour classique. Tu reviens par {arrivalCity || 'la ville d\'arrivée'}.
-            </div>
-          </button>
-          <button
-            type="button"
-            onClick={setReturnDifferent}
-            className={`text-left rounded-xl border p-3 transition-all ${
-              returnAirportMode === 'different'
-                ? 'border-brand-600 bg-white ring-2 ring-brand-500 shadow-pop'
-                : 'border-slate-200 bg-white hover:border-brand-400'
-            }`}
-          >
-            <div className="text-sm font-semibold text-slate-900">
-              ↪️ Un autre aéroport
-            </div>
-            <div className="text-xs text-slate-600 mt-0.5 leading-snug">
-              Tu arrives ici, tu repars d'ailleurs. Idéal pour un itinéraire
-              linéaire (ex : Bogotá → Carthagène).
-            </div>
-          </button>
+      {/* Résumé compact des aéroports choisis à l'étape destination.
+          Avec un champ inline pour corriger l'arrivée si besoin (utile
+          quand destinations=pays sans vignette cliquée). */}
+      <div className="mb-5 rounded-xl bg-slate-50 border border-slate-200 p-3 space-y-2">
+        <div>
+          <label className="label text-xs">
+            🛬 Aéroport / ville d'arrivée
+          </label>
+          <input
+            className="input"
+            placeholder={
+              values.destinations
+                ? `Ex pour ${values.destinations} : Oslo, Bergen, Tromsø…`
+                : 'Ex : Oslo, JFK, Lisbonne…'
+            }
+            value={values.arrivalGateway || ''}
+            onChange={(e) => {
+              update('arrivalGateway', e.target.value);
+              if (resolveStatus !== 'idle') setResolveStatus('idle');
+            }}
+          />
         </div>
-
-        {returnAirportMode === 'different' && (
-          <div className="mt-3 space-y-2">
-            <input
-              className="input"
-              placeholder={
-                values.destinations
-                  ? `Ex pour ${values.destinations} : Carthagène, Medellín…`
-                  : 'Ex : Carthagène (CTG), Medellín (MDE)…'
-              }
-              value={
-                values.departureGateway && values.departureGateway !== ' '
-                  ? values.departureGateway
-                  : ''
-              }
-              onChange={(e) => update('departureGateway', e.target.value)}
-            />
-            {returnGatewayOptions && (
-              <div>
-                <p className="text-xs text-slate-500 mb-1.5">
-                  Suggestions pour {values.destinations} :
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {returnGatewayOptions.cities.map((city) => {
-                    const label = `${city.name} (${city.iata})`;
-                    const active = values.departureGateway === label;
-                    return (
-                      <button
-                        key={city.iata}
-                        type="button"
-                        onClick={() => pickReturnGatewayCity(city)}
-                        className={`text-left rounded-full border px-3 py-1.5 text-xs transition-all ${
-                          active
-                            ? 'bg-brand-600 text-white border-brand-600'
-                            : 'bg-white border-slate-300 text-slate-700 hover:border-brand-400'
-                        }`}
-                      >
-                        {city.name} <span className="opacity-60">({city.iata})</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+        {isOpenJaw && (
+          <div className="text-xs text-slate-700 bg-white border border-slate-200 rounded-lg p-2">
+            🛫 <strong>Vol retour depuis :</strong> {returnCity}{' '}
+            <span className="text-slate-400">
+              (modifiable à l'étape « Où veux-tu aller »)
+            </span>
           </div>
         )}
       </div>
