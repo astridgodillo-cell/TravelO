@@ -1226,7 +1226,8 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
         <ConfirmedFlightCard
           confirmed={confirmed}
           onClear={clearConfirmedFlight}
-          onAddCapture={() => fileRef2.current?.click()}
+          onPickFile={() => fileRef2.current?.click()}
+          onDropFile={onDrop}
           uploadPhase={uploadPhase}
           uploadError={uploadError}
         >
@@ -1300,7 +1301,8 @@ function ModeTab({ active, onClick, children }) {
 function ConfirmedFlightCard({
   confirmed,
   onClear,
-  onAddCapture,
+  onPickFile,
+  onDropFile,
   uploadPhase,
   uploadError,
   children,
@@ -1384,46 +1386,64 @@ function ConfirmedFlightCard({
           </p>
         )}
 
-      {/* Zone d'ajout d'une 2e capture (ex : aller et retour réservés
-          séparément en 2 vols one-way distincts) */}
+      {/* Zone d'ajout d'une 2e+ capture (ex : aller et retour réservés
+          séparément en 2 vols one-way distincts). Vraie zone de
+          glisser-déposer avec support clic + Ctrl+V (le handler de paste
+          est branché au document, donc fonctionne partout dans la page). */}
       <div
-        className={`rounded-xl border-2 border-dashed p-4 ${
+        className={`rounded-xl border-2 ${
           needsReturn
             ? 'border-amber-300 bg-amber-50'
             : 'border-slate-200 bg-slate-50'
-        }`}
+        } p-3`}
       >
-        <div className="flex items-start gap-3">
-          <div className="text-2xl shrink-0">{needsReturn ? '➕' : '📸'}</div>
-          <div className="flex-1">
-            <div className="text-sm font-semibold text-slate-900">
-              {needsReturn
-                ? 'Ajouter le vol retour'
-                : 'Ajouter une capture supplémentaire'}
-            </div>
-            <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">
-              {needsReturn
-                ? 'Tu as enregistré l\'aller. Si ton retour est un vol séparé (réservé à part), partage sa capture ici — les prix seront additionnés automatiquement.'
-                : 'Si tu as plusieurs vols réservés séparément (correspondance non incluse, escale longue…), ajoute leur capture une par une.'}
-            </p>
-            <button
-              type="button"
-              onClick={onAddCapture}
-              disabled={uploadPhase === 'extracting'}
-              className={`mt-2 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-60 ${
-                needsReturn
-                  ? 'bg-amber-600 hover:bg-amber-700 text-white'
-                  : 'bg-slate-200 hover:bg-slate-300 text-slate-700'
-              }`}
-            >
-              {uploadPhase === 'extracting'
-                ? 'Lecture en cours…'
-                : needsReturn
-                  ? '📸 Ajouter la capture du retour'
-                  : '📸 Ajouter une autre capture'}
-            </button>
+        <div className="flex items-center gap-2 mb-2">
+          <div className="text-lg">{needsReturn ? '➕' : '📸'}</div>
+          <div className="text-sm font-semibold text-slate-900">
+            {needsReturn
+              ? 'Ajouter le vol retour'
+              : 'Ajouter une capture supplémentaire'}
           </div>
         </div>
+        <p className="text-xs text-slate-600 mb-3 leading-relaxed">
+          {needsReturn
+            ? 'Tu as enregistré l\'aller. Si ton retour est un vol séparé (réservé à part), partage sa capture ici — les prix seront additionnés automatiquement.'
+            : 'Si tu as plusieurs vols réservés séparément, ajoute leur capture une par une.'}
+        </p>
+        {uploadPhase === 'extracting' ? (
+          <div className="py-4 text-center bg-white rounded-lg border border-slate-200">
+            <div className="inline-flex items-center gap-2 text-sm text-slate-700">
+              <span className="inline-block h-2 w-2 rounded-full bg-sky-500 animate-pulse" />
+              Lecture de ta capture par l'IA…
+            </div>
+          </div>
+        ) : (
+          <div
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={onDropFile}
+            onClick={onPickFile}
+            className={`rounded-lg border-2 border-dashed ${
+              needsReturn
+                ? 'border-amber-400 bg-white hover:bg-amber-50'
+                : 'border-slate-300 bg-white hover:bg-slate-50'
+            } p-4 text-center cursor-pointer transition-colors`}
+          >
+            <div className="text-2xl mb-1">📸</div>
+            <p className="text-sm font-medium text-slate-800">
+              Glisse ta capture, clique ici ou colle avec{' '}
+              <kbd className="rounded border border-slate-300 bg-white px-1.5 py-0.5 font-mono text-[11px] text-slate-700">
+                Ctrl
+              </kbd>
+              <span className="mx-0.5 text-slate-400">+</span>
+              <kbd className="rounded border border-slate-300 bg-white px-1.5 py-0.5 font-mono text-[11px] text-slate-700">
+                V
+              </kbd>
+            </p>
+            <p className="text-xs text-slate-500 mt-1">
+              PNG / JPG / WebP — 8 Mo max
+            </p>
+          </div>
+        )}
         {uploadError && (
           <div className="mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
             {uploadError}
