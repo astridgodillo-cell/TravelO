@@ -2452,6 +2452,36 @@ function BudgetGlobal({ budget, days, metadata }) {
   }, [days]);
   const [tripsExpanded, setTripsExpanded] = useState(false);
 
+  // L'IA est parfois incohérente : budget.trips_eur peut différer (souvent
+  // en plus) de la vraie somme des trajets jour par jour. On considère la
+  // somme comme la source de vérité et on recalcule le grand total si
+  // nécessaire pour que la page reste cohérente.
+  const actualTripsTotal = useMemo(
+    () => allTrips.reduce((s, t) => s + (t.cost || 0), 0),
+    [allTrips]
+  );
+  const aiTripsTotal = Number(budget.trips_eur) || 0;
+  const tripsMismatch =
+    aiTripsTotal > 0 && Math.abs(aiTripsTotal - actualTripsTotal) > 10;
+  // Total affiché = somme réelle (pour que ligne total = somme détail)
+  const displayedTripsTotal = actualTripsTotal;
+  // Si on a corrigé le total trajets, on doit recalculer le grand total
+  const tripsCorrection = displayedTripsTotal - aiTripsTotal;
+  const displayedGrandTotal =
+    Math.max(0, (Number(budget.grand_total_eur) || 0) + tripsCorrection);
+  const pax = Math.max(
+    1,
+    Number(budget.pax) ||
+      Number(budget.travellers_count) ||
+      // Si pas stocké, on déduit du per_person actuel
+      (Number(budget.grand_total_eur) && Number(budget.per_person_eur)
+        ? Math.round(
+            Number(budget.grand_total_eur) / Number(budget.per_person_eur)
+          )
+        : 1)
+  );
+  const displayedPerPerson = Math.round(displayedGrandTotal / pax);
+
   // Agrégation des trajets par mode de transport (avion/train/voiture/…)
   const modeBreakdown = useMemo(() => {
     const totals = {};
@@ -2532,7 +2562,15 @@ function BudgetGlobal({ budget, days, metadata }) {
               )}
             </td>
             <td className="py-2 text-right font-medium">
-              {formatEurEstimate(budget.trips_eur)}
+              {formatEurEstimate(displayedTripsTotal)}
+              {tripsMismatch && (
+                <span
+                  className="ml-1 text-[10px] text-amber-600"
+                  title={`L'IA avait estimé ${formatEur(aiTripsTotal)} mais la somme réelle des trajets est ${formatEur(actualTripsTotal)}. On affiche la vraie somme.`}
+                >
+                  ⚠
+                </span>
+              )}
             </td>
           </tr>
 
@@ -2576,17 +2614,27 @@ function BudgetGlobal({ budget, days, metadata }) {
           <tr className="border-t-2 border-slate-200">
             <td className="py-3 font-semibold text-slate-900">Grand total estimé</td>
             <td className="py-3 text-right text-lg font-bold text-brand-700">
-              {formatEurEstimate(budget.grand_total_eur)}
+              {formatEurEstimate(displayedGrandTotal)}
             </td>
           </tr>
           <tr>
             <td className="py-1 text-sm text-slate-500">Par personne</td>
             <td className="py-1 text-right text-slate-700">
-              {formatEurEstimate(budget.per_person_eur)}
+              {formatEurEstimate(displayedPerPerson)}
             </td>
           </tr>
         </tbody>
       </table>
+
+      {tripsMismatch && (
+        <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+          ⚠️ L'IA avait estimé les trajets à <strong>{formatEur(aiTripsTotal)}</strong>{' '}
+          mais la somme réelle des {allTrips.length} trajets de l'itinéraire
+          est <strong>{formatEur(actualTripsTotal)}</strong>. On affiche la
+          vraie somme (et on a corrigé le grand total et le coût par personne
+          en conséquence).
+        </p>
+      )}
 
       {modeBreakdown.length > 0 && (
         <div className="mt-6">
