@@ -905,6 +905,8 @@ function DayCard({
             <DayCardsContent
               day={day}
               dayIndex={dayIndex}
+              adults={adults}
+              childrenCount={childrenCount}
               canEditActivities={canEditActivities}
               onEditActivity={onEditActivity}
               onRemoveActivity={onRemoveActivity}
@@ -1490,6 +1492,8 @@ function ServiceStopCard({ stop: s }) {
 function DayCardsContent({
   day,
   dayIndex,
+  adults,
+  childrenCount,
   canEditActivities,
   onEditActivity,
   onRemoveActivity,
