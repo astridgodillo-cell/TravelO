@@ -138,7 +138,10 @@ export default function ItineraryView({
     metadata = {},
   } = itinerary;
   const adults = summary?.travellers?.adults || 2;
-  const children = summary?.travellers?.children_ages?.length || 0;
+  const childrenAges = Array.isArray(summary?.travellers?.children_ages)
+    ? summary.travellers.children_ages
+    : [];
+  const children = childrenAges.length;
   const isVanTrip = VAN_TRIP_TYPES.has(summary?.trip_type);
   const aiCostEur = costEur(metadata?.total_cost_usd);
 
@@ -311,6 +314,7 @@ export default function ItineraryView({
             tripType={summary?.trip_type}
             adults={adults}
             childrenCount={children}
+            childrenAges={childrenAges}
             isVanTrip={isVanTrip}
             onOpenRegen={(index, day) => setRegenTarget({ index, day })}
             onOpenModify={(index, day) => setModifyTarget({ index, day })}
@@ -394,6 +398,7 @@ function Planning({
   tripType,
   adults,
   childrenCount,
+  childrenAges,
   isVanTrip,
   onOpenRegen,
   onOpenModify,
@@ -459,6 +464,7 @@ function Planning({
           onToggleExpand={() => toggleDay(i)}
           adults={adults}
           childrenCount={childrenCount}
+          childrenAges={childrenAges}
           isVanTrip={isVanTrip}
           layout={layout}
           onOpenRegen={onOpenRegen ? () => onOpenRegen(i, d) : null}
@@ -653,6 +659,7 @@ function DayCard({
   onToggleExpand,
   adults,
   childrenCount,
+  childrenAges,
   isVanTrip,
   layout = 'cards',
   onOpenRegen,
@@ -894,6 +901,7 @@ function DayCard({
               dayIndex={dayIndex}
               adults={adults}
               childrenCount={childrenCount}
+              childrenAges={childrenAges}
               canEditActivities={canEditActivities}
               onEditActivity={onEditActivity}
               onRemoveActivity={onRemoveActivity}
@@ -907,6 +915,7 @@ function DayCard({
               dayIndex={dayIndex}
               adults={adults}
               childrenCount={childrenCount}
+              childrenAges={childrenAges}
               canEditActivities={canEditActivities}
               onEditActivity={onEditActivity}
               onRemoveActivity={onRemoveActivity}
@@ -1494,6 +1503,7 @@ function DayCardsContent({
   dayIndex,
   adults,
   childrenCount,
+  childrenAges,
   canEditActivities,
   onEditActivity,
   onRemoveActivity,
@@ -1583,6 +1593,7 @@ function DayCardsContent({
                 tripIndex={i}
                 adults={adults}
                 childrenCount={childrenCount}
+                childrenAges={childrenAges}
                 onUpdateItinerary={onUpdateItinerary}
                 onImportFlightFromImage={
                   onImportFlightFromImage
@@ -1713,6 +1724,7 @@ function DayTimeline({
   dayIndex,
   adults,
   childrenCount,
+  childrenAges,
   canEditActivities,
   onEditActivity,
   onRemoveActivity,
@@ -1742,6 +1754,7 @@ function DayTimeline({
             dayIndex={dayIndex}
             adults={adults}
             childrenCount={childrenCount}
+            childrenAges={childrenAges}
             canEditActivities={canEditActivities}
             onEditActivity={onEditActivity}
             onRemoveActivity={onRemoveActivity}
@@ -1762,6 +1775,7 @@ function TimelineRow({
   dayIndex,
   adults,
   childrenCount,
+  childrenAges,
   canEditActivities,
   onEditActivity,
   onRemoveActivity,
@@ -1822,6 +1836,7 @@ function TimelineRow({
             tripIndex={event.payload.tripIndex}
             adults={adults}
             childrenCount={childrenCount}
+            childrenAges={childrenAges}
             onUpdateItinerary={onUpdateItinerary}
             onImportFlightFromImage={
               onImportFlightFromImage
@@ -1870,6 +1885,7 @@ function TripRow({
   tripIndex,
   adults,
   childrenCount,
+  childrenAges,
   onUpdateItinerary,
   onImportFlightFromImage,
 }) {
@@ -2119,14 +2135,22 @@ function TripRow({
           // Si pas de code IATA détecté, on n'affiche pas le bouton
           // (l'URL ne marcherait pas sur Skyscanner).
           if (!ori || !dst || !flightDate) return null;
+          // Split children par âge : ≥2 ans = enfants (childrenv2),
+          // <2 ans = bébés sur les genoux (infantsv2). Skyscanner attend
+          // les âges, pas un compte.
+          const agesAll = Array.isArray(childrenAges) ? childrenAges : [];
+          const childAges = agesAll.filter((a) => Number(a) >= 2);
+          const infantAges = agesAll.filter(
+            (a) => Number(a) >= 0 && Number(a) < 2
+          );
           const url = buildSkyscannerUrl({
             originIata: ori,
             destIata: dst,
             departDate: flightDate,
             returnDate: null,
             adults: adults || 1,
-            childrenAges: [],
-            infantsAges: [],
+            childrenAges: childAges,
+            infantsAges: infantAges,
           });
           if (!url) return null;
           return (
