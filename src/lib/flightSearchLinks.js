@@ -135,14 +135,35 @@ export function getProvider(id) {
   );
 }
 
+// Si le texte contient un code IATA à 3 lettres MAJ entre parenthèses
+// (ex: "Montréal (YUL)" ou "Marseille (MRS)"), on l'extrait directement.
+// Pratique quand l'utilisateur clique sur une vignette ville-aéroport ou
+// quand il copie-colle une suggestion de l'app.
+function extractParensIata(text) {
+  if (!text) return null;
+  const m = String(text).match(/\(([A-Z]{3})\)/);
+  if (!m) return null;
+  const code = m[1];
+  // Nom = ce qui précède la parenthèse, trimé
+  const name = String(text).replace(/\s*\([A-Z]{3}\)\s*$/, '').trim();
+  return { code, name: name || code, type: 'airport' };
+}
+
 // Résolution ville → code IATA via l'autocomplete Travelpayouts (public,
 // pas de token). On préfère "city" pour avoir le code metropolitan qui
 // regroupe tous les aéroports d'une ville.
 export async function resolveIata(query) {
   if (!query || !query.trim()) return null;
+  // Short-circuit : code IATA déjà présent entre parenthèses
+  const direct = extractParensIata(query);
+  if (direct) return direct;
+  // Sinon, on retire d'éventuelles parenthèses (notes du genre "Paris (CDG)")
+  // pour ne garder que la partie ville, plus reconnaissable par l'autocomplete.
+  const cleaned = String(query).replace(/\s*\([^)]*\)\s*/g, ' ').trim();
+  const term = cleaned || query;
   try {
     const url = `https://autocomplete.travelpayouts.com/places2?term=${encodeURIComponent(
-      query
+      term
     )}&locale=fr&types[]=city&types[]=airport&types[]=country`;
     const res = await fetch(url);
     if (!res.ok) return null;
