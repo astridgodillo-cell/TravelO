@@ -540,6 +540,10 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
   // Résolution IATA pour ouvrir la recherche externe avec dates pré-remplies
   const [resolveStatus, setResolveStatus] = useState('idle');
   const [resolveError, setResolveError] = useState(null);
+  // Info du 2e segment quand on est en open-jaw mais que le provider ne
+  // supporte pas l'URL multi-villes (cas Skyscanner) → on affiche des
+  // instructions pour combiner manuellement.
+  const [multiCityFallback, setMultiCityFallback] = useState(null);
 
   // Capture extraction
   const [uploadPhase, setUploadPhase] = useState('idle'); // 'idle' | 'extracting' | 'done' | 'error'
@@ -621,25 +625,62 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
       }
 
       let url;
-      if (isOpenJaw && provider.buildMultiCityUrl && values.endDate) {
-        // Open-jaw : multi-villes en 2 segments (aller + retour open-jaw)
-        url = provider.buildMultiCityUrl({
-          segments: [
-            {
-              originIata: origin.code,
-              destIata: dest.code,
-              date: values.startDate,
-            },
-            {
-              originIata: returnDest.code,
-              destIata: origin.code,
-              date: values.endDate,
-            },
-          ],
-          adults,
-          childrenAges,
-          infantsAges,
-        });
+      let fallback = null;
+      if (isOpenJaw && values.endDate) {
+        // Open-jaw : on tente d'abord l'URL multi-villes du provider
+        url = provider.buildMultiCityUrl
+          ? provider.buildMultiCityUrl({
+              segments: [
+                {
+                  originIata: origin.code,
+                  destIata: dest.code,
+                  date: values.startDate,
+                },
+                {
+                  originIata: returnDest.code,
+                  destIata: origin.code,
+                  date: values.endDate,
+                },
+              ],
+              adults,
+              childrenAges,
+              infantsAges,
+            })
+          : null;
+        if (!url) {
+          // Provider sans deep-link multi-villes (cas Skyscanner) : on
+          // ouvre l'aller en aller-simple et on construit un panneau
+          // d'instructions pour ajouter le 2e segment manuellement.
+          url = provider.buildUrl({
+            originIata: origin.code,
+            destIata: dest.code,
+            departDate: values.startDate,
+            returnDate: null,
+            adults,
+            childrenAges,
+            infantsAges,
+          });
+          // Pré-construit aussi l'URL du 2e segment (CTG → MRS) pour le
+          // bouton "Ouvrir le retour dans un autre onglet"
+          const secondLegUrl = provider.buildUrl({
+            originIata: returnDest.code,
+            destIata: origin.code,
+            departDate: values.endDate,
+            returnDate: null,
+            adults,
+            childrenAges,
+            infantsAges,
+          });
+          fallback = {
+            providerLabel: provider.label,
+            secondLegUrl,
+            secondLegFrom: returnCity,
+            secondLegTo: values.departureLocation,
+            secondLegFromIata: returnDest.code,
+            secondLegToIata: origin.code,
+            secondLegDate: values.endDate,
+          };
+        }
       } else {
         // Aller-retour classique (même aéroport au retour)
         url = provider.buildUrl({
@@ -653,6 +694,7 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
         });
       }
       window.open(url, '_blank', 'noopener,noreferrer');
+      setMultiCityFallback(fallback);
       setResolveStatus('idle');
     } catch (e) {
       console.error(e);
@@ -968,6 +1010,55 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
                 }`}
               >
                 {resolveError}
+              </div>
+            )}
+
+            {/* Instructions multi-villes quand le provider n'accepte pas
+                d'URL deep-link multi-villes (cas Skyscanner) */}
+            {multiCityFallback && (
+              <div className="mt-3 rounded-xl bg-amber-50 border-2 border-amber-300 p-4">
+                <div className="text-sm font-bold text-amber-900 mb-2">
+                  ✈️ Aller pré-rempli — pour le retour open-jaw, suis ces 2 étapes :
+                </div>
+                <ol className="text-sm text-amber-900 space-y-1.5 list-decimal list-inside">
+                  <li>
+                    Sur <strong>{multiCityFallback.providerLabel}</strong>, clique
+                    sur le menu déroulant <strong>"Aller-retour"</strong> en haut
+                    de la barre de recherche, puis choisis{' '}
+                    <strong>"Multi-destinations"</strong>.
+                  </li>
+                  <li>
+                    Ajoute un 2e vol :{' '}
+                    <strong>
+                      {multiCityFallback.secondLegFromIata} → {multiCityFallback.secondLegToIata}
+                    </strong>{' '}
+                    le <strong>{multiCityFallback.secondLegDate}</strong>.
+                  </li>
+                </ol>
+                <p className="text-xs text-amber-800 mt-2">
+                  Tu peux aussi ouvrir le 2e vol séparément pour comparer :
+                </p>
+                <button
+                  type="button"
+                  onClick={() =>
+                    window.open(
+                      multiCityFallback.secondLegUrl,
+                      '_blank',
+                      'noopener,noreferrer'
+                    )
+                  }
+                  className="mt-1 inline-flex items-center gap-1.5 rounded-lg bg-amber-700 hover:bg-amber-800 text-white px-3 py-1.5 text-xs font-semibold"
+                >
+                  Ouvrir le retour ({multiCityFallback.secondLegFromIata} →{' '}
+                  {multiCityFallback.secondLegToIata}) dans un autre onglet →
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMultiCityFallback(null)}
+                  className="ml-2 text-xs text-amber-700 hover:underline"
+                >
+                  Fermer
+                </button>
               </div>
             )}
 

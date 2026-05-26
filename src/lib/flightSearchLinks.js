@@ -50,41 +50,14 @@ export function buildSkyscannerUrl({
   return `https://www.skyscanner.fr${path}?${params.toString()}`;
 }
 
-// Skyscanner multi-villes (open-jaw) — pour voyages itinérants qui
-// arrivent par une ville et repartent par une autre.
-// segments = [{ originIata, destIata, date (YYYY-MM-DD) }, ...]
-export function buildSkyscannerMultiCityUrl({
-  segments,
-  adults,
-  childrenAges,
-  infantsAges,
-  directOnly,
-}) {
-  if (!Array.isArray(segments) || segments.length < 2) return null;
-  const cleaned = segments
-    .map((s) => ({
-      ori: String(s.originIata || '').toLowerCase(),
-      dst: String(s.destIata || '').toLowerCase(),
-      date: s.date || '',
-    }))
-    .filter((s) => s.ori && s.dst && s.date);
-  if (cleaned.length < 2) return null;
-  const a = Math.max(1, Number(adults) || 1);
-  const ages = Array.isArray(childrenAges) ? childrenAges.filter((x) => Number.isFinite(Number(x))) : [];
-  const infants = Array.isArray(infantsAges) ? infantsAges.filter((x) => Number.isFinite(Number(x))) : [];
-  // Format observé : /transport/vols-multivilles/{ori1}/{dst1}/{yymmdd1}/{ori2}/{dst2}/{yymmdd2}/
-  const pathParts = cleaned
-    .map((s) => `${s.ori}/${s.dst}/${toYYMMDD(s.date)}`)
-    .join('/');
-  const params = new URLSearchParams();
-  params.set('adultsv2', String(a));
-  params.set('childrenv2', ages.length > 0 ? ages.map(String).join(',') : '');
-  params.set('infantsv2', infants.length > 0 ? infants.map(String).join(',') : '');
-  params.set('cabinclass', 'economy');
-  params.set('preferdirects', directOnly ? 'true' : 'false');
-  // rtn=2 = multi-city sur Skyscanner
-  params.set('rtn', '2');
-  return `https://www.skyscanner.fr/transport/vols-multivilles/${pathParts}/?${params.toString()}`;
+// Skyscanner multi-villes (open-jaw) — IMPORTANT : Skyscanner n'expose pas
+// d'URL deep-link fiable pour la recherche multi-villes (testé : la page
+// renvoie "Cette page n'existe pas"). On retourne null pour signaler aux
+// callers qu'ils doivent utiliser une stratégie de fallback : ouvrir
+// chaque segment comme aller-simple et instruire l'utilisateur de
+// combiner manuellement dans l'UI Skyscanner.
+export function buildSkyscannerMultiCityUrl() {
+  return null;
 }
 
 // Google Flights — parser langage naturel via q=. Plus stable que le
