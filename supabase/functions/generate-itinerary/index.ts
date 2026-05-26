@@ -417,6 +417,42 @@ Ferries acceptés : ${p.okWithFerry === false ? 'NON' : 'OUI si nécessaire'}`
       p.departureGateway || p.arrivalGateway || '(identique au point d\'arrivée)';
     const arrivalT = p.arrivalTime || '(non précisée)';
     const departureT = p.departureTime || '(non précisée)';
+
+    // === Si vol confirmé via capture : bloc enrichi avec compagnies/n° vols
+    // et CONTRAINTE FORTE de finir le voyage dans la ville de départ retour
+    // (cas typique itinérant multi-villes où l'IA pouvait finir ailleurs).
+    let confirmedFlightBlock = '';
+    const cf: any = p.confirmedFlight || null;
+    if (cf?.outbound?.origin_iata) {
+      const out = cf.outbound;
+      const ret = cf.return || null;
+      const outAirline = [out.airline_code, out.flight_number].filter(Boolean).join(' ');
+      const lines = [
+        `\n\n⚡ VOLS CONFIRMÉS (l'utilisateur a déjà sélectionné ces vols sur Skyscanner/Google Flights — données extraites de sa capture) :`,
+        `  ✈️ ALLER  : ${outAirline || 'Vol'} · ${out.origin_iata} → ${out.destination_iata}`,
+        `             Départ ${(out.departure_at || '').replace('T', ' ')} → Arrivée ${(out.arrival_at || '').replace('T', ' ')}`,
+        `             ${out.stops === 0 ? 'Direct' : `${out.stops || 1} escale(s)`}`,
+      ];
+      if (ret) {
+        const retAirline = [ret.airline_code, ret.flight_number].filter(Boolean).join(' ');
+        lines.push(
+          `  ✈️ RETOUR : ${retAirline || 'Vol'} · ${ret.origin_iata} → ${ret.destination_iata}`,
+          `             Départ ${(ret.departure_at || '').replace('T', ' ')} → Arrivée ${(ret.arrival_at || '').replace('T', ' ')}`,
+          `             ${ret.stops === 0 ? 'Direct' : `${ret.stops || 1} escale(s)`}`
+        );
+      }
+      lines.push(
+        ``,
+        `🚨 CONTRAINTE ABSOLUE (vol retour réservé) :`,
+        `   Le voyageur DOIT physiquement être à ${departureGw} pour prendre son vol retour à ${departureT}.`,
+        `   ⇒ Le DERNIER JOUR du voyage doit obligatoirement se passer à ${departureGw} (ville exclusivement, pas une autre ville à proximité avec "transfert le matin").`,
+        `   ⇒ Si le voyage est itinérant et passe par d'autres villes, le retour à ${departureGw} doit être effectué AU PLUS TARD l'avant-dernier jour, en début de soirée. Programme la dernière nuit DANS ${departureGw} et prévois explicitement le trajet de retour vers ${departureGw} dans l'avant-dernier jour.`,
+        `   ⇒ Tu NE PEUX PAS planifier un long trajet (vol interne, train de 6h, route de 800 km) le jour du vol retour. Ce serait irréaliste et risqué pour rater le vol.`,
+        `   ⇒ Le jour du vol retour : check-out + matinée légère (café, derniers achats, balade <2h) + transfert aéroport avec ${buffer} d'avance. Aucune excursion lointaine.`
+      );
+      confirmedFlightBlock = lines.join('\n');
+    }
+
     scheduleBlock = `
 Horaires impératifs (contrainte FORTE — utilise ces valeurs pour caler J1 et le dernier jour) :
   - Type de transport : ${transport || '(non précisé)'}
@@ -426,7 +462,7 @@ Horaires impératifs (contrainte FORTE — utilise ces valeurs pour caler J1 et 
   - Heure de départ du transport (dernier jour) : ${departureT}
   - Marge OBLIGATOIRE avant le départ : ${buffer}
   ⇒ Sur J1 : prévois récupération bagages + transfert depuis ${arrivalGw} (s'il diffère de la destination) + check-in / installation (1-2 h) avant toute activité. Si arrivée après 18h : check-in + dîner uniquement. Si vol >5 fuseaux : J1 reste très léger (décalage horaire).
-  ⇒ Sur le dernier jour : termine toutes les activités avec la marge ci-dessus + transfert vers ${departureGw}. Si heure de départ tôt (avant 10h) : check-out + transfert uniquement. Programme les visites importantes la veille au soir.`;
+  ⇒ Sur le dernier jour : termine toutes les activités avec la marge ci-dessus + transfert vers ${departureGw}. Si heure de départ tôt (avant 10h) : check-out + transfert uniquement. Programme les visites importantes la veille au soir.${confirmedFlightBlock}`;
   } else if (
     p.tripType === 'avion-voiture' ||
     p.tripType === 'avion-citybreak' ||

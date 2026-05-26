@@ -463,3 +463,27 @@ export function findGatewaysForCountry(query) {
   }
   return null;
 }
+
+// Cherche le nom lisible d'une ville à partir de son code IATA dans notre
+// table interne. Renvoie "Bogotá" pour "BOG", ou null si inconnu.
+// Utilisé pour formater proprement arrivalGateway/departureGateway quand
+// on reçoit un code IATA brut depuis l'extraction d'une capture.
+export function cityNameForIata(iata) {
+  if (!iata) return null;
+  const code = String(iata).toUpperCase();
+  for (const entry of COUNTRIES_WITH_GATEWAYS) {
+    for (const city of entry.cities) {
+      if (city.iata === code) return city.name;
+    }
+  }
+  return null;
+}
+
+// Formate "BOG" → "Bogotá (BOG)" si on connaît la ville, sinon retourne
+// le code brut. Évite que le prompt LLM voie un simple code à 3 lettres.
+export function formatGateway(iata) {
+  if (!iata) return '';
+  const code = String(iata).toUpperCase();
+  const name = cityNameForIata(code);
+  return name ? `${name} (${code})` : code;
+}

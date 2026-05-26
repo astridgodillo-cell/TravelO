@@ -24,7 +24,7 @@ import {
   getProvider,
   resolveIata,
 } from '../lib/flightSearchLinks';
-import { findGatewaysForCountry } from '../lib/airportCities';
+import { findGatewaysForCountry, formatGateway } from '../lib/airportCities';
 import { extractFlightFromImage } from '../lib/ai';
 
 // --- Helpers dates ---
@@ -1764,14 +1764,14 @@ export default function WizardPreferencesForm({
         payload.scheduledTransport = 'avion-intl';
         payload.hasFixedSchedule = true;
         payload.arrivalTime = (out.arrival_at || '').substring(11, 16);
+        // Préfère la valeur déjà saisie (vignette ville-aéroport cliquée),
+        // sinon construit "Nom de ville (IATA)" depuis le code extrait.
         payload.arrivalGateway =
-          payload.arrivalGateway ||
-          (out.destination_iata ? out.destination_iata : '');
+          payload.arrivalGateway || formatGateway(out.destination_iata);
         if (ret?.departure_at) {
           payload.departureTime = (ret.departure_at || '').substring(11, 16);
           payload.departureGateway =
-            payload.departureGateway ||
-            (ret.origin_iata ? ret.origin_iata : '');
+            payload.departureGateway || formatGateway(ret.origin_iata);
         }
         payload.manualFlight = {
           airline: out.airline_code || payload.manualFlight?.airline || '',
@@ -1782,6 +1782,9 @@ export default function WizardPreferencesForm({
             : payload.manualFlight?.outboundPriceEur || '',
           returnPriceEur: '',
         };
+        // Le confirmedFlight reste dans le payload (déjà inclus via ...values)
+        // pour que le backend puisse construire un bloc "vols confirmés"
+        // explicite dans le prompt.
       } else if (values.arrivalTime || values.departureTime) {
         // Saisie manuelle : on active hasFixedSchedule
         payload.hasFixedSchedule = true;
