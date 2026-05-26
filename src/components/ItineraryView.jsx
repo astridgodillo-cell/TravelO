@@ -9,6 +9,7 @@ import {
   updateMealsBudget,
   promoteAccommodationAlternative,
   removeAccommodationAlternative,
+  clearMoment,
 } from '../lib/itineraryEdits';
 import { useDayLayout } from '../hooks/useDayLayout';
 import EditableValue from './EditableValue';
@@ -2075,6 +2076,7 @@ function Moment({
   dayIndex,
   momentKey,
   dayLocation,
+  onUpdateItinerary,
   onSuggestMomentAlternatives,
 }) {
   if (!m) return null;
@@ -2082,11 +2084,27 @@ function Moment({
     typeof onSuggestMomentAlternatives === 'function' &&
     typeof dayIndex === 'number' &&
     !!momentKey;
+  const canEdit =
+    typeof onUpdateItinerary === 'function' &&
+    typeof dayIndex === 'number' &&
+    !!momentKey;
   const userEdited = !!m._user_edited;
-  const hasDetail = !!m.description || canSuggest;
+  const userCleared = !!m._user_cleared;
+  const hasDetail = !!m.description || canSuggest || canEdit;
 
-  // Si aucune description et pas de bouton "Proposer d'autres options", on
-  // garde l'affichage plat (pas de dépliage inutile).
+  function markAsFree() {
+    if (!canEdit) return;
+    if (
+      !confirm(
+        `Marquer "${label}" comme libre / repos ?\n\nLe texte actuel sera effacé. Vous pourrez ensuite cliquer sur "Proposer d'autres options" pour le remplir avec une nouvelle activité.`
+      )
+    ) {
+      return;
+    }
+    onUpdateItinerary((it) => clearMoment(it, dayIndex, momentKey));
+  }
+
+  // Si aucune description et pas de boutons d'action, on garde l'affichage plat
   if (!hasDetail) {
     return (
       <div className="rounded-lg border border-slate-100 p-3 bg-white">
@@ -2094,7 +2112,7 @@ function Moment({
           <span className="text-xs uppercase tracking-wide text-brand-700 font-semibold">
             {label}
           </span>
-          {userEdited && (
+          {userEdited && !userCleared && (
             <span className="text-[10px] text-emerald-700 font-medium">
               ✓ corrigé
             </span>
@@ -2107,22 +2125,35 @@ function Moment({
     );
   }
 
+  // En mode "libre / repos", on affiche un visuel discret
+  const titleClass = userCleared
+    ? 'text-slate-500 font-medium italic mt-1'
+    : 'text-slate-800 font-medium mt-1';
+
   return (
     <details className="group rounded-lg border border-slate-100 bg-white open:bg-slate-50/50 transition-colors print:open">
       <summary className="cursor-pointer list-none p-3 flex items-start justify-between gap-2 hover:bg-slate-50 rounded-lg select-none">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs uppercase tracking-wide text-brand-700 font-semibold">
               {label}
             </span>
-            {userEdited && (
+            {userCleared && (
+              <span
+                className="inline-flex items-center gap-1 text-[10px] text-slate-600 font-medium rounded-full bg-slate-100 px-2 py-0.5"
+                title="Créneau marqué comme libre par vous"
+              >
+                🛌 Libre
+              </span>
+            )}
+            {userEdited && !userCleared && (
               <span className="text-[10px] text-emerald-700 font-medium">
                 ✓ corrigé
               </span>
             )}
           </div>
-          <div className="text-slate-800 font-medium mt-1">
-            {m.title || '(à compléter)'}
+          <div className={titleClass}>
+            {userCleared ? '🛌 Libre / Repos' : m.title || '(à compléter)'}
           </div>
         </div>
         <svg
@@ -2140,9 +2171,17 @@ function Moment({
         </svg>
       </summary>
       <div className="px-3 pb-3 text-sm text-slate-600 leading-relaxed space-y-2">
-        {m.description && <p>{m.description}</p>}
-        {canSuggest && (
-          <div className="pt-2 border-t border-slate-100 flex flex-wrap gap-2 print:hidden">
+        {userCleared ? (
+          <p className="italic text-slate-500">
+            Aucune activité prévue sur ce créneau — temps libre / repos. Vous
+            pouvez le remplir à tout moment en cliquant sur "Proposer d'autres
+            options" ci-dessous.
+          </p>
+        ) : (
+          m.description && <p>{m.description}</p>
+        )}
+        <div className="pt-2 border-t border-slate-100 flex flex-wrap gap-2 print:hidden">
+          {canSuggest && (
             <button
               type="button"
               onClick={() =>
@@ -2151,10 +2190,20 @@ function Moment({
               className="text-xs inline-flex items-center gap-1 rounded-full bg-violet-100 text-violet-800 px-3 py-1 hover:bg-violet-200 transition-colors"
               title="Voir d'autres options cohérentes avec le reste de la journée"
             >
-              💡 Proposer d'autres options
+              💡 {userCleared ? 'Proposer une activité' : "Proposer d'autres options"}
             </button>
-          </div>
-        )}
+          )}
+          {canEdit && !userCleared && (
+            <button
+              type="button"
+              onClick={markAsFree}
+              className="text-xs inline-flex items-center gap-1 rounded-full bg-slate-100 text-slate-700 px-3 py-1 hover:bg-slate-200 transition-colors"
+              title="Effacer ce créneau et le marquer comme libre / repos"
+            >
+              🛌 Marquer libre
+            </button>
+          )}
+        </div>
       </div>
     </details>
   );

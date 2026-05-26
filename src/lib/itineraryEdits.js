@@ -282,6 +282,26 @@ export function updateMomentDescription(
 }
 
 /**
+ * Vide un moment de la journée : marque le créneau comme LIBRE / REPOS.
+ * Aucune activité prévue, l'utilisateur pourra le remplir plus tard via
+ * "Proposer d'autres options" (alternative IA) ou laisser tel quel.
+ *
+ * Pas d'impact budget : les moments ne portent pas de prix.
+ */
+export function clearMoment(itinerary, dayIndex, momentKey) {
+  const next = deepClone(itinerary);
+  const day = next.days?.[dayIndex];
+  if (!day) return next;
+  day[momentKey] = {
+    title: 'Libre / Repos',
+    description: '',
+    _user_cleared: true,
+    _user_edited: true,
+  };
+  return next;
+}
+
+/**
  * Remplace un moment complet (utilisé par "Proposer d'autres options" :
  * l'utilisateur choisit une alternative renvoyée par l'IA).
  */
