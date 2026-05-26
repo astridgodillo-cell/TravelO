@@ -648,10 +648,6 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
   // Résolution IATA pour ouvrir la recherche externe avec dates pré-remplies
   const [resolveStatus, setResolveStatus] = useState('idle');
   const [resolveError, setResolveError] = useState(null);
-  // Info du 2e segment quand on est en open-jaw mais que le provider ne
-  // supporte pas l'URL multi-villes (cas Skyscanner) → on affiche des
-  // instructions pour combiner manuellement.
-  const [multiCityFallback, setMultiCityFallback] = useState(null);
 
   // Capture extraction (peut être multi-captures pour les open-jaw réservés
   // en 2 vols one-way séparés)
@@ -675,7 +671,11 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
   const hasMinimumForSearch =
     !!values.departureLocation && !!arrivalCity && !!values.startDate;
 
-  async function openFlightSearch() {
+  // Ouvre la recherche externe pour une jambe spécifique.
+  //   direction = 'roundtrip' (même aéroport, aller+retour dans une URL)
+  //             | 'outbound'  (aller-simple origine → arrivée, à startDate)
+  //             | 'return'    (aller-simple retour → origine, à endDate)
+  async function openFlightSearch(direction) {
     if (!hasMinimumForSearch) return;
     setResolveStatus('loading');
     setResolveError(null);
@@ -688,14 +688,15 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
         ? values.childrenAges.filter((a) => Number(a) >= 0 && Number(a) < 2)
         : [];
 
-      // Résolution IATA en parallèle pour les villes nécessaires
+      // Résolution IATA — toujours origine + arrivée ; retour si direction='return'
       const lookups = [
         resolveIata(values.departureLocation),
         resolveIata(arrivalCity),
       ];
-      if (isOpenJaw) lookups.push(resolveIata(returnCity));
-      const results = await Promise.all(lookups);
-      const [origin, dest, returnDest] = results;
+      if (direction === 'return' && isOpenJaw) {
+        lookups.push(resolveIata(returnCity));
+      }
+      const [origin, dest, returnDest] = await Promise.all(lookups);
 
       if (!origin || !dest) {
         setResolveStatus('error');
@@ -718,7 +719,7 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
         );
         return;
       }
-      if (isOpenJaw && (!returnDest || returnDest.country)) {
+      if (direction === 'return' && isOpenJaw && (!returnDest || returnDest.country)) {
         setResolveStatus('need_city');
         setResolveError(
           `Impossible de trouver l'aéroport de retour ("${returnCity}"). Précise une ville (ex: Carthagène, Medellín…).`
@@ -727,64 +728,31 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
       }
 
       let url;
-      let fallback = null;
-      if (isOpenJaw && values.endDate) {
-        // Open-jaw : on tente d'abord l'URL multi-villes du provider
-        url = provider.buildMultiCityUrl
-          ? provider.buildMultiCityUrl({
-              segments: [
-                {
-                  originIata: origin.code,
-                  destIata: dest.code,
-                  date: values.startDate,
-                },
-                {
-                  originIata: returnDest.code,
-                  destIata: origin.code,
-                  date: values.endDate,
-                },
-              ],
-              adults,
-              childrenAges,
-              infantsAges,
-            })
-          : null;
-        if (!url) {
-          // Provider sans deep-link multi-villes (cas Skyscanner) : on
-          // ouvre l'aller en aller-simple et on construit un panneau
-          // d'instructions pour ajouter le 2e segment manuellement.
-          url = provider.buildUrl({
-            originIata: origin.code,
-            destIata: dest.code,
-            departDate: values.startDate,
-            returnDate: null,
-            adults,
-            childrenAges,
-            infantsAges,
-          });
-          // Pré-construit aussi l'URL du 2e segment (CTG → MRS) pour le
-          // bouton "Ouvrir le retour dans un autre onglet"
-          const secondLegUrl = provider.buildUrl({
-            originIata: returnDest.code,
-            destIata: origin.code,
-            departDate: values.endDate,
-            returnDate: null,
-            adults,
-            childrenAges,
-            infantsAges,
-          });
-          fallback = {
-            providerLabel: provider.label,
-            secondLegUrl,
-            secondLegFrom: returnCity,
-            secondLegTo: values.departureLocation,
-            secondLegFromIata: returnDest.code,
-            secondLegToIata: origin.code,
-            secondLegDate: values.endDate,
-          };
-        }
+      if (direction === 'outbound') {
+        // Aller-simple : origine → arrivée à startDate
+        url = provider.buildUrl({
+          originIata: origin.code,
+          destIata: dest.code,
+          departDate: values.startDate,
+          returnDate: null,
+          adults,
+          childrenAges,
+          infantsAges,
+        });
+      } else if (direction === 'return') {
+        // Aller-simple retour : (returnCity ou arrivalCity) → origine à endDate
+        const retOrigin = isOpenJaw && returnDest ? returnDest.code : dest.code;
+        url = provider.buildUrl({
+          originIata: retOrigin,
+          destIata: origin.code,
+          departDate: values.endDate,
+          returnDate: null,
+          adults,
+          childrenAges,
+          infantsAges,
+        });
       } else {
-        // Aller-retour classique (même aéroport au retour)
+        // roundtrip : aller-retour avec même aéroport
         url = provider.buildUrl({
           originIata: origin.code,
           destIata: dest.code,
@@ -796,7 +764,6 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
         });
       }
       window.open(url, '_blank', 'noopener,noreferrer');
-      setMultiCityFallback(fallback);
       setResolveStatus('idle');
     } catch (e) {
       console.error(e);
@@ -1019,14 +986,16 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
         </ModeTab>
       </div>
 
-      {/* Mode SEARCH : Skyscanner principal + capture inline */}
-      {mode === 'search' && !confirmed && (
+      {/* Mode SEARCH : bloc de recherche (toujours visible, même après upload) */}
+      {mode === 'search' && (
         <div className="space-y-5">
           <div className="rounded-2xl border-2 border-blue-200 bg-gradient-to-br from-blue-50 to-sky-50 p-5">
             <div className="flex items-center gap-2 mb-1">
               <span className="text-xl">1️⃣</span>
               <h3 className="font-bold text-slate-900">
-                Ouvre {provider.label} dans un nouvel onglet
+                {isOpenJaw && providerId !== 'google'
+                  ? `Ouvre ${provider.label} (2 recherches : aller + retour)`
+                  : `Ouvre ${provider.label} dans un nouvel onglet`}
               </h3>
             </div>
             <p className="text-sm text-slate-600 mb-3">
@@ -1038,8 +1007,10 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
                 </>
               ) : isOpenJaw ? (
                 <>
-                  Mode <strong>multi-villes</strong> : on pré-remplit l'aller
-                  vers {arrivalCity} et le retour depuis {returnCity}.
+                  Comme tu pars d'une ville et rentres d'une autre, on fait{' '}
+                  <strong>2 recherches séparées</strong>. Choisis ton vol pour
+                  chacune, fais une capture de chaque, puis dépose-les ci-
+                  dessous (les prix s'additionnent).
                 </>
               ) : (
                 <>
@@ -1098,26 +1069,43 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
                 </div>
               </div>
             )}
-            {isOpenJaw && !provider.buildMultiCityUrl && providerId !== 'google' && (
-              <div className="mb-3 text-xs rounded-lg p-2.5 bg-amber-50 border border-amber-200 text-amber-800">
-                ⚠️ {provider.label} ne supporte pas la recherche multi-villes.
-                Choisis <strong>Skyscanner</strong> ci-dessous, ou continue en
-                aller-retour simple.
-              </div>
-            )}
             {hasMinimumForSearch ? (
-              <button
-                type="button"
-                onClick={openFlightSearch}
-                disabled={resolveStatus === 'loading'}
-                className={`inline-flex items-center gap-2 rounded-xl ${provider.btnClass} disabled:opacity-60 text-white px-6 py-3 text-base font-semibold shadow-pop transition-colors`}
-              >
-                {resolveStatus === 'loading'
-                  ? 'Préparation…'
-                  : isOpenJaw && provider.buildMultiCityUrl
-                    ? `🔍 Chercher mes vols multi-villes sur ${provider.label} →`
-                    : `🔍 Chercher mes vols sur ${provider.label} →`}
-              </button>
+              isOpenJaw && providerId !== 'google' ? (
+                // Open-jaw avec Skyscanner / Aviasales : 2 boutons explicites
+                // pour faire 2 recherches one-way distinctes
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openFlightSearch('outbound')}
+                    disabled={resolveStatus === 'loading'}
+                    className={`flex-1 inline-flex items-center justify-center gap-2 rounded-xl ${provider.btnClass} disabled:opacity-60 text-white px-4 py-3 text-sm font-semibold shadow-pop transition-colors`}
+                  >
+                    🛫 Aller ({values.departureLocation} → {arrivalCity}) →
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openFlightSearch('return')}
+                    disabled={resolveStatus === 'loading'}
+                    className={`flex-1 inline-flex items-center justify-center gap-2 rounded-xl ${provider.btnClass} disabled:opacity-60 text-white px-4 py-3 text-sm font-semibold shadow-pop transition-colors`}
+                  >
+                    🛬 Retour ({returnCity} → {values.departureLocation}) →
+                  </button>
+                </div>
+              ) : (
+                // Aller-retour classique OU Google Flights (un seul bouton)
+                <button
+                  type="button"
+                  onClick={() => openFlightSearch('roundtrip')}
+                  disabled={resolveStatus === 'loading'}
+                  className={`inline-flex items-center gap-2 rounded-xl ${provider.btnClass} disabled:opacity-60 text-white px-6 py-3 text-base font-semibold shadow-pop transition-colors`}
+                >
+                  {resolveStatus === 'loading'
+                    ? 'Préparation…'
+                    : providerId === 'google'
+                      ? `Ouvrir ${provider.label} →`
+                      : `🔍 Chercher mes vols sur ${provider.label} →`}
+                </button>
+              )
             ) : (
               <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
                 ⚠️ Renseigne d'abord <strong>ville de départ</strong>,{' '}
@@ -1134,55 +1122,6 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
                 }`}
               >
                 {resolveError}
-              </div>
-            )}
-
-            {/* Instructions multi-villes quand le provider n'accepte pas
-                d'URL deep-link multi-villes (cas Skyscanner) */}
-            {multiCityFallback && (
-              <div className="mt-3 rounded-xl bg-amber-50 border-2 border-amber-300 p-4">
-                <div className="text-sm font-bold text-amber-900 mb-2">
-                  ✈️ Aller pré-rempli — pour le retour open-jaw, suis ces 2 étapes :
-                </div>
-                <ol className="text-sm text-amber-900 space-y-1.5 list-decimal list-inside">
-                  <li>
-                    Sur <strong>{multiCityFallback.providerLabel}</strong>, clique
-                    sur le menu déroulant <strong>"Aller-retour"</strong> en haut
-                    de la barre de recherche, puis choisis{' '}
-                    <strong>"Multi-destinations"</strong>.
-                  </li>
-                  <li>
-                    Ajoute un 2e vol :{' '}
-                    <strong>
-                      {multiCityFallback.secondLegFromIata} → {multiCityFallback.secondLegToIata}
-                    </strong>{' '}
-                    le <strong>{multiCityFallback.secondLegDate}</strong>.
-                  </li>
-                </ol>
-                <p className="text-xs text-amber-800 mt-2">
-                  Tu peux aussi ouvrir le 2e vol séparément pour comparer :
-                </p>
-                <button
-                  type="button"
-                  onClick={() =>
-                    window.open(
-                      multiCityFallback.secondLegUrl,
-                      '_blank',
-                      'noopener,noreferrer'
-                    )
-                  }
-                  className="mt-1 inline-flex items-center gap-1.5 rounded-lg bg-amber-700 hover:bg-amber-800 text-white px-3 py-1.5 text-xs font-semibold"
-                >
-                  Ouvrir le retour ({multiCityFallback.secondLegFromIata} →{' '}
-                  {multiCityFallback.secondLegToIata}) dans un autre onglet →
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMultiCityFallback(null)}
-                  className="ml-2 text-xs text-amber-700 hover:underline"
-                >
-                  Fermer
-                </button>
               </div>
             )}
 
@@ -1206,66 +1145,71 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
             </div>
           </div>
 
-          <div className="rounded-2xl border-2 border-dashed border-slate-300 bg-white p-5">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-xl">2️⃣</span>
-              <h3 className="font-bold text-slate-900">
-                Une fois ton vol choisi, partage ta capture ici
-              </h3>
-            </div>
-            <p className="text-sm text-slate-600 mb-3">
-              Fais une capture d'écran de la fiche du vol que tu as sélectionné,
-              puis dépose-la ici. Notre IA lira automatiquement les horaires, le
-              prix et tout le reste.
-            </p>
+          {/* Zone d'upload initiale — seulement quand on n'a aucun vol enregistré.
+              Une fois un vol confirmé, ConfirmedFlightCard prend le relais avec
+              sa propre zone "ajouter une autre capture". */}
+          {!confirmed && (
+            <div className="rounded-2xl border-2 border-dashed border-slate-300 bg-white p-5">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-xl">2️⃣</span>
+                <h3 className="font-bold text-slate-900">
+                  Une fois ton vol choisi, partage ta capture ici
+                </h3>
+              </div>
+              <p className="text-sm text-slate-600 mb-3">
+                Fais une capture d'écran de la fiche du vol que tu as
+                sélectionné, puis dépose-la ici. Notre IA lira automatiquement
+                les horaires, le prix et tout le reste.
+              </p>
 
-            {uploadPhase === 'extracting' ? (
-              <div className="py-6 text-center bg-slate-50 rounded-xl">
-                <div className="inline-flex items-center gap-2 text-sm text-slate-700">
-                  <span className="inline-block h-2 w-2 rounded-full bg-sky-500 animate-pulse" />
-                  Lecture de ta capture par l'IA…
+              {uploadPhase === 'extracting' ? (
+                <div className="py-6 text-center bg-slate-50 rounded-xl">
+                  <div className="inline-flex items-center gap-2 text-sm text-slate-700">
+                    <span className="inline-block h-2 w-2 rounded-full bg-sky-500 animate-pulse" />
+                    Lecture de ta capture par l'IA…
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Compagnie, horaires, aéroports, escales, prix…
+                  </p>
                 </div>
-                <p className="text-xs text-slate-500 mt-1">
-                  Compagnie, horaires, aéroports, escales, prix…
-                </p>
-              </div>
-            ) : (
-              <div
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={onDrop}
-                onClick={() => fileRef.current?.click()}
-                className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 p-6 text-center cursor-pointer transition-colors"
-              >
-                <div className="text-3xl mb-1">📸</div>
-                <p className="text-sm font-medium text-slate-800">
-                  Glisse ta capture, clique ici ou colle avec{' '}
-                  <kbd className="rounded border border-slate-300 bg-white px-1.5 py-0.5 font-mono text-[11px] text-slate-700">
-                    Ctrl
-                  </kbd>
-                  <span className="mx-0.5 text-slate-400">+</span>
-                  <kbd className="rounded border border-slate-300 bg-white px-1.5 py-0.5 font-mono text-[11px] text-slate-700">
-                    V
-                  </kbd>
-                </p>
-                <p className="text-xs text-slate-500 mt-1">
-                  PNG / JPG / WebP — 8 Mo max
-                </p>
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => handleCaptureFile(e.target.files?.[0])}
-                />
-              </div>
-            )}
+              ) : (
+                <div
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={onDrop}
+                  onClick={() => fileRef.current?.click()}
+                  className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 p-6 text-center cursor-pointer transition-colors"
+                >
+                  <div className="text-3xl mb-1">📸</div>
+                  <p className="text-sm font-medium text-slate-800">
+                    Glisse ta capture, clique ici ou colle avec{' '}
+                    <kbd className="rounded border border-slate-300 bg-white px-1.5 py-0.5 font-mono text-[11px] text-slate-700">
+                      Ctrl
+                    </kbd>
+                    <span className="mx-0.5 text-slate-400">+</span>
+                    <kbd className="rounded border border-slate-300 bg-white px-1.5 py-0.5 font-mono text-[11px] text-slate-700">
+                      V
+                    </kbd>
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    PNG / JPG / WebP — 8 Mo max
+                  </p>
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => handleCaptureFile(e.target.files?.[0])}
+                  />
+                </div>
+              )}
 
-            {uploadError && (
-              <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                {uploadError}
-              </div>
-            )}
-          </div>
+              {uploadError && (
+                <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {uploadError}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
