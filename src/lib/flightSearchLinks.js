@@ -60,64 +60,30 @@ export function buildSkyscannerMultiCityUrl() {
   return null;
 }
 
-// Google Flights — format fragment #flt= utilisé par l'app interne
-// Google Flights (la requête q= en langage naturel n'est plus parsée
-// depuis ~2024).
+// Google Flights — IMPORTANT : les formats d'URL deep-link de Google
+// Flights changent fréquemment et ne sont pas documentés. Les formats
+// historiquement utilisés (q=langage naturel, #flt=ORI.DST.DATE…) ne
+// pré-remplissent plus la recherche (testé en live 2026).
 //
-// Format observé :
-//   #flt={ORI}.{DST}.{YYYY-MM-DD}[*{ORI2}.{DST2}.{YYYY-MM-DD}];c:EUR;e:1;sd:1;t:f[;tt:m|tt:o][;px:N]
-//
-//   * = séparateur entre segments
-//   tt:r (round-trip, défaut si 2 segments inverses) | tt:o (one-way) | tt:m (multi-city)
-//   px:N = nombre d'adultes
-function buildGoogleFlightsFragmentUrl(segments, adults, tripTypeHint) {
-  const cleaned = segments
-    .map((s) => ({
-      ori: String(s.originIata || '').toUpperCase(),
-      dst: String(s.destIata || '').toUpperCase(),
-      date: s.date || '',
-    }))
-    .filter((s) => s.ori && s.dst && s.date);
-  if (cleaned.length === 0) return null;
-  const flt = cleaned.map((s) => `${s.ori}.${s.dst}.${s.date}`).join('*');
-  const params = ['c:EUR', 'e:1', 'sd:1', 't:f'];
-  if (tripTypeHint) params.push(`tt:${tripTypeHint}`);
-  const a = Math.max(1, Number(adults) || 1);
-  if (a > 1) params.push(`px:${a}`);
-  const fragment = `flt=${flt};${params.join(';')}`;
-  return `https://www.google.com/travel/flights?hl=fr&curr=EUR&gl=FR#${fragment}`;
+// On ouvre donc la page d'accueil Google Flights en EUR/FR — l'utilisateur
+// devra recopier ses critères. Un panneau d'instructions dans le wizard
+// affiche les infos prêtes à recopier (origine, destination, dates, pax).
+function buildGoogleFlightsHomepageUrl() {
+  return 'https://www.google.com/travel/flights?hl=fr&curr=EUR&gl=FR';
 }
 
 export function buildGoogleFlightsUrl({
   originIata,
   destIata,
   departDate,
-  returnDate,
-  adults,
 }) {
   if (!originIata || !destIata || !departDate) return null;
-  const segments = [{ originIata, destIata, date: departDate }];
-  if (returnDate) {
-    segments.push({
-      originIata: destIata,
-      destIata: originIata,
-      date: returnDate,
-    });
-  }
-  return buildGoogleFlightsFragmentUrl(
-    segments,
-    adults,
-    returnDate ? null : 'o'
-  );
+  return buildGoogleFlightsHomepageUrl();
 }
 
-// Google Flights multi-villes — même format fragment avec tt:m
-export function buildGoogleFlightsMultiCityUrl({
-  segments,
-  adults,
-}) {
+export function buildGoogleFlightsMultiCityUrl({ segments }) {
   if (!Array.isArray(segments) || segments.length < 2) return null;
-  return buildGoogleFlightsFragmentUrl(segments, adults, 'm');
+  return buildGoogleFlightsHomepageUrl();
 }
 
 // Aviasales (deeplink natif Travelpayouts) — format compact :

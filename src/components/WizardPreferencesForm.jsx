@@ -936,7 +936,13 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
               </h3>
             </div>
             <p className="text-sm text-slate-600 mb-3">
-              {isOpenJaw ? (
+              {providerId === 'google' ? (
+                <>
+                  Google Flights ne supporte plus le pré-remplissage par
+                  adresse Web. La page d'accueil va s'ouvrir : tu devras
+                  recopier tes critères (voir ci-dessous).
+                </>
+              ) : isOpenJaw ? (
                 <>
                   Mode <strong>multi-villes</strong> : on pré-remplit l'aller
                   vers {arrivalCity} et le retour depuis {returnCity}.
@@ -948,11 +954,61 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
                 </>
               )}
             </p>
-            {isOpenJaw && !provider.buildMultiCityUrl && (
+            {providerId === 'google' && hasMinimumForSearch && (
+              <div className="mb-3 rounded-xl bg-white border-2 border-blue-300 p-3 text-xs space-y-1.5">
+                <div className="font-bold text-slate-900 mb-1">
+                  📋 À recopier dans Google Flights :
+                </div>
+                <div>
+                  <span className="text-slate-500">Depuis : </span>
+                  <span className="font-mono font-semibold text-slate-900">
+                    {values.departureLocation}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-500">Vers : </span>
+                  <span className="font-mono font-semibold text-slate-900">
+                    {arrivalCity}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-500">Aller : </span>
+                  <span className="font-mono font-semibold text-slate-900">
+                    {values.startDate}
+                  </span>
+                  {values.endDate && (
+                    <>
+                      <span className="text-slate-500"> · Retour : </span>
+                      <span className="font-mono font-semibold text-slate-900">
+                        {values.endDate}
+                      </span>
+                    </>
+                  )}
+                </div>
+                {isOpenJaw && (
+                  <div>
+                    <span className="text-slate-500">Type : </span>
+                    <span className="font-semibold text-slate-900">
+                      Multi-destinations (retour depuis {returnCity})
+                    </span>
+                  </div>
+                )}
+                <div>
+                  <span className="text-slate-500">Voyageurs : </span>
+                  <span className="font-semibold text-slate-900">
+                    {values.adults} adulte{Number(values.adults) > 1 ? 's' : ''}
+                    {Array.isArray(values.childrenAges) && values.childrenAges.length > 0
+                      ? ` + ${values.childrenAges.length} enfant${values.childrenAges.length > 1 ? 's' : ''} (${values.childrenAges.join(', ')} ans)`
+                      : ''}
+                  </span>
+                </div>
+              </div>
+            )}
+            {isOpenJaw && !provider.buildMultiCityUrl && providerId !== 'google' && (
               <div className="mb-3 text-xs rounded-lg p-2.5 bg-amber-50 border border-amber-200 text-amber-800">
                 ⚠️ {provider.label} ne supporte pas la recherche multi-villes.
-                Choisis <strong>Skyscanner</strong> ou <strong>Google Flights</strong>{' '}
-                ci-dessous, ou continue en aller-retour simple.
+                Choisis <strong>Skyscanner</strong> ci-dessous, ou continue en
+                aller-retour simple.
               </div>
             )}
             {hasMinimumForSearch ? (
