@@ -3455,7 +3455,9 @@ Renvoie UNIQUEMENT du JSON valide selon ce schéma (rien autour) :
       // Body :
       //   image_base64    base64 de la capture (sans préfixe data:)
       //   mime_type       'image/png' | 'image/jpeg' | 'image/webp'
-      //   context         { adults?, children?, origin_hint?, destination_hint? }
+      //   context         { adults?, children?, origin_hint?, destination_hint?,
+      //                     expected_outbound_date?, expected_return_date?,
+      //                     leg_hint? }
       const { image_base64, mime_type, context } = body;
       if (!image_base64 || typeof image_base64 !== 'string') {
         return jsonResponse(
@@ -3469,12 +3471,26 @@ Renvoie UNIQUEMENT du JSON valide selon ce schéma (rien autour) :
       const expectedPax = ctxAdults + ctxChildren;
       const originHint = context?.origin_hint || '(inconnu)';
       const destHint = context?.destination_hint || '(inconnu)';
+      const expOutDate = context?.expected_outbound_date || '';
+      const expRetDate = context?.expected_return_date || '';
+      const legHint = context?.leg_hint || '';
+
+      const datesBlock =
+        expOutDate || expRetDate
+          ? `\n- Dates prévues du voyage par l'utilisateur :\n` +
+            (expOutDate ? `    * ALLER prévu le ${expOutDate}\n` : '') +
+            (expRetDate ? `    * RETOUR prévu le ${expRetDate}\n` : '') +
+            `  → Si les dates ne sont PAS visibles sur la capture (cas fréquent sur Skyscanner : la date est dans la barre de recherche en haut, pas sur chaque vignette de vol), utilise ces dates prévues pour remplir departure_at / arrival_at.`
+          : '';
+      const legBlock = legHint
+        ? `\n- Cette capture concerne probablement le vol ${legHint === 'return' ? 'RETOUR' : 'ALLER'} (l'utilisateur l'a explicitement signalé).`
+        : '';
 
       const prompt = `Tu es un extracteur d'informations de vols à partir d'une capture d'écran de comparateur de vols (Google Flights, Skyscanner, Kayak, Booking flights, etc.).
 
 CONTEXTE :
 - Voyage probable depuis "${originHint}" vers "${destHint}".
-- Nombre de voyageurs prévus dans l'itinéraire : ${expectedPax > 0 ? `${expectedPax} (${ctxAdults} adulte(s) + ${ctxChildren} enfant(s))` : '(non précisé)'}.
+- Nombre de voyageurs prévus dans l'itinéraire : ${expectedPax > 0 ? `${expectedPax} (${ctxAdults} adulte(s) + ${ctxChildren} enfant(s))` : '(non précisé)'}.${datesBlock}${legBlock}
 
 INSTRUCTIONS — extrais avec PRÉCISION depuis l'image :
 
@@ -3490,8 +3506,8 @@ INSTRUCTIONS — extrais avec PRÉCISION depuis l'image :
     * "flight_number" : numéro de vol (sans le code compagnie, ex : "871")
     * "origin_iata" : code IATA 3 lettres de l'aéroport de départ (ex : "MRS", "CDG", "JFK")
     * "destination_iata" : code IATA 3 lettres de l'aéroport d'arrivée
-    * "departure_at" : date + heure LOCALE de départ au format "YYYY-MM-DDTHH:MM:SS"
-    * "arrival_at" : date + heure LOCALE d'arrivée au format "YYYY-MM-DDTHH:MM:SS"
+    * "departure_at" : date + heure LOCALE de départ au format "YYYY-MM-DDTHH:MM:SS". Si la date n'est PAS visible sur la capture, utilise la date prévue par l'utilisateur (voir CONTEXTE ci-dessus). N'invente JAMAIS une date arbitraire (1970, aujourd'hui, etc.).
+    * "arrival_at" : date + heure LOCALE d'arrivée au format "YYYY-MM-DDTHH:MM:SS". Pareil : si pas visible, utilise la date prévue + ajoute la durée du vol si tu peux la lire (ex : 13h40 affiché → arrivée = départ + 13h40). Si vol >12h, peut tomber le lendemain (utilise YYYY-MM-DD du lendemain).
     * "stops" : nombre d'escales (0 si vol direct)
 - "return" : même structure que outbound pour le vol RETOUR. null si is_round_trip = false.
 - "extraction_note" : notes/warnings (1-2 phrases) si tu as fait des conversions de devise, dû deviner certaines infos, ou si la capture est ambiguë.

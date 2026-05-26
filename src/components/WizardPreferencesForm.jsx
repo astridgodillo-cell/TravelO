@@ -59,6 +59,34 @@ function formatFrDate(iso) {
 const AIR_TYPES = new Set(['avion-voiture', 'avion-citybreak']);
 const TRAIN_TYPES = new Set(['train-international', 'circuit-train']);
 
+// Garde-fou : si l'IA renvoie une date YYYY-MM-DD aberrante (1970,
+// 2024 dans un voyage 2026, etc.), on la remplace par la date prévue
+// par l'utilisateur tout en gardant l'heure extraite.
+function sanitizeLegDate(leg, expectedYYYYMMDD) {
+  if (!leg || !expectedYYYYMMDD) return leg;
+  function fix(iso) {
+    if (!iso || typeof iso !== 'string') {
+      return `${expectedYYYYMMDD}T00:00:00`;
+    }
+    const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}:\d{2})(:\d{2})?$/);
+    if (!m) return `${expectedYYYYMMDD}T00:00:00`;
+    const year = Number(m[1]);
+    // Plage raisonnable pour un voyage : entre l'an dernier et 5 ans dans le futur
+    const thisYear = new Date().getFullYear();
+    if (year < thisYear - 1 || year > thisYear + 5) {
+      const time = m[4];
+      const sec = m[5] || ':00';
+      return `${expectedYYYYMMDD}T${time}${sec}`;
+    }
+    return iso;
+  }
+  return {
+    ...leg,
+    departure_at: fix(leg.departure_at),
+    arrival_at: fix(leg.arrival_at),
+  };
+}
+
 // Helpers d'affichage pour le récap des vols confirmés
 function formatLegDateTime(iso) {
   if (!iso || iso.length < 16) return '—';
@@ -798,6 +826,14 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
       setUploadPhase('extracting');
       try {
         const compressed = await compressImageDataUrl(rawUrl);
+        // Si on a déjà un aller enregistré et pas de retour, on indique à l'IA
+        // que cette capture est le retour (utile quand les dates ne sont pas
+        // visibles : elle saura quoi mettre à la place).
+        const existingForCtx = values.confirmedFlight;
+        const legHint =
+          existingForCtx?.outbound?.origin_iata && !existingForCtx.return
+            ? 'return'
+            : '';
         const flight = await extractFlightFromImage(compressed, {
           adults: Number(values.adults) || 1,
           children: Array.isArray(values.childrenAges)
@@ -805,6 +841,9 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
             : 0,
           origin_hint: values.departureLocation,
           destination_hint: arrivalCity,
+          expected_outbound_date: values.startDate || '',
+          expected_return_date: values.endDate || '',
+          leg_hint: legHint,
         });
         if (!flight?.outbound?.origin_iata) {
           setUploadError(
@@ -868,6 +907,15 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
             extraction_note: flight.extraction_note || '',
             _captures: [newCapture],
           };
+        }
+        // Garde-fou dates : si l'IA a inventé des dates aberrantes
+        // (1970, 2024 dans un voyage 2026…), on les remplace par les
+        // dates prévues par l'utilisateur en gardant les heures.
+        if (values.startDate && merged.outbound) {
+          merged.outbound = sanitizeLegDate(merged.outbound, values.startDate);
+        }
+        if (values.endDate && merged.return) {
+          merged.return = sanitizeLegDate(merged.return, values.endDate);
         }
         updateConfirmedFlight(merged);
         setUploadPhase('idle');
