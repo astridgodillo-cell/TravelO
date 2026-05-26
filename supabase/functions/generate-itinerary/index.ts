@@ -3397,6 +3397,101 @@ Renvoie UNIQUEMENT du JSON valide selon ce schéma (rien autour) :
       });
     }
 
+    if (mode === 'extract-flight-from-image') {
+      // Body :
+      //   image_base64    base64 de la capture (sans préfixe data:)
+      //   mime_type       'image/png' | 'image/jpeg' | 'image/webp'
+      //   context         { adults?, children?, origin_hint?, destination_hint? }
+      const { image_base64, mime_type, context } = body;
+      if (!image_base64 || typeof image_base64 !== 'string') {
+        return jsonResponse(
+          { error: 'image_base64 requis (base64 de la capture)' },
+          400
+        );
+      }
+      const mime = typeof mime_type === 'string' ? mime_type : 'image/png';
+      const ctxAdults = Number(context?.adults) || 0;
+      const ctxChildren = Number(context?.children) || 0;
+      const expectedPax = ctxAdults + ctxChildren;
+      const originHint = context?.origin_hint || '(inconnu)';
+      const destHint = context?.destination_hint || '(inconnu)';
+
+      const prompt = `Tu es un extracteur d'informations de vols à partir d'une capture d'écran de comparateur de vols (Google Flights, Skyscanner, Kayak, Booking flights, etc.).
+
+CONTEXTE :
+- Voyage probable depuis "${originHint}" vers "${destHint}".
+- Nombre de voyageurs prévus dans l'itinéraire : ${expectedPax > 0 ? `${expectedPax} (${ctxAdults} adulte(s) + ${ctxChildren} enfant(s))` : '(non précisé)'}.
+
+INSTRUCTIONS — extrais avec PRÉCISION depuis l'image :
+
+- "is_round_trip" : true si la capture montre un vol aller-retour (présence de deux segments distincts dans des sens opposés), false si aller simple.
+- "passengers_total" : nombre total de voyageurs visible sur la capture (souvent affiché en haut, ex : "3 voyageurs"). Si absent, mets ${expectedPax || 1}.
+- "total_price_eur" : prix TOTAL pour TOUS les voyageurs ET TOUS les segments du vol. EN EUROS.
+  * Si la capture affiche un prix PAR PERSONNE, multiplie par passengers_total et signale-le dans extraction_note.
+  * Si la devise n'est pas l'euro, convertis grossièrement (1 USD ≈ 0,92 €, 1 GBP ≈ 1,17 €, 1 CAD ≈ 0,68 €, 1 CHF ≈ 1,05 €, 1 JPY ≈ 0,006 €) et précise dans extraction_note.
+- "currency_detected" : devise détectée sur la capture (ex : "EUR", "USD", "CAD").
+- "outbound" : objet pour le vol ALLER avec :
+    * "airline" : nom complet de la compagnie (ex : "Air Canada", "Air France")
+    * "airline_code" : code IATA 2 lettres (ex : "AC", "AF")
+    * "flight_number" : numéro de vol (sans le code compagnie, ex : "871")
+    * "origin_iata" : code IATA 3 lettres de l'aéroport de départ (ex : "MRS", "CDG", "JFK")
+    * "destination_iata" : code IATA 3 lettres de l'aéroport d'arrivée
+    * "departure_at" : date + heure LOCALE de départ au format "YYYY-MM-DDTHH:MM:SS"
+    * "arrival_at" : date + heure LOCALE d'arrivée au format "YYYY-MM-DDTHH:MM:SS"
+    * "stops" : nombre d'escales (0 si vol direct)
+- "return" : même structure que outbound pour le vol RETOUR. null si is_round_trip = false.
+- "extraction_note" : notes/warnings (1-2 phrases) si tu as fait des conversions de devise, dû deviner certaines infos, ou si la capture est ambiguë.
+
+Règles spéciales :
+- Si plusieurs vols sont visibles sur la capture (liste de résultats), prends le PREMIER (le moins cher / mis en avant).
+- Si les codes IATA ne sont pas affichés mais que les noms de ville le sont, déduis le code (Marseille → MRS, Paris (CDG/ORY) → préfère CDG, New York (JFK/EWR/LGA) → préfère JFK, Montréal → YUL, Toronto → YYZ, Vancouver → YVR, Tokyo → HND ou NRT selon ce qui est marqué).
+- Les heures sont en HEURE LOCALE de l'aéroport correspondant (par convention universelle des comparateurs).
+- Si vol multi-segments avec escales, "departure_at" = heure du PREMIER segment, "arrival_at" = heure du DERNIER segment (arrivée finale).
+
+Renvoie UNIQUEMENT du JSON valide (rien autour) selon ce schéma :
+
+{
+  "is_round_trip": true,
+  "passengers_total": 3,
+  "total_price_eur": 2120,
+  "currency_detected": "EUR",
+  "outbound": {
+    "airline": "Air Canada",
+    "airline_code": "AC",
+    "flight_number": "871",
+    "origin_iata": "MRS",
+    "destination_iata": "YUL",
+    "departure_at": "2026-09-07T13:15:00",
+    "arrival_at": "2026-09-07T15:30:00",
+    "stops": 1
+  },
+  "return": null,
+  "extraction_note": ""
+}
+
+Si tu ne reconnais PAS un vol exploitable (capture floue, écran d'erreur, page non-liée), renvoie :
+{ "outbound": null, "extraction_note": "L'image ne contient pas d'informations de vol exploitables." }`;
+
+      try {
+        const { text, usage, modelUsed } = await callVisionLLM(
+          prompt,
+          image_base64,
+          mime,
+          2500
+        );
+        const parsed = await parseOrRepair(text, async (p, t) => {
+          return await callExpansion(p, t);
+        });
+        return jsonResponse({ flight: parsed, usage, model: modelUsed });
+      } catch (e) {
+        console.error('[extract-flight-from-image] error:', e);
+        return jsonResponse(
+          { error: (e as Error).message || 'Extraction échouée' },
+          500
+        );
+      }
+    }
+
     if (mode === 'extract-hotel-from-image') {
       // Body :
       //   image_base64    base64 sans préfixe data: (juste les caractères)

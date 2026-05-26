@@ -566,6 +566,30 @@ export function removeActivity(itinerary, dayIndex, activityIndex) {
 }
 
 /**
+ * Envoie une capture d'écran d'un comparateur de vols (Google Flights,
+ * Skyscanner, Kayak, etc.) et extrait les informations structurées :
+ * compagnie, n° de vol, aéroports IATA, horaires locaux, prix total, A/R
+ * ou one-way. Le frontend matche ensuite les trips de l'itinéraire par
+ * codes IATA pour patcher en cascade.
+ */
+export async function extractFlightFromImage(imageDataUrl, context = {}) {
+  if (typeof imageDataUrl !== 'string' || !imageDataUrl.startsWith('data:')) {
+    throw new Error('Image invalide (data URL attendue).');
+  }
+  const match = imageDataUrl.match(/^data:([^;]+);base64,(.+)$/);
+  if (!match) throw new Error('Image invalide : impossible de parser le data URL.');
+  const [, mime, base64] = match;
+  const data = await invoke({
+    mode: 'extract-flight-from-image',
+    image_base64: base64,
+    mime_type: mime,
+    context,
+  });
+  if (!data?.flight) throw new Error("L'extraction n'a renvoyé aucune donnée.");
+  return data.flight;
+}
+
+/**
  * Envoie une capture d'écran (Booking / autre site hôtelier) au backend qui
  * appelle un LLM vision (Gemini Flash ou Claude Haiku) pour extraire les
  * infos structurées de l'hôtel. Aucune persistance de l'image — extraction

@@ -12,11 +12,13 @@ import {
   replaceMoment,
   replaceAccommodation,
   addAccommodationAlternative,
+  applyExtractedFlightsToItinerary,
 } from '../lib/itineraryEdits';
 import { fetchSpecialties } from '../lib/photos';
 import ItineraryView from '../components/ItineraryView';
 import MomentAlternativesModal from '../components/MomentAlternativesModal';
 import ImportHotelFromScreenshotModal from '../components/ImportHotelFromScreenshotModal';
+import ImportFlightFromScreenshotModal from '../components/ImportFlightFromScreenshotModal';
 import SharePanel from '../components/SharePanel';
 import AdminTemplatePanel from '../components/AdminTemplatePanel';
 import { useAuth } from '../context/AuthContext';
@@ -35,6 +37,9 @@ export default function ItineraryDetailPage() {
   // État de la modale "Importer un hôtel depuis une capture d'écran"
   const [importHotelState, setImportHotelState] = useState(null);
   // { open: bool, dayIndex, dayLocation, currentHotelName }
+  // État de la modale "Importer un vol depuis une capture d'écran"
+  const [importFlightState, setImportFlightState] = useState(null);
+  // { open: bool, dayIndex, tripIndex, trip }
 
   useEffect(() => {
     let active = true;
@@ -246,6 +251,27 @@ export default function ItineraryDetailPage() {
     }
   }
 
+  /**
+   * Ouvre la modale "Mettre à jour les vols via une capture Google Flights".
+   * Le bouton est dispo sur tout trip de mode Avion ; l'extraction sera ensuite
+   * appliquée à TOUS les vols correspondants de l'itinéraire (matching IATA).
+   */
+  function handleImportFlightFromImage(dayIndex, tripIndex, tripData) {
+    setImportFlightState({
+      open: true,
+      dayIndex,
+      tripIndex,
+      trip: tripData,
+    });
+  }
+
+  async function handleApplyImportedFlight(extractedFlight) {
+    if (!trip) return;
+    await handleUpdateItinerary((it) =>
+      applyExtractedFlightsToItinerary(it, extractedFlight)
+    );
+  }
+
   if (loading) return <p className="text-slate-500">Chargement…</p>;
   if (error)
     return (
@@ -299,6 +325,7 @@ export default function ItineraryDetailPage() {
         onUpdateItinerary={handleUpdateItinerary}
         onSuggestMomentAlternatives={handleSuggestMomentAlternatives}
         onImportHotelFromImage={handleImportHotelFromImage}
+        onImportFlightFromImage={handleImportFlightFromImage}
         regenerating={regenerating}
       />
 
@@ -316,6 +343,19 @@ export default function ItineraryDetailPage() {
         onClose={() => setImportHotelState(null)}
         context={importHotelState}
         onConfirm={handleApplyImportedHotel}
+      />
+
+      <ImportFlightFromScreenshotModal
+        open={!!importFlightState?.open}
+        onClose={() => setImportFlightState(null)}
+        context={{
+          adults: trip?.itinerary?.summary?.travellers?.adults || 1,
+          children:
+            trip?.itinerary?.summary?.travellers?.children_ages?.length || 0,
+          origin_hint: importFlightState?.trip?.from,
+          destination_hint: importFlightState?.trip?.to,
+        }}
+        onConfirm={handleApplyImportedFlight}
       />
     </div>
   );

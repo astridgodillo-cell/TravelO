@@ -44,6 +44,122 @@ function applyDelta(itinerary, dayIndex, bucket, delta) {
 }
 
 /**
+ * Applique une extraction de vol (capture Google Flights) à TOUS les trips
+ * "Avion" matchant de l'itinéraire :
+ *   - Trip avec origin_iata / destination_iata correspondant à `outbound`
+ *     → patche avec airline, flight_number, departure_at, arrival_at, prix
+ *   - Trip correspondant à `return` (= inverse) → patche idem
+ *
+ * Matching de robustesse :
+ *  1. trip._flight.origin_iata + destination_iata (les codes IATA déjà
+ *     posés par Duffel / Travelpayouts lors de la génération)
+ *  2. fallback texte : trip.from / trip.to (case insensitive includes)
+ *     contre les codes IATA + noms de ville devinés.
+ *
+ * Recalcule le budget : ancien total des Avion remplacés - nouveau total.
+ *
+ *   extracted = { is_round_trip, total_price_eur, outbound, return, ... }
+ */
+export function applyExtractedFlightsToItinerary(itinerary, extracted) {
+  if (!extracted?.outbound) return itinerary;
+  const next = deepClone(itinerary);
+  if (!Array.isArray(next.days)) return next;
+
+  const outbound = extracted.outbound;
+  const returnLeg = extracted.return || null;
+  const isRoundTrip = !!returnLeg;
+  const totalPriceEur = Math.max(0, Math.round(Number(extracted.total_price_eur) || 0));
+  const outboundCost = isRoundTrip ? Math.round(totalPriceEur / 2) : totalPriceEur;
+  const returnCost = isRoundTrip ? totalPriceEur - outboundCost : 0;
+
+  function tripMatchesLeg(trip, leg) {
+    if (!leg?.origin_iata || !leg?.destination_iata) return false;
+    const tripOrigin = trip._flight?.origin_iata || '';
+    const tripDest = trip._flight?.destination_iata || '';
+    if (
+      tripOrigin.toUpperCase() === leg.origin_iata.toUpperCase() &&
+      tripDest.toUpperCase() === leg.destination_iata.toUpperCase()
+    ) {
+      return true;
+    }
+    // Fallback texte : trip.from / to contient l'IATA ou un mot reconnu
+    const fromText = String(trip.from || '').toLowerCase();
+    const toText = String(trip.to || '').toLowerCase();
+    return (
+      (fromText.includes(leg.origin_iata.toLowerCase()) ||
+        fromText.includes(leg.origin_iata.toUpperCase())) &&
+      (toText.includes(leg.destination_iata.toLowerCase()) ||
+        toText.includes(leg.destination_iata.toUpperCase()))
+    );
+  }
+
+  function patchTripWithLeg(trip, leg, cost) {
+    const oldCost = Number(trip.estimated_cost_eur) || 0;
+    trip.estimated_cost_eur = cost;
+    trip.cost_note = `Vol corrigé manuellement via une capture (${
+      leg.airline_code || leg.airline || ''
+    }${leg.flight_number || ''})`;
+    trip._user_edited = true;
+    trip._flight = {
+      ...(trip._flight || {}),
+      airline: leg.airline_code || leg.airline || trip._flight?.airline || '',
+      flight_number: leg.flight_number || trip._flight?.flight_number || null,
+      departure_at: leg.departure_at || trip._flight?.departure_at || null,
+      arrival_at: leg.arrival_at || trip._flight?.arrival_at || null,
+      origin_iata: leg.origin_iata || trip._flight?.origin_iata || null,
+      destination_iata: leg.destination_iata || trip._flight?.destination_iata || null,
+      // On garde le deeplink existant (si Duffel/Travelpayouts en avait posé un)
+      // OU on en pose un nouveau Google Flights basé sur les IATA extraits.
+      deeplink: trip._flight?.deeplink || buildSimpleGoogleFlightsLink(leg),
+      source: trip._flight?.source || 'user-imported',
+    };
+    return cost - oldCost; // delta
+  }
+
+  let totalDelta = 0;
+  for (let di = 0; di < next.days.length; di++) {
+    const day = next.days[di];
+    if (!Array.isArray(day.trips)) continue;
+    for (const t of day.trips) {
+      if (!/avion|vol|flight|plane/i.test(t.mode || '')) continue;
+      if (tripMatchesLeg(t, outbound)) {
+        const delta = patchTripWithLeg(t, outbound, outboundCost);
+        day.day_total_eur = (day.day_total_eur || 0) + delta;
+        totalDelta += delta;
+      } else if (returnLeg && tripMatchesLeg(t, returnLeg)) {
+        const delta = patchTripWithLeg(t, returnLeg, returnCost);
+        day.day_total_eur = (day.day_total_eur || 0) + delta;
+        totalDelta += delta;
+      }
+    }
+  }
+
+  if (totalDelta !== 0 && next.budget_summary) {
+    next.budget_summary.trips_eur =
+      (next.budget_summary.trips_eur || 0) + totalDelta;
+    next.budget_summary.grand_total_eur =
+      (next.budget_summary.grand_total_eur || 0) + totalDelta;
+    const pax = getPax(next);
+    if (pax > 0) {
+      next.budget_summary.per_person_eur = Math.round(
+        next.budget_summary.grand_total_eur / pax
+      );
+    }
+  }
+
+  return next;
+}
+
+function buildSimpleGoogleFlightsLink(leg) {
+  if (!leg?.origin_iata || !leg?.destination_iata || !leg?.departure_at) {
+    return null;
+  }
+  const date = leg.departure_at.substring(0, 10);
+  const q = `Flights from ${leg.origin_iata} to ${leg.destination_iata} on ${date} one-way for 1 adult`;
+  return `https://www.google.com/travel/flights?q=${encodeURIComponent(q)}&curr=EUR&hl=fr`;
+}
+
+/**
  * Modifie le prix total famille d'un trip (vol, voiture, ferry, etc.).
  * Recalcule day_total_eur + budget_summary.trips_eur + grand_total + per_person.
  */

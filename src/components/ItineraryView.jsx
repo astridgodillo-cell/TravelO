@@ -90,6 +90,7 @@ export default function ItineraryView({
   onUpdateItinerary,
   onSuggestMomentAlternatives,
   onImportHotelFromImage,
+  onImportFlightFromImage,
   regenerating,
 }) {
   const [tab, setTab] = useState('planning');
@@ -330,6 +331,7 @@ export default function ItineraryView({
             onUpdateItinerary={onUpdateItinerary}
             onSuggestMomentAlternatives={onSuggestMomentAlternatives}
             onImportHotelFromImage={onImportHotelFromImage}
+            onImportFlightFromImage={onImportFlightFromImage}
           />
         </div>
         <div className={tab === 'table' ? '' : 'hidden'}>
@@ -403,6 +405,7 @@ function Planning({
   onUpdateItinerary,
   onSuggestMomentAlternatives,
   onImportHotelFromImage,
+  onImportFlightFromImage,
 }) {
   // Tous les jours fermés par défaut : on voit la liste d'un coup d'œil
   // et on déplie au besoin.
@@ -470,6 +473,7 @@ function Planning({
           onUpdateItinerary={onUpdateItinerary}
           onSuggestMomentAlternatives={onSuggestMomentAlternatives}
           onImportHotelFromImage={onImportHotelFromImage}
+          onImportFlightFromImage={onImportFlightFromImage}
         />
       ))}
     </section>
@@ -661,6 +665,7 @@ function DayCard({
   onUpdateItinerary,
   onSuggestMomentAlternatives,
   onImportHotelFromImage,
+  onImportFlightFromImage,
 }) {
   // Détecte les jours d'arrivée/départ d'un voyage avion-* sans horaire
   // confirmé : on a une trip de mode "Avion" mais sans heure de départ
@@ -891,6 +896,7 @@ function DayCard({
               onRemoveActivity={onRemoveActivity}
               onUpdateItinerary={onUpdateItinerary}
               onSuggestMomentAlternatives={onSuggestMomentAlternatives}
+              onImportFlightFromImage={onImportFlightFromImage}
             />
           ) : (
             <DayCardsContent
@@ -901,6 +907,7 @@ function DayCard({
               onRemoveActivity={onRemoveActivity}
               onUpdateItinerary={onUpdateItinerary}
               onSuggestMomentAlternatives={onSuggestMomentAlternatives}
+              onImportFlightFromImage={onImportFlightFromImage}
             />
           )}
 
@@ -1485,6 +1492,7 @@ function DayCardsContent({
   onRemoveActivity,
   onUpdateItinerary,
   onSuggestMomentAlternatives,
+  onImportFlightFromImage,
 }) {
   const momentProps = {
     dayIndex,
@@ -1567,6 +1575,11 @@ function DayCardsContent({
                 dayIndex={dayIndex}
                 tripIndex={i}
                 onUpdateItinerary={onUpdateItinerary}
+                onImportFlightFromImage={
+                  onImportFlightFromImage
+                    ? () => onImportFlightFromImage(dayIndex, i, t)
+                    : null
+                }
               />
             ))}
           </ul>
@@ -1694,6 +1707,7 @@ function DayTimeline({
   onRemoveActivity,
   onUpdateItinerary,
   onSuggestMomentAlternatives,
+  onImportFlightFromImage,
 }) {
   const events = useMemo(() => buildDayEvents(day), [day]);
 
@@ -1737,6 +1751,7 @@ function TimelineRow({
   onRemoveActivity,
   onUpdateItinerary,
   onSuggestMomentAlternatives,
+  onImportFlightFromImage,
 }) {
   const s = CATEGORY_STYLES[event.category] || CATEGORY_STYLES.moment;
   return (
@@ -1790,6 +1805,16 @@ function TimelineRow({
             dayIndex={dayIndex}
             tripIndex={event.payload.tripIndex}
             onUpdateItinerary={onUpdateItinerary}
+            onImportFlightFromImage={
+              onImportFlightFromImage
+                ? () =>
+                    onImportFlightFromImage(
+                      dayIndex,
+                      event.payload.tripIndex,
+                      event.payload.trip
+                    )
+                : null
+            }
           />
         </ul>
       )}
@@ -1820,7 +1845,14 @@ function flightDeeplinkLabel(source) {
   return 'Voir & comparer ce vol';
 }
 
-function TripRow({ trip, dayDate, dayIndex, tripIndex, onUpdateItinerary }) {
+function TripRow({
+  trip,
+  dayDate,
+  dayIndex,
+  tripIndex,
+  onUpdateItinerary,
+  onImportFlightFromImage,
+}) {
   const hasBreakdown =
     trip.fuel_cost_eur != null ||
     trip.toll_cost_eur != null ||
@@ -2059,6 +2091,16 @@ function TripRow({ trip, dayDate, dayIndex, tripIndex, onUpdateItinerary }) {
               ? `Vérifier les vrais prix sur ${providerLabel}`
               : flightDeeplinkLabel(flight.source)}
           </a>
+        )}
+        {isFlight && typeof onImportFlightFromImage === 'function' && (
+          <button
+            type="button"
+            onClick={() => onImportFlightFromImage()}
+            className="inline-flex items-center gap-1 rounded-md bg-sky-100 text-sky-800 hover:bg-sky-200 transition-colors px-2 py-1 text-xs"
+            title="Mettre à jour les infos du vol via une capture Google Flights / Skyscanner"
+          >
+            📸 MAJ via capture
+          </button>
         )}
       </div>
       {trip.road_warning && (
