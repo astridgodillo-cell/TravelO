@@ -10,10 +10,66 @@ function deepClone(obj) {
   return JSON.parse(JSON.stringify(obj));
 }
 
-function getPax(itinerary) {
-  const adults = itinerary?.summary?.travellers?.adults ?? 2;
-  const children = itinerary?.summary?.travellers?.children_ages?.length ?? 0;
-  return Math.max(1, adults + children);
+// Nombre d'adultes par défaut quand l'info manque (utilisé dans tout le
+// projet — voyage romantique typique = 2 adultes).
+export const DEFAULT_ADULTS = 2;
+
+// Source de vérité unique pour le nombre de voyageurs d'un itinéraire.
+// Accepte soit un itinéraire complet, soit un objet summary directement.
+export function getPax(itineraryOrSummary) {
+  const summary =
+    itineraryOrSummary?.summary || itineraryOrSummary || {};
+  const adults = Number(summary?.travellers?.adults) || DEFAULT_ADULTS;
+  const childrenAges = Array.isArray(summary?.travellers?.children_ages)
+    ? summary.travellers.children_ages
+    : [];
+  return Math.max(1, adults + childrenAges.length);
+}
+
+// Récupère les âges des enfants, toujours sous forme de tableau (jamais undefined).
+export function getChildrenAges(itineraryOrSummary) {
+  const summary =
+    itineraryOrSummary?.summary || itineraryOrSummary || {};
+  return Array.isArray(summary?.travellers?.children_ages)
+    ? summary.travellers.children_ages
+    : [];
+}
+
+// Récupère le nombre d'adultes (toujours ≥ 1).
+export function getAdults(itineraryOrSummary) {
+  const summary =
+    itineraryOrSummary?.summary || itineraryOrSummary || {};
+  return Math.max(1, Number(summary?.travellers?.adults) || DEFAULT_ADULTS);
+}
+
+// Calcule le total dépensé un jour donné (trips + hébergement + repas +
+// activités + services). Fonction pure utilisée à la fois par jour et
+// pour le grand total.
+export function computeDayTotal(day) {
+  if (!day) return 0;
+  let total = 0;
+  if (Array.isArray(day.trips)) {
+    for (const t of day.trips) total += Number(t.estimated_cost_eur) || 0;
+  }
+  if (day.accommodation) total += Number(day.accommodation.price_eur) || 0;
+  if (day.meals) total += Number(day.meals.daily_family_budget_eur) || 0;
+  if (Array.isArray(day.activities)) {
+    for (const a of day.activities) total += Number(a.family_total_eur) || 0;
+  }
+  if (Array.isArray(day.service_stops)) {
+    for (const s of day.service_stops) total += Number(s.cost_eur) || 0;
+  }
+  return Math.round(total);
+}
+
+/**
+ * Renvoie une nouvelle liste de jours où chaque jour a son day_total_eur
+ * recalculé depuis ses composants (trips, accommodation, meals, activities,
+ * service_stops). Ne mute pas les jours d'origine.
+ */
+export function withRecomputedDayTotals(days) {
+  if (!Array.isArray(days)) return [];
+  return days.map((d) => ({ ...d, day_total_eur: computeDayTotal(d) }));
 }
 
 /**

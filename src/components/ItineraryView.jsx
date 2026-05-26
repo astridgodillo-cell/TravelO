@@ -11,6 +11,9 @@ import {
   removeAccommodationAlternative,
   clearMoment,
   recomputeBudgetFromDays,
+  withRecomputedDayTotals,
+  getAdults,
+  getChildrenAges,
 } from '../lib/itineraryEdits';
 import { useDayLayout } from '../hooks/useDayLayout';
 import EditableValue from './EditableValue';
@@ -133,22 +136,24 @@ export default function ItineraryView({
   }
   const {
     summary = {},
-    days = [],
     notes = {},
     metadata = {},
   } = itinerary;
-  // Source de vérité unique : budget_summary recalculé depuis les jours.
-  // Toutes les valeurs (hero, tableau budget, partage, export) viennent
-  // d'ici → plus de désynchronisation entre encart "Budget estimé" et
-  // "Grand total estimé".
+  // Source de vérité unique : on recalcule day_total_eur de chaque jour
+  // ET le budget_summary global à partir des données brutes. Toutes les
+  // valeurs (hero, tableau budget, partage, export) viennent d'ici → plus
+  // de désynchronisation entre encart "Budget estimé" et "Grand total
+  // estimé", ni entre détail du jour et total du jour.
+  const days = useMemo(
+    () => withRecomputedDayTotals(itinerary?.days),
+    [itinerary]
+  );
   const budget_summary = useMemo(
     () => recomputeBudgetFromDays(itinerary),
     [itinerary]
   );
-  const adults = summary?.travellers?.adults || 2;
-  const childrenAges = Array.isArray(summary?.travellers?.children_ages)
-    ? summary.travellers.children_ages
-    : [];
+  const adults = getAdults(summary);
+  const childrenAges = getChildrenAges(summary);
   const children = childrenAges.length;
   const isVanTrip = VAN_TRIP_TYPES.has(summary?.trip_type);
   const aiCostEur = costEur(metadata?.total_cost_usd);

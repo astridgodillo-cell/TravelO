@@ -349,7 +349,7 @@ export default function ItineraryDetailPage() {
         open={!!importFlightState?.open}
         onClose={() => setImportFlightState(null)}
         context={{
-          adults: trip?.itinerary?.summary?.travellers?.adults || 1,
+          adults: trip?.itinerary?.summary?.travellers?.adults || 2,
           children:
             trip?.itinerary?.summary?.travellers?.children_ages?.length || 0,
           origin_hint: importFlightState?.trip?.from,
