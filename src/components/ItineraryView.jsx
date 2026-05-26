@@ -10,6 +10,7 @@ import {
   promoteAccommodationAlternative,
   removeAccommodationAlternative,
   clearMoment,
+  recomputeBudgetFromDays,
 } from '../lib/itineraryEdits';
 import { useDayLayout } from '../hooks/useDayLayout';
 import EditableValue from './EditableValue';
@@ -133,10 +134,17 @@ export default function ItineraryView({
   const {
     summary = {},
     days = [],
-    budget_summary = {},
     notes = {},
     metadata = {},
   } = itinerary;
+  // Source de vérité unique : budget_summary recalculé depuis les jours.
+  // Toutes les valeurs (hero, tableau budget, partage, export) viennent
+  // d'ici → plus de désynchronisation entre encart "Budget estimé" et
+  // "Grand total estimé".
+  const budget_summary = useMemo(
+    () => recomputeBudgetFromDays(itinerary),
+    [itinerary]
+  );
   const adults = summary?.travellers?.adults || 2;
   const childrenAges = Array.isArray(summary?.travellers?.children_ages)
     ? summary.travellers.children_ages
@@ -2452,29 +2460,11 @@ function BudgetGlobal({ budget, days, metadata }) {
   }, [days]);
   const [tripsExpanded, setTripsExpanded] = useState(false);
 
-  // Total trajets = somme réelle des trajets affichés (on ignore la valeur
-  // potentiellement fausse de l'IA dans budget.trips_eur).
-  const tripsTotal = useMemo(
-    () => allTrips.reduce((s, t) => s + (t.cost || 0), 0),
-    [allTrips]
-  );
-  // Grand total recalculé pareil : somme de toutes les catégories visibles
-  const grandTotal =
-    tripsTotal +
-    (Number(budget.accommodation_eur) || 0) +
-    (Number(budget.meals_eur) || 0) +
-    (Number(budget.activities_eur) || 0) +
-    (Number(budget.service_stops_eur) || 0);
-  // Nombre de voyageurs déduit depuis le ratio grand_total / per_person de l'IA
-  const pax = Math.max(
-    1,
-    Number(budget.grand_total_eur) && Number(budget.per_person_eur)
-      ? Math.round(
-          Number(budget.grand_total_eur) / Number(budget.per_person_eur)
-        )
-      : 1
-  );
-  const perPerson = Math.round(grandTotal / pax);
+  // budget est déjà recalculé en amont via recomputeBudgetFromDays() →
+  // on peut lire directement ses champs comme sources de vérité.
+  const tripsTotal = Number(budget.trips_eur) || 0;
+  const grandTotal = Number(budget.grand_total_eur) || 0;
+  const perPerson = Number(budget.per_person_eur) || 0;
 
   // Agrégation des trajets par mode de transport (avion/train/voiture/…)
   const modeBreakdown = useMemo(() => {

@@ -17,6 +17,66 @@ function getPax(itinerary) {
 }
 
 /**
+ * Recalcule le budget_summary à partir des VRAIES données jour par jour.
+ * Source de vérité unique : on n'utilise plus les valeurs potentiellement
+ * fausses de l'IA dans itinerary.budget_summary. Tout vient des jours.
+ *
+ *   trips_eur          = Σ day.trips[].estimated_cost_eur
+ *   accommodation_eur  = Σ day.accommodation.price_eur
+ *   meals_eur          = Σ day.meals.daily_family_budget_eur
+ *   activities_eur     = Σ day.activities[].family_total_eur
+ *   service_stops_eur  = Σ day.service_stops[].cost_eur
+ *   grand_total_eur    = somme de tous les buckets ci-dessus
+ *   per_person_eur     = grand_total / pax
+ *
+ * Renvoie l'objet budget_summary corrigé (ne mute pas l'itinéraire).
+ */
+export function recomputeBudgetFromDays(itinerary) {
+  const days = Array.isArray(itinerary?.days) ? itinerary.days : [];
+  const original = itinerary?.budget_summary || {};
+  let trips_eur = 0;
+  let accommodation_eur = 0;
+  let meals_eur = 0;
+  let activities_eur = 0;
+  let service_stops_eur = 0;
+  for (const d of days) {
+    if (Array.isArray(d.trips)) {
+      for (const t of d.trips) trips_eur += Number(t.estimated_cost_eur) || 0;
+    }
+    if (d.accommodation) {
+      accommodation_eur += Number(d.accommodation.price_eur) || 0;
+    }
+    if (d.meals) {
+      meals_eur += Number(d.meals.daily_family_budget_eur) || 0;
+    }
+    if (Array.isArray(d.activities)) {
+      for (const a of d.activities)
+        activities_eur += Number(a.family_total_eur) || 0;
+    }
+    if (Array.isArray(d.service_stops)) {
+      for (const s of d.service_stops)
+        service_stops_eur += Number(s.cost_eur) || 0;
+    }
+  }
+  const grand_total_eur =
+    trips_eur + accommodation_eur + meals_eur + activities_eur + service_stops_eur;
+  const pax = getPax(itinerary);
+  const per_person_eur = Math.round(grand_total_eur / pax);
+  return {
+    // On garde tout ce que l'IA avait posé (clés comme fuel_eur, tolls_eur,
+    // ferries_eur, etc. utilisées dans la section "Détail trajets routiers")
+    ...original,
+    trips_eur: Math.round(trips_eur),
+    accommodation_eur: Math.round(accommodation_eur),
+    meals_eur: Math.round(meals_eur),
+    activities_eur: Math.round(activities_eur),
+    service_stops_eur: Math.round(service_stops_eur),
+    grand_total_eur: Math.round(grand_total_eur),
+    per_person_eur,
+  };
+}
+
+/**
  * Applique un delta au day_total et au budget_summary :
  *   - day.day_total_eur += delta
  *   - budget_summary[bucket]_eur += delta  (ex: 'trips' → trips_eur)
