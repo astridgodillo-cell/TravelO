@@ -34,6 +34,7 @@ import {
   tiqetsSearch,
   isLikelyBookable,
 } from '../lib/externalLinks';
+import { buildSkyscannerUrl } from '../lib/flightSearchLinks';
 
 const TABS = [
   { id: 'planning', label: 'Planning' },
@@ -891,6 +892,8 @@ function DayCard({
             <DayTimeline
               day={day}
               dayIndex={dayIndex}
+              adults={adults}
+              childrenCount={childrenCount}
               canEditActivities={canEditActivities}
               onEditActivity={onEditActivity}
               onRemoveActivity={onRemoveActivity}
@@ -1574,6 +1577,8 @@ function DayCardsContent({
                 dayDate={day.date}
                 dayIndex={dayIndex}
                 tripIndex={i}
+                adults={adults}
+                childrenCount={childrenCount}
                 onUpdateItinerary={onUpdateItinerary}
                 onImportFlightFromImage={
                   onImportFlightFromImage
@@ -1702,6 +1707,8 @@ function buildDayEvents(day) {
 function DayTimeline({
   day,
   dayIndex,
+  adults,
+  childrenCount,
   canEditActivities,
   onEditActivity,
   onRemoveActivity,
@@ -1729,12 +1736,15 @@ function DayTimeline({
             event={e}
             day={day}
             dayIndex={dayIndex}
+            adults={adults}
+            childrenCount={childrenCount}
             canEditActivities={canEditActivities}
             onEditActivity={onEditActivity}
             onRemoveActivity={onRemoveActivity}
             onUpdateItinerary={onUpdateItinerary}
             onSuggestMomentAlternatives={onSuggestMomentAlternatives}
             onImportHotelFromImage={onImportHotelFromImage}
+            onImportFlightFromImage={onImportFlightFromImage}
           />
         ))}
       </ol>
@@ -1746,6 +1756,8 @@ function TimelineRow({
   event,
   day,
   dayIndex,
+  adults,
+  childrenCount,
   canEditActivities,
   onEditActivity,
   onRemoveActivity,
@@ -1804,6 +1816,8 @@ function TimelineRow({
             dayDate={event.payload.dayDate}
             dayIndex={dayIndex}
             tripIndex={event.payload.tripIndex}
+            adults={adults}
+            childrenCount={childrenCount}
             onUpdateItinerary={onUpdateItinerary}
             onImportFlightFromImage={
               onImportFlightFromImage
@@ -1850,6 +1864,8 @@ function TripRow({
   dayDate,
   dayIndex,
   tripIndex,
+  adults,
+  childrenCount,
   onUpdateItinerary,
   onImportFlightFromImage,
 }) {
@@ -2057,14 +2073,16 @@ function TripRow({
         </div>
       )}
       <div className="print:hidden mt-2 flex flex-wrap gap-3 text-xs">
-        <a
-          href={googleMapsDirections(trip.from, trip.to)}
-          target="_blank"
-          rel="noreferrer"
-          className="text-brand-700 hover:underline"
-        >
-          🗺️ Itinéraire Google Maps
-        </a>
+        {!isFlight && (
+          <a
+            href={googleMapsDirections(trip.from, trip.to)}
+            target="_blank"
+            rel="noreferrer"
+            className="text-brand-700 hover:underline"
+          >
+            🗺️ Itinéraire Google Maps
+          </a>
+        )}
         {isFerry && (
           <a
             href={directFerriesSearch(trip.from, trip.to, dayDate)}
@@ -2075,6 +2093,43 @@ function TripRow({
             ⛴️ Comparer ferries
           </a>
         )}
+        {isFlight && (() => {
+          // Construit l'URL Skyscanner pré-remplie pour ce vol précis.
+          // On utilise les IATA si présents (cas idéal), sinon on tente
+          // une résolution par nom de ville côté Skyscanner (qui accepte
+          // aussi les noms longs).
+          const ori = flight.origin_iata || trip.from || '';
+          const dst = flight.destination_iata || trip.to || '';
+          // Date du vol = dayDate (jour de l'itinéraire) sauf si flight
+          // a une date explicite plus précise.
+          const flightDate =
+            (flight.departure_at &&
+              typeof flight.departure_at === 'string' &&
+              flight.departure_at.substring(0, 10)) ||
+            dayDate ||
+            '';
+          const url = buildSkyscannerUrl({
+            originIata: ori,
+            destIata: dst,
+            departDate: flightDate,
+            returnDate: null,
+            adults: adults || 1,
+            childrenAges: [],
+            infantsAges: [],
+          });
+          if (!url || !flightDate) return null;
+          return (
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 rounded-md bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 text-xs font-semibold"
+              title={`Ouvrir la recherche ${ori} → ${dst} du ${flightDate} sur Skyscanner pré-remplie`}
+            >
+              🔍 Chercher sur Skyscanner
+            </a>
+          );
+        })()}
         {isFlight && flight.deeplink && (
           <a
             href={flight.deeplink}
@@ -2088,7 +2143,7 @@ function TripRow({
           >
             ✈️{' '}
             {isAiEstimatedFlight
-              ? `Vérifier les vrais prix sur ${providerLabel}`
+              ? `Vérifier sur ${providerLabel}`
               : flightDeeplinkLabel(flight.source)}
           </a>
         )}
@@ -2097,7 +2152,7 @@ function TripRow({
             type="button"
             onClick={() => onImportFlightFromImage()}
             className="inline-flex items-center gap-1 rounded-md bg-sky-100 text-sky-800 hover:bg-sky-200 transition-colors px-2 py-1 text-xs"
-            title="Mettre à jour les infos du vol via une capture Google Flights / Skyscanner"
+            title="Mettre à jour les infos du vol via une capture Skyscanner / Google Flights"
           >
             📸 MAJ via capture
           </button>
