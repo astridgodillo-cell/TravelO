@@ -34,7 +34,7 @@ import {
   tiqetsSearch,
   isLikelyBookable,
 } from '../lib/externalLinks';
-import { buildSkyscannerUrl } from '../lib/flightSearchLinks';
+import { buildSkyscannerUrl, extractIataSync } from '../lib/flightSearchLinks';
 
 const TABS = [
   { id: 'planning', label: 'Planning' },
@@ -2099,11 +2099,15 @@ function TripRow({
         )}
         {isFlight && (() => {
           // Construit l'URL Skyscanner pré-remplie pour ce vol précis.
-          // On utilise les IATA si présents (cas idéal), sinon on tente
-          // une résolution par nom de ville côté Skyscanner (qui accepte
-          // aussi les noms longs).
-          const ori = flight.origin_iata || trip.from || '';
-          const dst = flight.destination_iata || trip.to || '';
+          // Skyscanner exige un code IATA à 3 lettres dans le chemin —
+          // pas un nom de ville. On extrait depuis flight (cas idéal)
+          // sinon depuis trip.from / trip.to ("Bogotá (BOG)" → "BOG").
+          const ori =
+            extractIataSync(flight.origin_iata) ||
+            extractIataSync(trip.from);
+          const dst =
+            extractIataSync(flight.destination_iata) ||
+            extractIataSync(trip.to);
           // Date du vol = dayDate (jour de l'itinéraire) sauf si flight
           // a une date explicite plus précise.
           const flightDate =
@@ -2112,6 +2116,9 @@ function TripRow({
               flight.departure_at.substring(0, 10)) ||
             dayDate ||
             '';
+          // Si pas de code IATA détecté, on n'affiche pas le bouton
+          // (l'URL ne marcherait pas sur Skyscanner).
+          if (!ori || !dst || !flightDate) return null;
           const url = buildSkyscannerUrl({
             originIata: ori,
             destIata: dst,
@@ -2121,7 +2128,7 @@ function TripRow({
             childrenAges: [],
             infantsAges: [],
           });
-          if (!url || !flightDate) return null;
+          if (!url) return null;
           return (
             <a
               href={url}

@@ -167,6 +167,20 @@ function extractParensIata(text) {
   return { code, name: name || code, type: 'airport' };
 }
 
+// Helper sync (pas d'appel API) pour extraire un code IATA depuis un texte
+// de type "Bogotá (BOG)" ou "BOG" directement. Renvoie '' si rien de
+// reconnaissable. Insensible à la casse pour les parenthèses.
+export function extractIataSync(text) {
+  if (!text) return '';
+  const s = String(text).trim();
+  // 1. Code à 3 lettres entre parenthèses (insensible casse)
+  const m = s.match(/\(([A-Za-z]{3})\)/);
+  if (m) return m[1].toUpperCase();
+  // 2. La chaîne est déjà un code IATA à 3 lettres seul
+  if (/^[A-Za-z]{3}$/.test(s)) return s.toUpperCase();
+  return '';
+}
+
 // Résolution ville → code IATA via l'autocomplete Travelpayouts (public,
 // pas de token). On préfère "city" pour avoir le code metropolitan qui
 // regroupe tous les aéroports d'une ville.
