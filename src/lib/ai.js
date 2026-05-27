@@ -278,6 +278,44 @@ export async function generateItinerary(preferences, onProgress) {
   return itinerary;
 }
 
+/**
+ * Vérification des prix réels via Brave Search + DeepSeek. Pour chaque
+ * hôtel et chaque activité de l'itinéraire, l'Edge Function recherche le
+ * vrai prix sur le web et corrige l'estimation IA quand pertinent.
+ *
+ * Non-bloquant : si la vérification échoue (Brave down, clé manquante,
+ * timeout), on retourne l'itinéraire d'origine. L'utilisateur récupère
+ * toujours son voyage.
+ *
+ * Renvoie : { itinerary (potentiellement modifié), updated_count, total_checked }
+ */
+export async function verifyItineraryPrices(itinerary, preferences) {
+  try {
+    const data = await invoke({
+      mode: 'verify-prices',
+      itinerary,
+      preferences: {
+        adults: Number(preferences?.adults) || 2,
+        childrenAges: Array.isArray(preferences?.childrenAges)
+          ? preferences.childrenAges
+          : [],
+      },
+    });
+    if (!data?.itinerary) {
+      console.warn('[verify-prices] réponse vide, on garde l\'itinéraire d\'origine');
+      return { itinerary, updated_count: 0, total_checked: 0 };
+    }
+    return {
+      itinerary: data.itinerary,
+      updated_count: data.updated_count || 0,
+      total_checked: data.total_checked || 0,
+    };
+  } catch (e) {
+    console.warn('[verify-prices] échec, on garde l\'itinéraire d\'origine', e);
+    return { itinerary, updated_count: 0, total_checked: 0 };
+  }
+}
+
 // 3 catégories appelées en PARALLÈLE pour obtenir ~45-50 lieux au total
 // (15-18 par catégorie) avec des descriptions évocatrices.
 // Un 4ème appel en parallèle récupère les villes principales (si destination = pays/région).

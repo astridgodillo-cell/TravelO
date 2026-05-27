@@ -22,6 +22,7 @@ import {
   isRealFlightSource,
   type AnyFlightData,
 } from '../_shared/flightProvider.ts';
+import { braveSearch } from '../_shared/braveSearch.ts';
 
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
 const TRAVELPAYOUTS_TOKEN = Deno.env.get('TRAVELPAYOUTS_TOKEN') || '';
@@ -3632,6 +3633,282 @@ Si tu ne reconnais PAS un hôtel dans l'image (capture floue, page d'erreur, pho
           500
         );
       }
+    }
+
+    if (mode === 'verify-prices') {
+      // Agent vérificateur de prix : pour chaque hébergement et chaque
+      // activité de l'itinéraire, on recherche le vrai prix sur le web
+      // via Brave Search puis on demande à DeepSeek d'extraire le prix
+      // en euros depuis les snippets renvoyés. Permet de remplacer les
+      // estimations IA (souvent éloignées du réel) par des chiffres
+      // vérifiés.
+      //
+      // Body : { itinerary, preferences }
+      // Réponse : { verifiedItinerary, verifications: [...] }
+      const { itinerary, preferences } = body;
+      if (!itinerary?.days || !Array.isArray(itinerary.days)) {
+        return jsonResponse({ error: 'itinerary.days requis' }, 400);
+      }
+      const adults = Math.max(1, Number(preferences?.adults) || 2);
+      const childrenAges = Array.isArray(preferences?.childrenAges)
+        ? preferences.childrenAges
+        : [];
+      const pax = adults + childrenAges.length;
+      const childrenLabel =
+        childrenAges.length > 0
+          ? ` + ${childrenAges.length} enfant${childrenAges.length > 1 ? 's' : ''} (âges ${childrenAges.join(', ')})`
+          : '';
+      const groupLabel = `${adults} adulte${adults > 1 ? 's' : ''}${childrenLabel}`;
+
+      // Construit la liste des items à vérifier (hôtels + activités).
+      type VItem =
+        | {
+            kind: 'hotel';
+            dayIdx: number;
+            name: string;
+            location: string;
+            date: string;
+            estimated_eur: number;
+          }
+        | {
+            kind: 'activity';
+            dayIdx: number;
+            activityIdx: number;
+            title: string;
+            location: string;
+            date: string;
+            estimated_pp_eur: number;
+          };
+      const items: VItem[] = [];
+      itinerary.days.forEach((day: any, dayIdx: number) => {
+        if (day?.accommodation?.name && day.accommodation.name !== '—') {
+          items.push({
+            kind: 'hotel',
+            dayIdx,
+            name: String(day.accommodation.name),
+            location: String(day.location || ''),
+            date: String(day.date || ''),
+            estimated_eur: Number(day.accommodation.price_eur) || 0,
+          });
+        }
+        if (Array.isArray(day?.activities)) {
+          day.activities.forEach((a: any, activityIdx: number) => {
+            if (a?.title && Number(a.price_per_person_eur) > 0) {
+              items.push({
+                kind: 'activity',
+                dayIdx,
+                activityIdx,
+                title: String(a.title),
+                location: String(day.location || ''),
+                date: String(day.date || ''),
+                estimated_pp_eur: Number(a.price_per_person_eur) || 0,
+              });
+            }
+          });
+        }
+      });
+
+      // Vérifie un item (hôtel ou activité) : Brave Search puis DeepSeek
+      // pour extraire le prix. Renvoie {price_eur, confidence, note, source}.
+      async function verifyOne(item: VItem) {
+        try {
+          let query: string;
+          if (item.kind === 'hotel') {
+            query = `"${item.name}" ${item.location} prix Booking ${item.date} ${groupLabel}`;
+          } else {
+            query = `"${item.title}" ${item.location} prix GetYourGuide réservation`;
+          }
+          const results = await braveSearch(query, { count: 5, country: 'fr' });
+          if (results.length === 0) {
+            return { ok: false, reason: 'no_results' as const };
+          }
+          const snippets = results
+            .map(
+              (r, i) =>
+                `${i + 1}. ${r.title}\n   URL : ${r.url}\n   ${r.description}`
+            )
+            .join('\n\n');
+
+          let prompt: string;
+          if (item.kind === 'hotel') {
+            prompt = `Tu es un agent vérificateur de prix d'hôtels. À partir des résultats web ci-dessous, extrait le prix RÉEL en euros pour CE GROUPE de voyageurs pour 1 NUIT.
+
+INFOS DEMANDÉES :
+- Hôtel : "${item.name}"
+- Ville : ${item.location}
+- Date check-in : ${item.date} (1 nuit)
+- Voyageurs : ${groupLabel}
+- Estimation IA actuelle (à corriger) : ${Math.round(item.estimated_eur)} €
+
+RÉSULTATS WEB (Brave Search) :
+${snippets}
+
+RÈGLES :
+- Cherche un prix qui correspond à l'hôtel exact (pas un autre hôtel proche).
+- Le prix doit être pour le GROUPE COMPLET (pas par personne), pour 1 nuit, taxes incluses.
+- Si les résultats donnent un prix "à partir de X €/nuit" sans précision sur le groupe, multiplie raisonnablement (1 chambre double pour 2 adultes ; chambre triple ou familiale si avec enfant — souvent ×1.3 à ×1.7).
+- Si la devise n'est pas EUR, convertis (1 USD ≈ 0,92 € · 1 GBP ≈ 1,17 € · 1 PLN ≈ 0,23 € · 1 CZK ≈ 0,04 € · 1 HUF ≈ 0,0025 €).
+- Si tu ne trouves PAS de prix fiable pour cet hôtel précis, mets "confidence" à "low" et garde price_eur=0.
+
+Renvoie UNIQUEMENT du JSON valide selon ce schéma :
+{
+  "price_eur": number,
+  "source": "booking.com|trip.com|hotels.com|google|...",
+  "confidence": "high"|"medium"|"low",
+  "note": "1 courte phrase"
+}`;
+          } else {
+            prompt = `Tu es un agent vérificateur de prix d'activités touristiques. À partir des résultats web, extrait le prix RÉEL en euros PAR PERSONNE pour cette activité.
+
+INFOS DEMANDÉES :
+- Activité : "${item.title}"
+- Ville : ${item.location}
+- Date : ${item.date}
+- Estimation IA actuelle (à corriger) : ${Math.round(item.estimated_pp_eur)} €/pers
+
+RÉSULTATS WEB (Brave Search) :
+${snippets}
+
+RÈGLES :
+- Cherche le prix officiel sur GetYourGuide, Tiqets, Viator, ou le site officiel de l'attraction.
+- Le prix demandé est PAR PERSONNE adulte. Si différents tarifs (enfant/adulte/famille), prends adulte.
+- Si la devise n'est pas EUR, convertis (1 USD ≈ 0,92 € · 1 GBP ≈ 1,17 €).
+- Si l'activité est notoirement gratuite (musée gratuit, parc public, balade), mets price_eur=0 et confidence="high".
+- Si tu ne trouves PAS de prix fiable, mets "confidence" à "low" et price_eur=${Math.round(item.estimated_pp_eur)}.
+
+Renvoie UNIQUEMENT du JSON valide :
+{
+  "price_eur": number,
+  "source": "getyourguide.com|tiqets.com|viator.com|...",
+  "confidence": "high"|"medium"|"low",
+  "note": "1 courte phrase"
+}`;
+          }
+
+          if (!DEEPSEEK_API_KEY) {
+            return { ok: false, reason: 'no_deepseek' as const };
+          }
+          const res = await fetch(
+            'https://api.deepseek.com/v1/chat/completions',
+            {
+              method: 'POST',
+              headers: {
+                'content-type': 'application/json',
+                authorization: `Bearer ${DEEPSEEK_API_KEY}`,
+              },
+              body: JSON.stringify({
+                model: DEEPSEEK_MODEL,
+                messages: [
+                  {
+                    role: 'system',
+                    content:
+                      'Tu es un agent vérificateur de prix de voyage. Tu réponds UNIQUEMENT en JSON valide selon le schéma demandé.',
+                  },
+                  { role: 'user', content: prompt },
+                ],
+                max_tokens: 400,
+                temperature: 0.2,
+                response_format: { type: 'json_object' },
+              }),
+            }
+          );
+          if (!res.ok) {
+            console.warn(`[verify] DeepSeek ${res.status} pour "${query}"`);
+            return { ok: false, reason: 'deepseek_error' as const };
+          }
+          const data = await res.json();
+          const text = data?.choices?.[0]?.message?.content;
+          if (!text) return { ok: false, reason: 'empty' as const };
+          let parsed: any;
+          try {
+            parsed = JSON.parse(text);
+          } catch {
+            return { ok: false, reason: 'parse_error' as const };
+          }
+          return {
+            ok: true,
+            price_eur: Math.max(0, Math.round(Number(parsed.price_eur) || 0)),
+            source: String(parsed.source || ''),
+            confidence: ['high', 'medium', 'low'].includes(parsed.confidence)
+              ? parsed.confidence
+              : 'low',
+            note: String(parsed.note || '').slice(0, 200),
+            urls: results.map((r) => r.url).slice(0, 3),
+          };
+        } catch (e) {
+          console.error('[verify] crash item', item, e);
+          return { ok: false, reason: 'crash' as const };
+        }
+      }
+
+      // Run all verifications in parallel (limit concurrency to éviter
+      // de tuer la quota Brave). 4 = bon compromis vitesse / safety.
+      const VERIFY_CONCURRENCY = 4;
+      const verifications: any[] = [];
+      for (let i = 0; i < items.length; i += VERIFY_CONCURRENCY) {
+        const batch = items.slice(i, i + VERIFY_CONCURRENCY);
+        const results = await Promise.all(batch.map(verifyOne));
+        verifications.push(...results);
+      }
+
+      // Applique les prix vérifiés sur une copie de l'itinéraire
+      const next = JSON.parse(JSON.stringify(itinerary));
+      let updatedCount = 0;
+      items.forEach((item, idx) => {
+        const v = verifications[idx];
+        if (!v?.ok) return;
+        // On ne corrige que si on a high ou medium confidence ET un écart significatif
+        if (v.confidence === 'low') return;
+        if (item.kind === 'hotel') {
+          const day = next.days[item.dayIdx];
+          if (!day?.accommodation) return;
+          const newPrice = Number(v.price_eur) || 0;
+          const oldPrice = Number(day.accommodation.price_eur) || 0;
+          // Ignore si écart <10 % (probable bruit de mesure) ET pas un cas
+          // "gratuit→payant"
+          const diffPct = oldPrice > 0
+            ? Math.abs(newPrice - oldPrice) / oldPrice
+            : 1;
+          if (diffPct < 0.1 && oldPrice > 0) return;
+          day.accommodation.price_eur = newPrice;
+          day.accommodation._verified = {
+            old_price_eur: oldPrice,
+            source: v.source,
+            confidence: v.confidence,
+            note: v.note,
+            verified_at: new Date().toISOString(),
+          };
+          updatedCount += 1;
+        } else if (item.kind === 'activity') {
+          const day = next.days[item.dayIdx];
+          const act = day?.activities?.[item.activityIdx];
+          if (!act) return;
+          const newPp = Number(v.price_eur) || 0;
+          const oldPp = Number(act.price_per_person_eur) || 0;
+          const diffPct = oldPp > 0 ? Math.abs(newPp - oldPp) / oldPp : 1;
+          if (diffPct < 0.1 && oldPp > 0) return;
+          act.price_per_person_eur = newPp;
+          act.family_total_eur = newPp * pax;
+          act._verified = {
+            old_price_per_person_eur: oldPp,
+            source: v.source,
+            confidence: v.confidence,
+            note: v.note,
+            verified_at: new Date().toISOString(),
+          };
+          updatedCount += 1;
+        }
+      });
+
+      return jsonResponse({
+        itinerary: next,
+        verifications: verifications.map((v, i) => ({
+          item: items[i],
+          result: v,
+        })),
+        updated_count: updatedCount,
+        total_checked: items.length,
+      });
     }
 
     if (mode === 'fetch-specialties') {
