@@ -533,7 +533,6 @@ function StepTripType({ values, update }) {
   // Pour les autres (itinérant, road-trip, train…), l'utilisateur peut
   // forcer son apparition s'il commence/finit son voyage en avion.
   const isAutoAir = AIR_TYPES.has(values.tripType);
-  const flightChecked = isAutoAir || values.includesFlight === true;
   return (
     <div>
       <StepHeader
@@ -574,30 +573,62 @@ function StepTripType({ values, update }) {
         })}
       </div>
 
-      {/* Toggle vol — toujours visible. Auto-coché et désactivé pour les
-          types avion-*, sinon laissé à l'utilisateur. */}
-      <div className="mt-6 rounded-xl border-2 border-sky-200 bg-sky-50 p-4">
-        <label className={`flex items-start gap-3 ${isAutoAir ? 'opacity-70' : 'cursor-pointer'} select-none`}>
-          <input
-            type="checkbox"
-            checked={flightChecked}
-            disabled={isAutoAir}
-            onChange={(e) => update('includesFlight', e.target.checked)}
-            className="mt-0.5 h-5 w-5 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-          />
-          <div className="text-sm">
-            <div className="font-medium text-slate-900 flex items-center gap-1.5">
-              <span>✈️</span>
-              <span>Ce voyage inclut un vol (aller, retour, ou les deux)</span>
-            </div>
-            <p className="text-xs text-slate-600 mt-0.5 leading-relaxed">
-              {isAutoAir
-                ? 'Activé automatiquement pour ce type de voyage. Tu pourras chercher tes vols à l\'étape suivante.'
-                : 'Coche si tu commences ou termines ton voyage en avion (utile pour un itinérant avec aller-retour avion + tour en voiture/train sur place).'}
-            </p>
+      {/* Question vol — bien visible. Pour les types avion-*, le vol est
+          implicite (petit bandeau d'info). Pour les autres, 2 gros boutons
+          "Comment rejoins-tu ta destination ?" pour ne pas rater l'option. */}
+      {isAutoAir ? (
+        <div className="mt-6 rounded-xl border-2 border-sky-200 bg-sky-50 p-4 text-sm text-sky-900 flex items-center gap-2">
+          <span className="text-lg">✈️</span>
+          <span>
+            <strong>Ce voyage inclut un vol.</strong> Tu pourras chercher,
+            saisir ou laisser l'IA proposer tes vols à l'étape suivante.
+          </span>
+        </div>
+      ) : (
+        <div className="mt-6">
+          <h3 className="text-sm font-semibold text-slate-900 mb-1 flex items-center gap-1.5">
+            <span>✈️</span> Comment rejoins-tu ta destination ?
+          </h3>
+          <p className="text-xs text-slate-500 mb-3">
+            Indispensable pour savoir s'il faut t'aider à organiser un vol.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => update('includesFlight', true)}
+              className={`text-left rounded-xl border-2 p-4 transition-all ${
+                values.includesFlight === true
+                  ? 'border-sky-600 bg-sky-50 ring-2 ring-sky-500 shadow-pop'
+                  : 'border-slate-200 bg-white hover:border-sky-400'
+              }`}
+            >
+              <div className="font-semibold text-slate-900 flex items-center gap-1.5">
+                <span>✈️</span> En avion
+              </div>
+              <div className="text-xs text-slate-600 mt-1 leading-snug">
+                Aller et/ou retour en avion (puis tour en voiture, train…
+                sur place). Tu organiseras tes vols à l'étape suivante.
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => update('includesFlight', false)}
+              className={`text-left rounded-xl border-2 p-4 transition-all ${
+                values.includesFlight === false
+                  ? 'border-brand-600 bg-brand-50 ring-2 ring-brand-500 shadow-pop'
+                  : 'border-slate-200 bg-white hover:border-brand-400'
+              }`}
+            >
+              <div className="font-semibold text-slate-900 flex items-center gap-1.5">
+                <span>🚗</span> Par mes propres moyens
+              </div>
+              <div className="text-xs text-slate-600 mt-1 leading-snug">
+                Voiture, train, bus, déjà sur place… aucun vol à organiser.
+              </div>
+            </button>
           </div>
-        </label>
-      </div>
+        </div>
+      )}
 
       {showLicenseQuestion && (
         <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
