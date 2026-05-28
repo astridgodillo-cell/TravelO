@@ -1723,19 +1723,16 @@ function StepVehicle({ values, updateVehicle, pickVehicleType }) {
   );
 }
 
-function StepStyle({ values, update, toggle }) {
+function StepInterests({ values, toggle }) {
+  const noneSelected = values.interests.length === 0;
   return (
     <div>
       <StepHeader
         icon="sparkles"
-        title="Ton style de voyage"
-        subtitle="Sélectionne tes centres d'intérêt, ton niveau de budget et tes préférences d'hébergement."
+        title="Qu'est-ce que tu aimes ?"
+        subtitle="Choisis ce qui te fait envie — ou laisse vide si tu es ouvert à tout."
       />
-
-      <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-600 mb-3">
-        Centres d'intérêt
-      </h3>
-      <div className="flex flex-wrap gap-2 mb-6">
+      <div className="flex flex-wrap gap-2">
         {INTERESTS.map((i) => {
           const active = values.interests.includes(i);
           return (
@@ -1754,6 +1751,40 @@ function StepStyle({ values, update, toggle }) {
           );
         })}
       </div>
+      <div
+        className={`mt-5 rounded-xl border p-4 text-sm ${
+          noneSelected
+            ? 'border-brand-200 bg-brand-50 text-brand-800'
+            : 'border-slate-200 bg-slate-50 text-slate-600'
+        }`}
+      >
+        {noneSelected ? (
+          <>
+            👍 <strong>Rien de coché = ouvert à tout.</strong> On te
+            proposera un mélange équilibré : culture, nature, gastronomie,
+            détente… Tu pourras affiner après coup.
+          </>
+        ) : (
+          <>
+            ✓ {values.interests.length} centre
+            {values.interests.length > 1 ? 's' : ''} d'intérêt sélectionné
+            {values.interests.length > 1 ? 's' : ''}. L'itinéraire sera
+            orienté en priorité là-dessus.
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StepStyle({ values, update, toggle }) {
+  return (
+    <div>
+      <StepHeader
+        icon="settings"
+        title="Budget & hébergement"
+        subtitle="Ton niveau de budget et tes préférences d'hébergement."
+      />
 
       <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-600 mb-3">
         Niveau de budget
@@ -1924,7 +1955,11 @@ function StepRecap({ values }) {
           />
           <RecapRow
             label="🎨 Intérêts"
-            value={values.interests.join(', ') || '—'}
+            value={
+              values.interests.length > 0
+                ? values.interests.join(', ')
+                : 'Ouvert à tout'
+            }
           />
           {AIR_TYPES.has(values.tripType) && (
             <>
@@ -2063,20 +2098,22 @@ export default function WizardPreferencesForm({
     }));
   }
 
-  // Construit dynamiquement les étapes selon le type de voyage
+  // Construit dynamiquement les étapes selon le type de voyage.
+  // Ordre : Quand → Où → Qui → Comment → [Vol] → [Véhicule] → Intérêts →
+  //         Budget → Personnalisation → Récap
   const steps = useMemo(() => {
     const base = [
-      {
-        id: 'destination',
-        canNext: () => Boolean(values.destinations && values.departureLocation),
-        render: () => <StepDestination values={values} update={update} />,
-      },
       {
         id: 'dates',
         canNext: () =>
           Boolean(values.startDate && values.endDate) &&
           computeTotalDays(values.startDate, values.endDate) > 0,
         render: () => <StepDates values={values} update={update} />,
+      },
+      {
+        id: 'destination',
+        canNext: () => Boolean(values.destinations && values.departureLocation),
+        render: () => <StepDestination values={values} update={update} />,
       },
       {
         id: 'travelers',
@@ -2118,9 +2155,14 @@ export default function WizardPreferencesForm({
     }
     base.push(
       {
+        id: 'interests',
+        // Optionnel : rien coché = ouvert à tout → on peut toujours continuer
+        canNext: () => true,
+        render: () => <StepInterests values={values} toggle={toggle} />,
+      },
+      {
         id: 'style',
-        canNext: () =>
-          values.interests.length > 0 && Boolean(values.budget),
+        canNext: () => Boolean(values.budget),
         render: () => (
           <StepStyle values={values} update={update} toggle={toggle} />
         ),

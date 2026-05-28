@@ -547,7 +547,11 @@ Arrivée finale : ${p.returnLocation || p.departureLocation}${
   }
 Participants : ${p.adults} adulte(s), ${children}${travelersBlock}
 Type de voyage : ${p.tripType}${vehicleBlock}${scheduleBlock}${licenseBlock}
-Centres d'intérêt : ${(p.interests || []).join(', ')}${specificActivities}
+Centres d'intérêt : ${
+    Array.isArray(p.interests) && p.interests.length > 0
+      ? p.interests.join(', ')
+      : "AUCUN précisé → le voyageur est OUVERT À TOUT. Propose un mélange équilibré et varié (culture, nature, gastronomie, détente, activités locales emblématiques) adapté à la destination, sans surreprésenter un seul thème."
+  }${specificActivities}
 Niveau de budget : ${p.budget}${practicalBlock}${offBlock}${constraintsBlock}${visitedBlock}${wishlistBlock}
 Étapes IMPÉRATIVES : ${p.mustInclude || '(aucune)'}
 À éviter : ${p.toAvoid || '(aucun)'}`;

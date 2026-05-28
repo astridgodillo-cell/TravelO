@@ -26,7 +26,9 @@ export const DEFAULTS = {
   adults: 2,
   childrenAges: [],
   tripType: 'itinerant',
-  interests: ['culture', 'gastronomie'],
+  // Vide par défaut : si l'utilisateur ne coche rien, on considère qu'il
+  // est ouvert à tout (l'IA propose un mix équilibré).
+  interests: [],
   specificActivities: [],
   budget: 'moyen',
   offDays: 0,
