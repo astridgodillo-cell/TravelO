@@ -61,6 +61,19 @@ const formatEur = (n) =>
 
 const formatEurOrFree = (n) => (n === 0 ? 'Gratuit' : formatEur(n));
 
+// Affiche un prix d'hôtel :
+//  - si l'utilisateur a saisi le vrai prix (userEdited) → valeur exacte
+//  - sinon → fourchette ±30 % autour de l'estimation (ex: 100 → "70–130")
+// Renvoie SANS le suffixe "€" (ajouté à part par le composant appelant).
+function formatPriceRange(value, userEdited) {
+  const v = Number(value) || 0;
+  if (v === 0) return 'Gratuit';
+  if (userEdited) return v.toLocaleString('fr-FR', { maximumFractionDigits: 0 });
+  const low = Math.round((v * 0.7) / 5) * 5;
+  const high = Math.round((v * 1.3) / 5) * 5;
+  return `${low.toLocaleString('fr-FR')}–${high.toLocaleString('fr-FR')}`;
+}
+
 // Préfixe "≈ " pour les estimations calculées par l'IA (hôtels, repas,
 // trajets routiers, budget total). À ne PAS utiliser pour les prix
 // scrappés en direct (vols Aviasales, etc.) qui eux sont réels.
@@ -1021,7 +1034,7 @@ function LodgingCard({
             suffix=" € / nuit"
             prefix={userEdited ? '' : '≈ '}
             label="Prix par nuit — cliquez pour saisir le vrai prix (celui de votre réservation)"
-            format={(v) => (v === 0 ? 'Gratuit' : v.toLocaleString('fr-FR'))}
+            format={(v) => formatPriceRange(v, userEdited)}
             onSave={(newPrice) =>
               onUpdateItinerary((it) =>
                 updateAccommodationPrice(it, dayIndex, newPrice)
@@ -1032,11 +1045,17 @@ function LodgingCard({
         ) : (
           <span className="font-medium text-slate-800">
             {day.accommodation.price_eur > 0
-              ? `≈ ${formatEurOrFree(day.accommodation.price_eur)} / nuit`
+              ? `≈ ${formatPriceRange(day.accommodation.price_eur, userEdited)} / nuit`
               : formatEurOrFree(day.accommodation.price_eur)}
           </span>
         )}
       </div>
+      {!userEdited && day.accommodation.price_eur > 0 && (
+        <div className="text-[11px] text-slate-400 italic mt-0.5">
+          Fourchette estimée — réserve sur Booking pour le vrai prix, puis
+          saisis-le (clic sur le prix) ou importe ta confirmation.
+        </div>
+      )}
       {day.accommodation.coordinates_hint && (
         <div className="text-slate-500 italic mt-1">
           📍 {day.accommodation.coordinates_hint}

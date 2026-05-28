@@ -20,10 +20,6 @@ export default function GeneratingLoader({ progress }) {
   } else if (phase === 'assembling') {
     title = 'Finalisation';
     detail = 'Calcul du budget, assemblage de l\'itinéraire complet…';
-  } else if (phase === 'verifying') {
-    title = '🔍 Vérification des prix réels';
-    detail =
-      'Un agent recherche les vrais tarifs des hôtels et activités sur le web (Booking, GetYourGuide…) pour remplacer les estimations IA. Cela peut prendre 20 à 40 secondes.';
   }
 
   return (

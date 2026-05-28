@@ -7,7 +7,7 @@ import GeneratingLoader from '../components/GeneratingLoader';
 import PrefillBanner from '../components/PrefillBanner';
 import PageHeader from '../components/PageHeader';
 import Icon from '../components/Icon';
-import { generateItinerary, verifyItineraryPrices } from '../lib/ai';
+import { generateItinerary } from '../lib/ai';
 import { saveItinerary } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -87,29 +87,17 @@ export default function NewItineraryPage() {
         : prefs;
       const itinerary = await generateItinerary(enrichedPrefs, (p) => setProgress(p));
 
-      // Vérification des prix réels via Brave Search + DeepSeek (agent).
-      // Pour chaque hôtel / activité, on cherche le vrai prix sur le web
-      // et on corrige l'estimation IA. Non-bloquant : si l'agent échoue,
-      // on garde les estimations d'origine.
-      setProgress({ phase: 'verifying' });
-      const { itinerary: verifiedItinerary, updated_count, total_checked } =
-        await verifyItineraryPrices(itinerary, enrichedPrefs);
-      const finalItinerary = verifiedItinerary;
-      console.log(
-        `[verify-prices] ${updated_count}/${total_checked} prix corrigés`
-      );
-
       // Auto-save : tous les itinéraires générés sont automatiquement
       // sauvegardés dans "Mes voyages". L'utilisateur peut ensuite les
       // modifier ou les supprimer.
       const title =
         (prefs?.destinations || 'Voyage').slice(0, 80) +
-        ` — ${finalItinerary?.summary?.duration_days || ''}j`;
+        ` — ${itinerary?.summary?.duration_days || ''}j`;
 
       const { data, error: dbError } = await saveItinerary({
         title,
         preferences: prefs,
-        itinerary: finalItinerary,
+        itinerary,
       });
 
       if (dbError) {
