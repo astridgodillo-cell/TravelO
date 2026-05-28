@@ -745,6 +745,7 @@ function DayCard({
     checkout: nextDayDate || day.date,
     adults,
     children: childrenCount,
+    childrenAges,
   });
   const isBookingCta = accomLink?.provider === 'Booking';
 

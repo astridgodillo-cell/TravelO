@@ -52,19 +52,32 @@ function addOneDay(isoDate) {
   return d.toISOString().slice(0, 10);
 }
 
-export function bookingSearch(location, checkin, checkout, adults = 2, children = 0) {
+// childrenAges : tableau d'âges (ex: [8, 5]). Booking exige un paramètre
+// "age" par enfant pour proposer les bonnes chambres familiales et les
+// bons tarifs. On accepte aussi un nombre (rétrocompat) → ages inconnus.
+export function bookingSearch(location, checkin, checkout, adults = 2, childrenAges = []) {
+  const ages = Array.isArray(childrenAges)
+    ? childrenAges.map((a) => Number(a)).filter((a) => Number.isFinite(a) && a >= 0)
+    : [];
+  const childrenCount = Array.isArray(childrenAges)
+    ? ages.length
+    : Number(childrenAges) || 0;
   const safeCheckout =
     checkout && checkout !== checkin ? checkout : addOneDay(checkin);
   const params = new URLSearchParams({
     ss: location || '',
     checkin: checkin || '',
     checkout: safeCheckout,
-    group_adults: String(adults),
-    group_children: String(children),
+    group_adults: String(Math.max(1, Number(adults) || 1)),
+    group_children: String(childrenCount),
     selected_currency: 'EUR',
     lang: 'fr',
     no_rooms: '1',
   });
+  // Un paramètre "age" par enfant (Booking le requiert pour les familles)
+  for (const age of ages) {
+    params.append('age', String(age));
+  }
   if (BOOKING_AFFILIATE_ID) {
     params.set('aid', BOOKING_AFFILIATE_ID);
     params.set('label', BOOKING_LABEL);
@@ -258,7 +271,8 @@ export function bestAccommodationLink(accommodation, ctx = {}) {
         ctx.checkin,
         ctx.checkout,
         ctx.adults,
-        ctx.children
+        // Préfère les âges détaillés ; retombe sur le compte si non fournis
+        ctx.childrenAges != null ? ctx.childrenAges : ctx.children
       ),
     };
   }
