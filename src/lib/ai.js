@@ -689,8 +689,9 @@ function computeBudget(days, summary) {
   }
 
   const grand = trips + accommodation + meals + activities + service;
+  // Défaut 2 adultes (cohérent avec getPax / DEFAULT_ADULTS partout ailleurs).
   const heads =
-    (summary?.travellers?.adults || 1) +
+    (summary?.travellers?.adults || 2) +
     (summary?.travellers?.children_ages?.length || 0);
 
   return {
