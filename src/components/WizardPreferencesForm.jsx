@@ -1847,7 +1847,7 @@ function StepStyle({ values, update, toggle }) {
       <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-600 mb-3">
         Type d'hébergement préféré
       </h3>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2 mb-6">
         {NIGHT_STAY_OPTIONS.map((o) => {
           const active = values.nightStayPreferences.includes(o);
           return (
@@ -1865,6 +1865,77 @@ function StepStyle({ values, update, toggle }) {
             </button>
           );
         })}
+      </div>
+
+      {/* Critères de recherche Booking — appliqués à TOUTES les nuits */}
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-base">🛎️</span>
+          <h3 className="text-sm font-semibold text-slate-900">
+            Tes critères de réservation
+          </h3>
+        </div>
+        <p className="text-xs text-slate-500 mb-4">
+          On les utilisera pour pré-remplir ta recherche Booking, à chaque
+          nuit du voyage (tu ne les ressaisis qu'une fois).
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="label">Nombre de chambres</label>
+            <input
+              type="number"
+              min="1"
+              max="9"
+              className="input"
+              value={values.rooms || 1}
+              onChange={(e) =>
+                update('rooms', Math.max(1, Number(e.target.value) || 1))
+              }
+            />
+          </div>
+          <div>
+            <label className="label">Gamme</label>
+            <select
+              className="input"
+              value={values.hotelStars || ''}
+              onChange={(e) => update('hotelStars', e.target.value)}
+            >
+              <option value="">Peu importe</option>
+              <option value="3">3 étoiles et +</option>
+              <option value="4">4 étoiles et +</option>
+              <option value="5">5 étoiles</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <label className="label">Options souhaitées</label>
+          <div className="flex flex-wrap gap-2">
+            {[
+              { id: 'breakfast', label: '🥐 Petit-déj inclus' },
+              { id: 'free_cancellation', label: '✓ Annulation gratuite' },
+              { id: 'parking', label: '🅿️ Parking' },
+              { id: 'pool', label: '🏊 Piscine' },
+            ].map((opt) => {
+              const active = (values.hotelAmenities || []).includes(opt.id);
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => toggle('hotelAmenities', opt.id)}
+                  className={`rounded-full px-3 py-1.5 text-sm border transition-all ${
+                    active
+                      ? 'bg-brand-600 text-white border-brand-600'
+                      : 'bg-white border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </div>
     </div>
   );

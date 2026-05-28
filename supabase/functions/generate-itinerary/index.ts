@@ -588,7 +588,7 @@ const FULL_DAY_SCHEMA = `{
   "evening":   { "title": string, "description": string },
   "accommodation": {
     "name": string, "type": string, "price_eur": number,
-    "services": string[], "note": string, "coordinates_hint": string
+    "area": string, "services": string[], "note": string, "coordinates_hint": string
   },
   "trips": [ {
     "from": string, "to": string, "distance_km": number, "duration": string,
@@ -673,6 +673,13 @@ Contraintes :
   ❌ "Éveil des sens au marché de Toyosu" (ne couvre que le matin, oublie Todoroki et Shibuya)
   ❌ "Belle journée à Kyoto" (creux, pas de lieux)
 - emoji météo : ☀️ 🌤️ ⛅ 🌧️ ❄️ 🌫️ 🌩️
+- accommodation.area = QUARTIER / ZONE conseillé(e) pour dormir cette nuit-là,
+  choisi pour être PROCHE des excursions et activités du jour (ex : "Stare Miasto
+  (vieille ville)", "Quartier de Gràcia", "Près de la gare centrale"). C'est ce
+  qui sera utilisé pour la recherche d'hôtels — donne une zone PRÉCISE et réelle,
+  pas juste le nom de la ville. accommodation.name peut rester générique (ex :
+  "Hôtel 3-4★ confortable") car on n'affiche pas de nom inventé : on guide vers
+  Booking sur la bonne zone.
 - day_total_eur = trips + accommodation + activities + meals + service_stops du jour.
 - grand_total_eur = somme des day_total_eur.
 - per_person_eur = grand_total / (adults + enfants).

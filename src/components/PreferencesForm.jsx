@@ -47,6 +47,11 @@ export const DEFAULTS = {
   // ont le permis ; on le décoche seulement si l'utilisateur le précise.
   hasDrivingLicense: true,
   nightStayPreferences: ['Hôtel'],
+  // Critères d'hébergement → pré-remplissent la recherche Booking pour
+  // TOUTES les nuits de l'itinéraire (saisis une seule fois).
+  rooms: 1,                 // nombre de chambres
+  hotelStars: '',           // '' (peu importe) | '3' | '4' | '5'
+  hotelAmenities: [],       // ['breakfast','free_cancellation','parking','pool']
   cooking: 'restaurants',
   needsServicePoints: false,
   okWithFerry: true,

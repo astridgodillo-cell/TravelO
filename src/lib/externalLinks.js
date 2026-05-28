@@ -55,7 +55,21 @@ function addOneDay(isoDate) {
 // childrenAges : tableau d'âges (ex: [8, 5]). Booking exige un paramètre
 // "age" par enfant pour proposer les bonnes chambres familiales et les
 // bons tarifs. On accepte aussi un nombre (rétrocompat) → ages inconnus.
-export function bookingSearch(location, checkin, checkout, adults = 2, childrenAges = []) {
+//
+// options (tous optionnels) :
+//   rooms     : nombre de chambres (no_rooms)
+//   stars     : '3' | '4' | '5'  → filtre classe (nflt class)
+//   priceMin  : prix mini /nuit en EUR (filtre nflt price)
+//   priceMax  : prix maxi /nuit en EUR
+//   amenities : ['breakfast','free_cancellation','parking','pool'] → filtres nflt
+export function bookingSearch(
+  location,
+  checkin,
+  checkout,
+  adults = 2,
+  childrenAges = [],
+  options = {}
+) {
   const ages = Array.isArray(childrenAges)
     ? childrenAges.map((a) => Number(a)).filter((a) => Number.isFinite(a) && a >= 0)
     : [];
@@ -72,11 +86,31 @@ export function bookingSearch(location, checkin, checkout, adults = 2, childrenA
     group_children: String(childrenCount),
     selected_currency: 'EUR',
     lang: 'fr',
-    no_rooms: '1',
+    no_rooms: String(Math.max(1, Number(options.rooms) || 1)),
   });
   // Un paramètre "age" par enfant (Booking le requiert pour les familles)
   for (const age of ages) {
     params.append('age', String(age));
+  }
+  // Filtres Booking (paramètre nflt, segments séparés par ';').
+  // Format : nflt=price=EUR-min-max-1;class=4;mealplan=1;fc=2;...
+  const nflt = [];
+  const pMin = Math.max(0, Math.round(Number(options.priceMin) || 0));
+  const pMax = Math.max(0, Math.round(Number(options.priceMax) || 0));
+  if (pMax > 0 && pMax >= pMin) {
+    nflt.push(`price=EUR-${pMin}-${pMax}-1`);
+  }
+  if (options.stars && ['3', '4', '5'].includes(String(options.stars))) {
+    nflt.push(`class=${options.stars}`);
+  }
+  const amenities = Array.isArray(options.amenities) ? options.amenities : [];
+  // IDs de facilités Booking les plus stables :
+  if (amenities.includes('breakfast')) nflt.push('mealplan=1');
+  if (amenities.includes('free_cancellation')) nflt.push('fc=2');
+  if (amenities.includes('parking')) nflt.push('hotelfacility=2');
+  if (amenities.includes('pool')) nflt.push('hotelfacility=433');
+  if (nflt.length > 0) {
+    params.set('nflt', nflt.join(';'));
   }
   if (BOOKING_AFFILIATE_ID) {
     params.set('aid', BOOKING_AFFILIATE_ID);
@@ -246,16 +280,30 @@ export function bestAccommodationLink(accommodation, ctx = {}) {
     type.includes(k)
   );
   const provider = matchKey ? KNOWN_ACCOMMODATION_TYPES[matchKey] : 'google';
-  // Le nom complet de l'hôtel + ville = atterrissage direct sur la fiche
-  // hôtel ~80% du temps (Booking matche par nom). Sans le nom, on retombe
-  // sur une liste générique de la ville, ce qui fait perdre la conversion.
   const cityName = cleanLocation(ctx.location) || '';
-  const bookingQuery = accommodation.name
+  // Zone conseillée (quartier proche des excursions) — sert de recherche
+  // Booking pour afficher une LISTE d'hôtels réels dispos dans la bonne zone,
+  // au lieu de chercher un hôtel inventé par son nom. On ne cherche par nom
+  // QUE si l'utilisateur a confirmé un vrai hôtel (réservation importée).
+  const area = (accommodation.area || '').trim();
+  const userConfirmed = !!accommodation._user_edited && !!accommodation.name;
+  const zoneQuery =
+    [area, cityName].filter(Boolean).join(', ') || cityName;
+  const bookingQuery = userConfirmed
     ? `${accommodation.name}${cityName ? ', ' + cityName : ''}`
-    : cityName;
-  const fallbackText = accommodation.name
+    : zoneQuery;
+  const fallbackText = userConfirmed
     ? `${accommodation.name} ${accommodation.coordinates_hint || cityName}`.trim()
-    : cityName;
+    : zoneQuery;
+
+  // Critères Booking issus des préférences utilisateur (transmis via ctx).
+  const bookingOptions = {
+    rooms: ctx.rooms,
+    stars: ctx.stars,
+    priceMin: ctx.priceMin,
+    priceMax: ctx.priceMax,
+    amenities: ctx.amenities,
+  };
 
   if (provider === 'park4night') {
     return {
@@ -272,7 +320,8 @@ export function bestAccommodationLink(accommodation, ctx = {}) {
         ctx.checkout,
         ctx.adults,
         // Préfère les âges détaillés ; retombe sur le compte si non fournis
-        ctx.childrenAges != null ? ctx.childrenAges : ctx.children
+        ctx.childrenAges != null ? ctx.childrenAges : ctx.children,
+        bookingOptions
       ),
     };
   }

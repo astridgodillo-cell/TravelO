@@ -87,6 +87,18 @@ export default function NewItineraryPage() {
         : prefs;
       const itinerary = await generateItinerary(enrichedPrefs, (p) => setProgress(p));
 
+      // Mémorise les critères d'hébergement dans le résumé pour que la page
+      // d'itinéraire pré-remplisse Booking (chambres, gamme, options) sur
+      // TOUTES les nuits.
+      itinerary.summary = itinerary.summary || {};
+      itinerary.summary.accommodation_prefs = {
+        rooms: Number(prefs.rooms) || 1,
+        stars: prefs.hotelStars || '',
+        amenities: Array.isArray(prefs.hotelAmenities)
+          ? prefs.hotelAmenities
+          : [],
+      };
+
       // Auto-save : tous les itinéraires générés sont automatiquement
       // sauvegardés dans "Mes voyages". L'utilisateur peut ensuite les
       // modifier ou les supprimer.

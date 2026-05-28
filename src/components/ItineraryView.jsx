@@ -168,6 +168,13 @@ export default function ItineraryView({
   const adults = getAdults(summary);
   const childrenAges = getChildrenAges(summary);
   const children = childrenAges.length;
+  // Critères d'hébergement saisis dans le wizard → pré-remplissent Booking.
+  // Fallback pour les anciens itinéraires sans ces critères.
+  const accommodationPrefs = summary?.accommodation_prefs || {
+    rooms: 1,
+    stars: '',
+    amenities: [],
+  };
   const isVanTrip = VAN_TRIP_TYPES.has(summary?.trip_type);
   const aiCostEur = costEur(metadata?.total_cost_usd);
 
@@ -341,6 +348,7 @@ export default function ItineraryView({
             adults={adults}
             childrenCount={children}
             childrenAges={childrenAges}
+            accommodationPrefs={accommodationPrefs}
             isVanTrip={isVanTrip}
             onOpenRegen={(index, day) => setRegenTarget({ index, day })}
             onOpenModify={(index, day) => setModifyTarget({ index, day })}
@@ -425,6 +433,7 @@ function Planning({
   adults,
   childrenCount,
   childrenAges,
+  accommodationPrefs,
   isVanTrip,
   onOpenRegen,
   onOpenModify,
@@ -491,6 +500,7 @@ function Planning({
           adults={adults}
           childrenCount={childrenCount}
           childrenAges={childrenAges}
+          accommodationPrefs={accommodationPrefs}
           isVanTrip={isVanTrip}
           layout={layout}
           onOpenRegen={onOpenRegen ? () => onOpenRegen(i, d) : null}
@@ -686,6 +696,7 @@ function DayCard({
   adults,
   childrenCount,
   childrenAges,
+  accommodationPrefs,
   isVanTrip,
   layout = 'cards',
   onOpenRegen,
@@ -739,6 +750,9 @@ function DayCard({
   const nextDayDate = Array.isArray(allDays)
     ? allDays[dayIndex + 1]?.date
     : null;
+  // Fourchette de prix Booking autour de l'estimation de la nuit (±) pour
+  // ne pas sur-filtrer : -35 % / +40 %.
+  const accomPrice = Number(day.accommodation?.price_eur) || 0;
   const accomLink = bestAccommodationLink(day.accommodation, {
     location: day.location,
     checkin: day.date,
@@ -746,6 +760,11 @@ function DayCard({
     adults,
     children: childrenCount,
     childrenAges,
+    rooms: accommodationPrefs?.rooms,
+    stars: accommodationPrefs?.stars,
+    amenities: accommodationPrefs?.amenities,
+    priceMin: accomPrice > 0 ? Math.round(accomPrice * 0.65) : undefined,
+    priceMax: accomPrice > 0 ? Math.round(accomPrice * 1.4) : undefined,
   });
   const isBookingCta = accomLink?.provider === 'Booking';
 
@@ -1016,14 +1035,35 @@ function LodgingCard({
           />
         </button>
       )}
-      <div className="font-medium text-slate-900">
-        {day.accommodation.name}
-        <HotelRating
-          hotelName={day.accommodation.name}
-          location={day.location}
-        />
-      </div>
-      <div className="text-slate-600">
+      {userEdited && day.accommodation.name ? (
+        // L'utilisateur a confirmé un vrai hôtel (réservation importée) →
+        // on affiche son nom et sa note.
+        <div className="font-medium text-slate-900">
+          {day.accommodation.name}
+          <HotelRating
+            hotelName={day.accommodation.name}
+            location={day.location}
+          />
+        </div>
+      ) : (
+        // Sinon : pas de nom inventé, on affiche la ZONE conseillée pour
+        // dormir (proche des excursions du jour).
+        <div className="font-medium text-slate-900 flex items-start gap-1.5">
+          <span>🏘️</span>
+          <span>
+            Zone conseillée :{' '}
+            <span className="text-brand-700">
+              {day.accommodation.area ||
+                day.accommodation.coordinates_hint ||
+                day.location}
+            </span>
+            <span className="block text-xs font-normal text-slate-500 mt-0.5">
+              proche de tes visites du jour — choisis ton hôtel sur Booking
+            </span>
+          </span>
+        </div>
+      )}
+      <div className="text-slate-600 mt-1">
         {day.accommodation.type}
         {' — '}
         {canEdit ? (
