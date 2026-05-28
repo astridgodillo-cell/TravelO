@@ -2007,14 +2007,23 @@ function TripRow({
                 min={0}
                 step={10}
                 suffix=" €"
+                prefix={isAiEstimatedFlight ? '≈ ' : ''}
                 label="Prix total famille — cliquez pour saisir le vrai prix"
-                format={(v) => (v === 0 ? 'Gratuit' : v.toLocaleString('fr-FR'))}
+                format={(v) =>
+                  v === 0
+                    ? 'Gratuit'
+                    : isAiEstimatedFlight
+                      ? formatPriceRange(v, false)
+                      : v.toLocaleString('fr-FR')
+                }
                 onSave={(newPrice) =>
                   onUpdateItinerary((it) =>
                     updateTripPrice(it, dayIndex, tripIndex, newPrice)
                   )
                 }
               />
+            ) : isAiEstimatedFlight ? (
+              `≈ ${formatPriceRange(trip.estimated_cost_eur, false)} €`
             ) : (
               formatEurEstimate(trip.estimated_cost_eur)
             )}
@@ -2107,9 +2116,10 @@ function TripRow({
       )}
       {isAiEstimatedFlight && (
         <div className="mt-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 print:hidden">
-          ⚠️ <strong>Prix de vol estimé par IA</strong> — souvent éloigné du
-          vrai prix. Cliquez sur le prix à droite pour saisir le vrai tarif,
-          ou utilisez le bouton {providerLabel} ci-dessous pour comparer.
+          ⚠️ <strong>Vol probable estimé par l'IA</strong> — fourchette
+          indicative, pas un vrai vol réservé. Cherche sur Skyscanner
+          ci-dessous, puis saisis le vrai prix (clic à droite) ou importe ta
+          capture pour le confirmer.
         </div>
       )}
       {hasBreakdown && (

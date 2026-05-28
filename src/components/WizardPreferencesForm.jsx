@@ -982,7 +982,7 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
           ✏️ J'ai déjà mes billets
         </ModeTab>
         <ModeTab active={mode === 'later'} onClick={() => setMode('later')}>
-          ⏳ Plus tard
+          🤖 Laisse l'IA proposer
         </ModeTab>
       </div>
 
@@ -1242,19 +1242,22 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
         />
       )}
 
-      {/* Mode LATER : skip */}
+      {/* Mode LATER : l'IA propose un vol probable */}
       {mode === 'later' && (
-        <div className="rounded-xl bg-amber-50 border border-amber-200 p-5">
-          <h3 className="font-semibold text-amber-900">
-            ⏳ On verra plus tard pour les vols
+        <div className="rounded-xl bg-indigo-50 border border-indigo-200 p-5">
+          <h3 className="font-semibold text-indigo-900">
+            🤖 L'IA propose un vol probable
           </h3>
-          <p className="text-sm text-amber-800 mt-2">
-            Pas de souci. L'itinéraire sera généré avec :
+          <p className="text-sm text-indigo-800 mt-2">
+            Tu n'as pas encore réservé ? Pas de souci. L'IA va proposer un{' '}
+            <strong>vol plausible</strong> (compagnie, horaires types) avec une{' '}
+            <strong>fourchette de prix estimée</strong> pour cadrer ton budget.
+            L'itinéraire sera construit avec :
           </p>
-          <ul className="mt-3 space-y-1.5 text-sm text-amber-800 list-disc list-inside">
+          <ul className="mt-3 space-y-1.5 text-sm text-indigo-800 list-disc list-inside">
             <li>
               Une <strong>journée d'arrivée légère</strong> (check-in, balade,
-              dîner — valable quelle que soit l'heure du vol)
+              dîner — valable quelle que soit l'heure réelle du vol)
             </li>
             <li>
               Un <strong>dernier jour court et flexible</strong> (check-out,
@@ -1264,9 +1267,10 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
               Les <strong>jours du milieu détaillés</strong> comme d'habitude
             </li>
           </ul>
-          <p className="text-xs text-amber-700 mt-3">
-            💡 Tu pourras ajouter ta capture de vol plus tard depuis la page du
-            voyage pour recaler J1 et le dernier jour.
+          <p className="text-xs text-indigo-700 mt-3">
+            💡 Quand tu auras réservé pour de vrai, tu pourras chercher tes vols
+            sur Skyscanner et importer ta capture pour remplacer l'estimation
+            par les vraies heures et le vrai prix.
           </p>
         </div>
       )}
