@@ -1239,9 +1239,9 @@ function LodgingCard({
               )
             }
             className="inline-flex items-center gap-1.5 rounded-full bg-indigo-100 text-indigo-800 hover:bg-indigo-200 transition-colors px-3 py-1.5 text-xs font-medium"
-            title="Importer un hôtel via une capture d'écran (Booking, Airbnb…)"
+            title="Renseigner l'hôtel réservé via une capture d'écran ou un voucher PDF (Booking, Airbnb…)"
           >
-            📸 Ajouter / remplacer via une capture Booking
+            📸 J'ai réservé — capture ou voucher PDF
           </button>
         </div>
       )}

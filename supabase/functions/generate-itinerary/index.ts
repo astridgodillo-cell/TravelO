@@ -3577,12 +3577,17 @@ Si tu ne reconnais PAS un vol exploitable (capture floue, écran d'erreur, page 
       const mime = typeof mime_type === 'string' ? mime_type : 'image/png';
       const ctxLocation = context?.day_location || '(lieu non précisé)';
       const ctxCurrent = context?.current_hotel_name || '(non spécifié)';
+      const isVoucher = context?.is_voucher === true;
 
-      const prompt = `Tu es un extracteur d'informations hôtel à partir d'une capture d'écran d'un site de réservation (Booking, Hotels.com, Airbnb, etc.).
+      const prompt = `Tu es un extracteur d'informations hôtel à partir d'${isVoucher ? 'un voucher / une confirmation de réservation (PDF converti en image)' : "une capture d'écran d'un site de réservation (Booking, Hotels.com, Airbnb, etc.)"}.
 
 CONTEXTE :
 - Le voyageur cherche un hébergement à ${ctxLocation}.
-- L'hôtel actuellement proposé dans l'itinéraire est : "${ctxCurrent}" (sera remplacé par celui que tu extrais).
+- L'hôtel actuellement proposé dans l'itinéraire est : "${ctxCurrent}" (sera remplacé par celui que tu extrais).${
+        isVoucher
+          ? `\n- Ce document est une CONFIRMATION DÉJÀ RÉSERVÉE : le prix indiqué est le prix RÉEL PAYÉ. Si c'est un total pour plusieurs nuits, repère les dates d'arrivée et de départ pour calculer le nombre de nuits et diviser → price_per_night_eur. Indique le total et le nb de nuits dans extraction_note.`
+          : ''
+      }
 
 INSTRUCTIONS — extrais avec PRÉCISION depuis l'image :
 - "name" : nom EXACT de l'hôtel tel qu'écrit (sans abréviation).

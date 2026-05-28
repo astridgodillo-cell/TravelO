@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { extractHotelFromImage } from '../lib/ai';
+import { pdfFirstPageToImageDataUrl } from '../lib/pdfToImage';
 
 /**
  * Modale d'import d'un hôtel depuis une capture d'écran (Booking, Hotels.com,
@@ -108,16 +109,69 @@ export default function ImportHotelFromScreenshotModal({
   async function handleFile(file) {
     setError(null);
     if (!file) return;
-    if (!/^image\//.test(file.type)) {
-      setError('Le fichier doit être une image (PNG, JPG, WebP).');
+    const isPdf =
+      file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
+    if (!isPdf && !/^image\//.test(file.type)) {
+      setError('Le fichier doit être une image (PNG, JPG, WebP) ou un PDF.');
       return;
     }
-    if (file.size > MAX_IMAGE_BYTES) {
+    // Les PDF (vouchers) peuvent dépasser 8 Mo ; on tolère jusqu'à 20 Mo
+    // car on les convertit ensuite en image compressée.
+    const maxBytes = isPdf ? 20 * 1024 * 1024 : MAX_IMAGE_BYTES;
+    if (file.size > maxBytes) {
       setError(
-        `L'image dépasse 8 Mo. Compressez-la ou prenez une capture plus petite.`
+        isPdf
+          ? `Le PDF dépasse 20 Mo. Trop lourd à traiter.`
+          : `L'image dépasse 8 Mo. Compressez-la ou prenez une capture plus petite.`
       );
       return;
     }
+
+    // PDF : on convertit la 1re page en image, puis flux identique aux images
+    if (isPdf) {
+      setPhase('extracting');
+      try {
+        const pageImageUrl = await pdfFirstPageToImageDataUrl(file);
+        const compressedUrl = await compressImageDataUrl(pageImageUrl);
+        setDataUrl(compressedUrl);
+        const hotel = await extractHotelFromImage(compressedUrl, {
+          day_location: context?.dayLocation,
+          current_hotel_name: context?.currentHotelName,
+          is_voucher: true,
+        });
+        if (!hotel?.name) {
+          setError(
+            hotel?.extraction_note ||
+              "L'IA n'a pas pu lire ce voucher PDF. Vérifie qu'il contient bien les infos de la réservation (nom, dates, prix)."
+          );
+          setPhase('upload');
+          return;
+        }
+        setExtracted({
+          name: hotel.name || '',
+          type: hotel.type || 'Hôtel',
+          price_eur: Number(hotel.price_per_night_eur) || 0,
+          currency_detected: hotel.currency_detected || 'EUR',
+          rating: hotel.rating || null,
+          rating_count: hotel.rating_count || null,
+          services: Array.isArray(hotel.services) ? hotel.services : [],
+          coordinates_hint: hotel.address_hint || '',
+          booking_url: hotel.booking_url || null,
+          extraction_note: hotel.extraction_note || '',
+          user_photo: compressedUrl,
+        });
+        setPhase('preview');
+      } catch (e) {
+        console.error('[extract-hotel-pdf] failed', e);
+        setError(
+          e?.message ||
+            "Lecture du PDF échouée. Réessaie ou fais une capture d'écran à la place."
+        );
+        setPhase('upload');
+      }
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = async () => {
       const rawUrl = reader.result;
@@ -206,10 +260,10 @@ export default function ImportHotelFromScreenshotModal({
         <header className="px-5 py-4 border-b border-slate-200 flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="text-[10px] uppercase tracking-widest text-indigo-600 font-bold">
-              Remplacer l'hôtel par une capture
+              Renseigner l'hôtel réservé
             </div>
             <h2 className="text-lg sm:text-xl font-bold text-slate-900 mt-0.5">
-              📸 Import depuis Booking
+              📸 Capture ou voucher PDF
             </h2>
             {context?.currentHotelName && (
               <p className="text-xs text-slate-500 mt-1 truncate">
@@ -238,7 +292,7 @@ export default function ImportHotelFromScreenshotModal({
             >
               <div className="text-4xl mb-2">📸</div>
               <p className="text-sm font-medium text-slate-800">
-                Glisse ta capture, ou colle-la avec{' '}
+                Glisse ta capture ou ton voucher, ou colle une capture avec{' '}
                 <kbd className="rounded border border-slate-300 bg-white px-1.5 py-0.5 font-mono text-[11px] text-slate-700">
                   Ctrl
                 </kbd>
@@ -248,12 +302,13 @@ export default function ImportHotelFromScreenshotModal({
                 </kbd>
               </p>
               <p className="text-xs text-slate-500 mt-1">
-                ou clique pour choisir un fichier (PNG, JPG, WebP — max 8 Mo)
+                ou clique pour choisir un fichier — <strong>capture</strong> (PNG,
+                JPG, WebP) ou <strong>voucher PDF</strong> de ta réservation
               </p>
               <input
                 ref={fileRef}
                 type="file"
-                accept="image/*"
+                accept="image/*,application/pdf"
                 className="hidden"
                 onChange={(e) => handleFile(e.target.files?.[0])}
               />
