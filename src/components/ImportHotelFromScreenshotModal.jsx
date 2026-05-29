@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { extractHotelFromImage } from '../lib/ai';
 import { pdfFirstPageToImageDataUrl } from '../lib/pdfToImage';
+import ExtractionLoader from './ExtractionLoader';
 
 /**
  * Modale d'import d'un hôtel depuis une capture d'écran (Booking, Hotels.com,
@@ -356,22 +357,12 @@ export default function ImportHotelFromScreenshotModal({
           )}
 
           {phase === 'extracting' && (
-            <div className="py-8 text-center">
-              {dataUrl && (
-                <img
-                  src={dataUrl}
-                  alt="Capture en cours d'analyse"
-                  className="mx-auto max-h-48 rounded-lg shadow-sm mb-4 object-contain"
-                />
-              )}
-              <div className="inline-flex items-center gap-2 text-sm text-slate-600">
-                <span className="inline-block h-2 w-2 rounded-full bg-indigo-500 animate-pulse" />
-                Lecture de la capture par l'IA…
-              </div>
-              <p className="text-xs text-slate-400 mt-2">
-                On extrait le nom, le prix par nuit, la note et les équipements.
-              </p>
-            </div>
+            <ExtractionLoader
+              accent="indigo"
+              imageUrl={dataUrl}
+              title="L'IA lit ta capture d'hôtel…"
+              subtitle="Nom, prix par nuit, nombre de nuits, note et équipements."
+            />
           )}
 
           {phase === 'preview' && extracted && (

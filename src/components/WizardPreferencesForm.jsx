@@ -28,6 +28,7 @@ import {
 import { findGatewaysForCountry, formatGateway } from '../lib/airportCities';
 import { extractFlightFromImage } from '../lib/ai';
 import PlaceDiscovery from './PlaceDiscovery';
+import ExtractionLoader from './ExtractionLoader';
 
 // --- Helpers dates ---
 function toIsoDate(d) {
@@ -1267,14 +1268,12 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
               </p>
 
               {uploadPhase === 'extracting' ? (
-                <div className="py-6 text-center bg-slate-50 rounded-xl">
-                  <div className="inline-flex items-center gap-2 text-sm text-slate-700">
-                    <span className="inline-block h-2 w-2 rounded-full bg-sky-500 animate-pulse" />
-                    Lecture de ta capture par l'IA…
-                  </div>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Compagnie, horaires, aéroports, escales, prix…
-                  </p>
+                <div className="bg-slate-50 rounded-xl">
+                  <ExtractionLoader
+                    accent="sky"
+                    title="L'IA lit ta capture de vol…"
+                    subtitle="Compagnie, horaires, aéroports, escales, prix…"
+                  />
                 </div>
               ) : (
                 <div
@@ -1373,14 +1372,12 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
             </p>
 
             {uploadPhase === 'extracting' ? (
-              <div className="py-6 text-center bg-slate-50 rounded-xl">
-                <div className="inline-flex items-center gap-2 text-sm text-slate-700">
-                  <span className="inline-block h-2 w-2 rounded-full bg-sky-500 animate-pulse" />
-                  Lecture de ta capture par l'IA…
-                </div>
-                <p className="text-xs text-slate-500 mt-1">
-                  Compagnie, horaires, aéroports, escales, prix…
-                </p>
+              <div className="bg-slate-50 rounded-xl">
+                <ExtractionLoader
+                  accent="sky"
+                  title="L'IA lit ta capture de vol…"
+                  subtitle="Compagnie, horaires, aéroports, escales, prix…"
+                />
               </div>
             ) : (
               <div
@@ -1600,11 +1597,12 @@ function ConfirmedFlightCard({
             : 'Si tu as plusieurs vols réservés séparément, ajoute leur capture une par une.'}
         </p>
         {uploadPhase === 'extracting' ? (
-          <div className="py-4 text-center bg-white rounded-lg border border-slate-200">
-            <div className="inline-flex items-center gap-2 text-sm text-slate-700">
-              <span className="inline-block h-2 w-2 rounded-full bg-sky-500 animate-pulse" />
-              Lecture de ta capture par l'IA…
-            </div>
+          <div className="bg-white rounded-lg border border-slate-200">
+            <ExtractionLoader
+              accent="sky"
+              title="L'IA lit ta capture de vol…"
+              subtitle="Compagnie, horaires, aéroports, escales, prix…"
+            />
           </div>
         ) : (
           <div
