@@ -50,6 +50,31 @@ export function buildSkyscannerUrl({
   return `https://www.skyscanner.fr${path}?${params.toString()}`;
 }
 
+// Skyscanner — page "route" SANS dates fixes : Skyscanner affiche alors un
+// CALENDRIER des prix par jour (idéal pour trouver les dates les moins chères).
+// Origine/destination/voyageurs sont pré-remplis ; l'utilisateur explore les
+// dates. Codes IATA en minuscules.
+export function buildSkyscannerExploreUrl({
+  originIata,
+  destIata,
+  adults,
+  childrenAges,
+}) {
+  const ori = String(originIata || '').toLowerCase();
+  const dst = String(destIata || '').toLowerCase();
+  if (!ori || !dst) return null;
+  const a = Math.max(1, Number(adults) || 1);
+  const ages = Array.isArray(childrenAges)
+    ? childrenAges.filter((x) => Number.isFinite(Number(x)))
+    : [];
+  const params = new URLSearchParams();
+  params.set('adultsv2', String(a));
+  params.set('childrenv2', ages.length > 0 ? ages.map(String).join(',') : '');
+  params.set('cabinclass', 'economy');
+  params.set('rtn', '1');
+  return `https://www.skyscanner.fr/transport/vols/${ori}/${dst}/?${params.toString()}`;
+}
+
 // Skyscanner multi-villes (open-jaw) — IMPORTANT : Skyscanner n'expose pas
 // d'URL deep-link fiable pour la recherche multi-villes (testé : la page
 // renvoie "Cette page n'existe pas"). On retourne null pour signaler aux

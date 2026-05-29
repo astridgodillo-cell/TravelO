@@ -23,6 +23,7 @@ import {
   FLIGHT_SEARCH_PROVIDERS,
   getProvider,
   resolveIata,
+  buildSkyscannerExploreUrl,
 } from '../lib/flightSearchLinks';
 import { findGatewaysForCountry, formatGateway } from '../lib/airportCities';
 import { extractFlightFromImage } from '../lib/ai';
@@ -373,6 +374,7 @@ function StepDates({ values, update }) {
     from: fromIsoDate(values.startDate),
     to: fromIsoDate(values.endDate),
   };
+  const [flightCheck, setFlightCheck] = useState('idle'); // 'idle' | 'loading' | 'error'
 
   function handleSelect(range) {
     // range peut être undefined (reset) ou {from, to?}
@@ -384,6 +386,48 @@ function StepDates({ values, update }) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
+  const canCheckFlights = !!values.departureLocation && !!values.destinations;
+
+  // Ouvre Skyscanner sur la route choisie SANS dates → calendrier des prix par
+  // jour (pour repérer les dates les moins chères). Origine/destination/
+  // voyageurs sont pré-remplis (saisis aux étapes précédentes).
+  async function checkCheapestFlights() {
+    if (!canCheckFlights || flightCheck === 'loading') return;
+    setFlightCheck('loading');
+    try {
+      const childrenAges = Array.isArray(values.childrenAges)
+        ? values.childrenAges.filter((a) => Number(a) >= 2)
+        : [];
+      const [origin, dest] = await Promise.all([
+        resolveIata(values.departureLocation),
+        resolveIata(values.destinations),
+      ]);
+      let url = null;
+      if (origin?.code && !origin.country && dest?.code && !dest.country) {
+        url = buildSkyscannerExploreUrl({
+          originIata: origin.code,
+          destIata: dest.code,
+          adults: values.adults,
+          childrenAges,
+        });
+      }
+      // Repli : si on n'a pas pu résoudre les aéroports, on ouvre Google Flights.
+      window.open(
+        url || 'https://www.google.com/travel/flights?hl=fr&curr=EUR&gl=FR',
+        '_blank',
+        'noopener'
+      );
+      setFlightCheck('idle');
+    } catch {
+      window.open(
+        'https://www.google.com/travel/flights?hl=fr&curr=EUR&gl=FR',
+        '_blank',
+        'noopener'
+      );
+      setFlightCheck('idle');
+    }
+  }
+
   return (
     <div>
       <StepHeader
@@ -391,6 +435,33 @@ function StepDates({ values, update }) {
         title="Quand veux-tu partir ?"
         subtitle="Clique sur ta date de départ, puis sur ta date de retour. Les jours entre les deux seront sélectionnés."
       />
+
+      {canCheckFlights && (
+        <div className="mb-5 rounded-2xl border-2 border-sky-200 bg-sky-50 p-4 text-center">
+          <p className="text-sm text-slate-700 mb-2">
+            Pas encore décidé des dates ? Regarde les jours les moins chers pour{' '}
+            <strong>
+              {values.departureLocation} → {values.destinations}
+            </strong>
+            .
+          </p>
+          <button
+            type="button"
+            onClick={checkCheapestFlights}
+            disabled={flightCheck === 'loading'}
+            className="inline-flex items-center gap-2 rounded-xl bg-sky-600 hover:bg-sky-700 disabled:opacity-60 text-white px-5 py-2.5 text-sm font-semibold shadow-pop transition-colors"
+          >
+            {flightCheck === 'loading'
+              ? 'Ouverture…'
+              : '🔎 Trouver les dates les moins chères'}
+          </button>
+          <p className="text-[11px] text-slate-500 mt-2">
+            Ça ouvre Skyscanner (calendrier des prix) dans un nouvel onglet —
+            ton départ, ta destination et le nombre de voyageurs sont déjà
+            remplis. Reviens ensuite choisir tes dates ici.
+          </p>
+        </div>
+      )}
 
       <div className="flex justify-center">
         <div className="rdp-wizard rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -2359,17 +2430,12 @@ export default function WizardPreferencesForm({
   }
 
   // Construit dynamiquement les étapes selon le type de voyage.
-  // Ordre : Quand → Où → Qui → Comment → [Vol] → [Véhicule] → Intérêts →
+  // Ordre : Où → Qui → Quand → Comment → [Vol] → [Véhicule] → Intérêts →
   //         Budget → Personnalisation → Récap
+  // (Les dates viennent APRÈS destination + voyageurs pour que le bouton
+  //  "trouver les dates les moins chères" soit pré-rempli.)
   const steps = useMemo(() => {
     const base = [
-      {
-        id: 'dates',
-        canNext: () =>
-          Boolean(values.startDate && values.endDate) &&
-          computeTotalDays(values.startDate, values.endDate) > 0,
-        render: () => <StepDates values={values} update={update} />,
-      },
       {
         id: 'destination',
         canNext: () => Boolean(values.destinations && values.departureLocation),
@@ -2379,6 +2445,13 @@ export default function WizardPreferencesForm({
         id: 'travelers',
         canNext: () => Number(values.adults) >= 1,
         render: () => <StepTravelers values={values} update={update} />,
+      },
+      {
+        id: 'dates',
+        canNext: () =>
+          Boolean(values.startDate && values.endDate) &&
+          computeTotalDays(values.startDate, values.endDate) > 0,
+        render: () => <StepDates values={values} update={update} />,
       },
       {
         id: 'tripType',
