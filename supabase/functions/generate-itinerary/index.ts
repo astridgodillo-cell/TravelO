@@ -595,7 +595,7 @@ const FULL_DAY_SCHEMA = `{
   "evening":   { "title": string, "description": string },
   "accommodation": {
     "name": string, "type": string, "price_eur": number,
-    "area": string, "services": string[], "note": string, "coordinates_hint": string
+    "area": string, "booking_city": string, "services": string[], "note": string, "coordinates_hint": string
   },
   "trips": [ {
     "from": string, "to": string, "distance_km": number, "duration": string,
@@ -693,8 +693,17 @@ Contraintes :
   • Pas de coordonnées GPS dans ce champ.
   accommodation.name peut rester générique (ex : "Hôtel 3-4★ confortable") car
   on n'affiche pas de nom inventé : on guide vers Booking sur la bonne zone.
-- accommodation.coordinates_hint = même zone au format "Quartier, Ville"
-  (ex : "Ribeira, Porto"), JAMAIS de simples coordonnées GPS.
+- accommodation.booking_city = OBLIGATOIRE. La VILLE (commune) réelle où chercher
+  l'hôtel sur Booking.com, AU FORMAT "Ville, Pays" (ex : "Kalambaka, Grèce",
+  "Porto, Portugal", "Lisbonne, Portugal"). C'est ce qui est envoyé tel quel à
+  Booking : ce DOIT être une vraie commune que Booking reconnaît.
+  ⚠️ JAMAIS un quartier seul ("Ribeira", "Baixa"), JAMAIS une description
+  ("proche de la gare", "accès restaurants"), JAMAIS "centre-ville" ni de
+  coordonnées GPS. Si on dort dans un quartier, mets la VILLE qui le contient
+  (ex : quartier Ribeira → "Porto, Portugal").
+- accommodation.coordinates_hint = brève indication d'emplacement pour l'humain
+  (ex : "Proche de la gare", "Quartier de la Ribeira"). N'est PAS utilisé pour la
+  recherche Booking.
 - day_total_eur = trips + accommodation + activities + meals + service_stops du jour.
 - grand_total_eur = somme des day_total_eur.
 - per_person_eur = grand_total / (adults + enfants).

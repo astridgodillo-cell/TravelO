@@ -28,75 +28,71 @@ export { cleanLocation };
 const GENERIC_ONLY =
   /^(le\s+|la\s+|l'\s*)?(centre[-\s]?ville|centre\s+historique|centro\s+historico|vieux\s+centre|vieille\s+ville|old\s+town|historic\s+cent(?:er|re)|city\s+cent(?:er|re)|downtown|hyper[-\s]?centre)$/i;
 
-// Transforme une "zone conseillée" descriptive (générée par l'IA) en une
-// destination que le moteur de recherche de Booking sait géolocaliser. Booking
-// échoue souvent sur les libellés bavards ou en français et retombe alors sur
-// une mauvaise ville. On le ramène donc au nom de lieu reconnaissable.
-//   "Cascais centre"               → "Cascais"
-//   "Ribeira / Centre historique"  → "Ribeira"
-//   "Stare Miasto (vieille ville)" → "Stare Miasto"
-//   "Ribeira, Porto"               → "Ribeira, Porto" (forme idéale, gardée)
-//   "Centre historique"            → "" (générique seul : inexploitable)
-//   "38.696, -9.421"               → "" (coordonnées : inexploitables en texte)
-function bookingDestination(zone) {
-  let s = String(zone || '').trim();
-  if (!s) return '';
-  // Coordonnées brutes (lat, long) → Booking ne les comprend pas dans "ss".
-  if (/^-?\d{1,3}\.\d+\s*[,;]\s*-?\d{1,3}\.\d+$/.test(s)) return '';
-  // Retire un complément entre parenthèses : "(vieille ville)"
-  s = s.replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
-  // Coupe aux séparateurs de listes ("/", "•", "·", "—", "|") : on garde le
-  // 1er segment, en général le quartier/ville précis ("Ribeira / Centre
-  // historique" → "Ribeira").
-  s = s.split(/\s*[/•·—|]\s*/)[0].trim();
-  // Retire un qualificatif générique de centre-ville en fin de chaîne, qui
-  // embrouille le géocodeur de Booking ("Cascais centre" → "Cascais").
-  s = s
+// Vrai = coordonnées brutes "lat, long" (Booking ne les comprend pas en texte).
+function isCoords(s) {
+  return /^-?\d{1,3}\.\d+\s*[,;]\s*-?\d{1,3}\.\d+$/.test(String(s || '').trim());
+}
+
+// Vrai = phrase descriptive plutôt qu'un nom de lieu. Ces libellés (souvent
+// dans coordinates_hint : "Proche de la gare routière, accès facile aux
+// restaurants.") ne doivent JAMAIS partir vers Booking, qui les géolocalise
+// n'importe où.
+function isDescriptive(s) {
+  const w = String(s || '').trim();
+  if (!w) return true;
+  if (/[.!?]$/.test(w)) return true; // finit par une ponctuation de phrase
+  if ((w.match(/\s+/g) || []).length >= 3) return true; // 4 mots ou plus
+  return /\b(proche|pr[èe]s|acc[èe]s|gare|a[ée]roport|plage|vue|minutes?|[àa]\s*pied|commerces?|restaurants?|transports?|m[ée]tro|navette|quartier)\b/i.test(
+    w
+  );
+}
+
+// Mot générique ISOLÉ (après nettoyage) qui ne désigne aucune commune.
+const BARE_GENERIC =
+  /^(centre|centro|center|downtown|historique|vieux|vieille|old|quartier|ville|zone|secteur)$/i;
+
+// Retire un qualificatif générique de centre-ville en fin de chaîne
+// ("Cascais centre" → "Cascais").
+function stripGenericTail(s) {
+  return String(s || '')
     .replace(
-      /[\s,-]+(centre[-\s]?ville|centre|centro|center|downtown|vieille\s+ville|old\s+town|city\s+cent(?:er|re))\s*$/i,
+      /[\s,-]+(centre[-\s]?ville|centre|centro|center|downtown|vieille\s+ville|old\s+town|city\s+cent(?:er|re)|historique)\s*$/i,
       ''
     )
     .trim();
-  // S'il ne reste qu'un libellé générique → inexploitable seul.
-  if (!s || GENERIC_ONLY.test(s)) return '';
-  return s;
 }
 
-// Extrait la VILLE (commune) d'un libellé. C'est le seul niveau que le moteur
-// de Booking géolocalise de façon FIABLE : un nom de quartier ("Ribeira",
-// "Baixa"…) peut exister dans un autre pays et renvoyer Booking au mauvais
-// endroit (ex. "Ribeira" → Galice, Espagne au lieu de Porto). On cherche donc
-// par ville, et le quartier reste affiché à titre indicatif dans la carte.
-//   "Ribeira, Porto"               → "Porto"
-//   "Baixa, Lisbonne"              → "Lisbonne"
-//   "Cascais centre"               → "Cascais"
-//   "Ribeira / Centre historique"  → "Ribeira" (pas de ville dispo : 1er segment)
-//   "38.696, -9.421"               → "" (coordonnées : inexploitables)
-function cityOf(label) {
-  let s = String(label || '').trim();
-  if (!s) return '';
-  if (/^-?\d{1,3}\.\d+\s*[,;]\s*-?\d{1,3}\.\d+$/.test(s)) return '';
-  s = s.replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
-  // Format "Quartier, Ville" → la ville est la dernière partie après la virgule.
-  if (s.includes(',')) {
-    const city = s.split(',').pop().trim();
-    if (city) return city;
-  }
-  // Sinon, on ramène au nom de lieu propre (sans "centre", parenthèses, etc.).
-  return bookingDestination(s);
+// Découpe un libellé en "jetons de lieu" exploitables : coupe sur , / • · — | ,
+// puis jette coordonnées, phrases descriptives et libellés génériques.
+function placeTokens(str) {
+  let s = String(str || '').replace(/\([^)]*\)/g, ' ').trim();
+  if (!s) return [];
+  return s
+    .split(/\s*[,/•·—|]\s*/)
+    .map((t) => t.trim())
+    .filter(Boolean)
+    .filter((t) => !isCoords(t))
+    .filter((t) => !isDescriptive(t))
+    .map((t) => stripGenericTail(t))
+    .filter((t) => t && !GENERIC_ONLY.test(t) && !BARE_GENERIC.test(t));
 }
 
-// Choisit la meilleure VILLE de recherche Booking parmi plusieurs libellés
-// candidats (indice de lieu, zone, ville du jour), dans l'ordre de fiabilité.
-function pickBookingCity(candidates, fallback) {
-  for (const c of candidates) {
-    const city = cityOf(c);
-    if (city) return city;
-  }
-  return fallback;
+// Détermine la VILLE (commune) de recherche Booking la plus fiable. C'est le
+// seul niveau que Booking géolocalise correctement : un quartier seul ("Ribeira",
+// "Baixa") peut exister dans un autre pays et renvoyer Booking au mauvais endroit
+// (ex. "Ribeira" → Galice au lieu de Porto), et une phrase descriptive l'envoie
+// n'importe où. On prend donc le DERNIER jeton de lieu propre de la zone
+// conseillée (souvent la ville : "Baixa, Lisbonne" → Lisbonne ;
+// "Kalambaka, centre-ville" → Kalambaka), sinon on retombe sur le lieu du jour.
+function pickBookingCity(area, dayLocation) {
+  const aTokens = placeTokens(area);
+  if (aTokens.length) return aTokens[aTokens.length - 1];
+  const dTokens = placeTokens(dayLocation);
+  if (dTokens.length) return dTokens[dTokens.length - 1];
+  return cleanLocation(dayLocation) || '';
 }
 
-export { bookingDestination, cityOf, pickBookingCity };
+export { pickBookingCity, placeTokens };
 
 export function googleMapsSearch(query) {
   return `https://www.google.com/maps/search/?api=1&query=${q(cleanLocation(query) || query)}`;
@@ -379,11 +375,15 @@ export function bestAccommodationLink(accommodation, ctx = {}) {
   const zone = area || hint;
   const userConfirmed = !!accommodation._user_edited && !!accommodation.name;
   // Pour Booking : on cherche par VILLE (le seul niveau géolocalisé de façon
-  // fiable ; un nom de quartier peut renvoyer vers un autre pays). On prend la
-  // ville de l'indice de lieu ("Quartier, Ville"), sinon de la zone, sinon la
-  // ville du jour. Pour Google Maps : on garde la zone brute (les coordonnées y
-  // fonctionnent très bien).
-  const bookingZone = pickBookingCity([hint, area, cityName], cityName);
+  // fiable ; un quartier ou une phrase descriptive renvoie Booking n'importe où).
+  //  1) si l'IA a fourni un champ dédié "booking_city" (format "Ville, Pays"),
+  //     on l'utilise tel quel — c'est le plus fiable ;
+  //  2) sinon on déduit la ville depuis la zone conseillée (area), JAMAIS depuis
+  //     coordinates_hint qui est souvent une phrase ("Proche de la gare…").
+  // Pour Google Maps : on garde la zone brute (les coordonnées y marchent bien).
+  const bookingCity = (accommodation.booking_city || '').trim();
+  const bookingZone =
+    bookingCity || pickBookingCity(area, ctx.location) || cityName;
   const zoneQuery = zone || cityName;
   const bookingQuery = userConfirmed
     ? `${accommodation.name}${cityName ? ', ' + cityName : ''}`
