@@ -209,6 +209,13 @@ COHÉRENCE GÉOGRAPHIQUE (RÈGLE STRICTE) :
   ✅ ORDRE CORRECT : Paris → Saint-Aignan (proche, est) → Les Epesses (sud-ouest) → Vannes (Bretagne)
   ❌ MAUVAIS ORDRE : Paris → Les Epesses → Saint-Aignan (retour est) → Vannes (re-ouest) [zigzag inutile]
 
+RÉALISME / FAISABILITÉ (RÈGLE STRICTE — prime sur l'envie de tout caser) :
+- Ne tente JAMAIS d'inclure TOUTES les étapes impératives si la durée est trop courte ou les lieux trop dispersés.
+  Exemple type : 5 jours en Grèce avec Athènes + Météores + Péloponnèse + Santorin = INFAISABLE (trop de route + un ferry/vol pour Santorin). Il faudrait ~9-11 jours.
+- Un voyage crédible est REPOSANT : on ne change pas de base tous les jours. Un trajet long (> 4-5 h, ou un ferry / vol interne) consomme une demi-journée à une journée entière qu'il faut décompter.
+- Si certaines étapes impératives ne rentrent pas raisonnablement : construis le MEILLEUR sous-ensemble géographiquement cohérent (on en profite vraiment) et AJOUTE dans notes.practical_tips une phrase claire indiquant les étapes ÉCARTÉES, pourquoi, et combien de jours il faudrait pour tout inclure. Ex : "Pour rester réaliste, Santorin et les Météores ont été écartés sur 5 jours : il faudrait environ 10 jours pour les ajouter sans passer son temps en transport."
+- Mieux vaut 2-3 régions bien vécues que 5 survolées.
+
 TYPES DE VOYAGE — RÈGLES SPÉCIFIQUES :
 - itinerant : voyage moyennement structuré, mix de transports selon le contexte.
 - roadtrip-voiture / roadtrip-van (qui couvre van ET camping-car) : véhicule PERSONNEL du voyageur, départ direct du domicile (cf. règles road trip ci-dessous). roadtrip-camping-car (ancien id, encore présent dans certains itinéraires) = équivalent à roadtrip-van.

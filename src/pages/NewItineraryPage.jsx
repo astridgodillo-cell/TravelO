@@ -57,6 +57,19 @@ export default function NewItineraryPage() {
     setProfileExtras({ travelers, personalInfo, visitedPlaces, wishlistPlaces });
   }
 
+  // Inspire-moi → wizard : une fois les lieux choisis, on bascule sur le
+  // pas-à-pas guidé (mêmes étapes que "J'ai mon plan en tête") pré-rempli avec
+  // la destination, les dates, les voyageurs et les lieux sélectionnés. La
+  // génération se fera depuis le wizard, après avoir complété budget/hébergement.
+  function handleInspireContinue(prefs) {
+    setPrefillPrefs(prefs);
+    setMode('expert');
+    setExpertView('wizard');
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }
+
   async function handleGenerate(prefs) {
     if (!user) {
       navigate('/connexion');
@@ -218,7 +231,7 @@ export default function NewItineraryPage() {
       )}
 
       {!loading && mode === 'inspire' && (
-        <InspireMeFlow onSubmit={handleGenerate} loading={loading} />
+        <InspireMeFlow onContinue={handleInspireContinue} loading={loading} />
       )}
 
       {!loading && mode === 'local' && <LocalActivitiesFlow />}

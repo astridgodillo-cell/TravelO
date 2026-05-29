@@ -67,7 +67,7 @@ function computeTotalDays(start, end) {
 
 const INITIAL_VISIBLE_PER_CATEGORY = 9;
 
-export default function InspireMeFlow({ onSubmit, loading }) {
+export default function InspireMeFlow({ onContinue, loading }) {
   const [phase, setPhase] = useState('form');
   const [form, setForm] = useState(DEFAULT_FORM);
   const [cities, setCities] = useState([]);
@@ -254,17 +254,60 @@ export default function InspireMeFlow({ onSubmit, loading }) {
     };
   }
 
-  function handleGenerate() {
+  function handleContinue() {
     if (selected.size === 0 && selectedCities.size === 0) {
       alert(
-        'Sélectionnez au moins une ville ou un lieu avant de générer l\'itinéraire.'
+        'Sélectionnez au moins une ville ou un lieu avant de continuer.'
       );
       return;
     }
-    onSubmit(buildPreferences());
+    onContinue(buildPreferences());
   }
 
   const totalSelected = selected.size + selectedCities.size;
+
+  // ─────────── Garde-fou de faisabilité ───────────
+  // Estime si la sélection tient raisonnablement dans la durée du voyage.
+  // On somme les jours conseillés par ville + ~1 jour par lieu situé dans une
+  // zone non déjà couverte par une ville, + une demi-journée de transition par
+  // base supplémentaire (les longs trajets « mangent » du temps).
+  const feasibility = useMemo(() => {
+    if (!totalDays) return null;
+    if (selected.size === 0 && selectedCities.size === 0) return null;
+    const norm = (s) =>
+      (s || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[̀-ͯ]/g, '')
+        .trim();
+
+    const selCities = cities.filter((c) => selectedCities.has(c.id));
+    const selPlaces = places.filter((p) => selected.has(p.id));
+    const cityNames = new Set(selCities.map((c) => norm(c.name)));
+
+    let daysNeeded = 0;
+    for (const c of selCities) daysNeeded += Number(c.suggested_days) || 2;
+
+    // Lieux dans une zone non couverte par une ville sélectionnée = base en +
+    const extraBases = new Set();
+    for (const p of selPlaces) {
+      const loc = norm(p.location || p.name);
+      if (loc && !cityNames.has(loc)) extraBases.add(loc);
+    }
+    daysNeeded += extraBases.size; // ~1 jour par lieu isolé
+
+    const basesCount = cityNames.size + extraBases.size;
+    if (basesCount > 1) daysNeeded += (basesCount - 1) * 0.5; // transitions
+
+    const over = daysNeeded > totalDays + 0.5;
+    return {
+      over,
+      basesCount,
+      daysNeeded: Math.round(daysNeeded),
+      totalDays,
+      suggestedDays: Math.ceil(daysNeeded),
+    };
+  }, [cities, places, selected, selectedCities, totalDays]);
 
   const placesByCategory = useMemo(() => {
     const groups = { incontournable: [], insolite: [], 'hors-sentiers': [] };
@@ -596,7 +639,27 @@ export default function InspireMeFlow({ onSubmit, loading }) {
       })}
 
       {/* Sticky bottom bar */}
-      <div className="sticky bottom-2 sm:bottom-4 z-10">
+      <div className="sticky bottom-2 sm:bottom-4 z-10 space-y-2">
+        {feasibility?.over && (
+          <div className="card border-amber-200 bg-amber-50 py-3">
+            <div className="flex items-start gap-2 text-sm text-amber-900">
+              <span className="text-base leading-none mt-0.5">⚠️</span>
+              <div>
+                <span className="font-semibold">Programme un peu ambitieux</span>{' '}
+                — {feasibility.basesCount} étapes assez dispersées pour{' '}
+                {feasibility.totalDays} jour
+                {feasibility.totalDays > 1 ? 's' : ''}. Tout enchaîner laisserait
+                surtout du temps de transport. Idéalement, il faudrait environ{' '}
+                <strong>{feasibility.suggestedDays} jours</strong>.
+                <div className="text-xs text-amber-800 mt-1">
+                  Tu peux <strong>retirer quelques lieux</strong> (en recliquant
+                  dessus), ou <strong>continuer quand même</strong> : notre IA
+                  fera un choix réaliste et t'indiquera ce qu'elle a écarté.
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="card flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 shadow-glow border-brand-200">
           <div className="text-sm text-slate-700">
             <span className="font-semibold text-brand-700">
@@ -614,13 +677,11 @@ export default function InspireMeFlow({ onSubmit, loading }) {
           </div>
           <button
             type="button"
-            onClick={handleGenerate}
+            onClick={handleContinue}
             disabled={loading || totalSelected === 0}
             className="btn-pop text-sm sm:text-base px-4 sm:px-6 py-2.5 sm:py-3 w-full sm:w-auto"
           >
-            {loading
-              ? 'Génération en cours…'
-              : 'Générer mon itinéraire →'}
+            Continuer — derniers détails →
           </button>
         </div>
       </div>
