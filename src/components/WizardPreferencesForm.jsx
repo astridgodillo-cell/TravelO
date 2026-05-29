@@ -1926,34 +1926,6 @@ function StepStyle({ values, update, toggle }) {
           Tu peux choisir l'un, l'autre, les deux… ou aucun. On applique tes
           choix directement dans la recherche Booking.
         </p>
-
-        <div className="mt-4">
-          <label className="label">Options souhaitées</label>
-          <div className="flex flex-wrap gap-2">
-            {[
-              { id: 'breakfast', label: '🥐 Petit-déj inclus' },
-              { id: 'free_cancellation', label: '✓ Annulation gratuite' },
-              { id: 'parking', label: '🅿️ Parking' },
-              { id: 'pool', label: '🏊 Piscine' },
-            ].map((opt) => {
-              const active = (values.hotelAmenities || []).includes(opt.id);
-              return (
-                <button
-                  key={opt.id}
-                  type="button"
-                  onClick={() => toggle('hotelAmenities', opt.id)}
-                  className={`rounded-full px-3 py-1.5 text-sm border transition-all ${
-                    active
-                      ? 'bg-brand-600 text-white border-brand-600'
-                      : 'bg-white border-slate-200 hover:border-slate-300'
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
       </div>
     </div>
   );
