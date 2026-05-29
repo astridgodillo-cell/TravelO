@@ -62,16 +62,41 @@ function bookingDestination(zone) {
   return s;
 }
 
-// Choisit, parmi plusieurs libellés possibles (indice de ville, zone), la
-// meilleure destination Booking. Préfère une forme "Quartier, Ville" (avec
-// virgule), que Booking géolocalise le plus fiablement.
-function pickBookingDestination(candidates, fallback) {
-  const cleaned = candidates.map(bookingDestination).filter(Boolean);
-  const withCity = cleaned.find((c) => c.includes(','));
-  return withCity || cleaned[0] || fallback;
+// Extrait la VILLE (commune) d'un libellé. C'est le seul niveau que le moteur
+// de Booking géolocalise de façon FIABLE : un nom de quartier ("Ribeira",
+// "Baixa"…) peut exister dans un autre pays et renvoyer Booking au mauvais
+// endroit (ex. "Ribeira" → Galice, Espagne au lieu de Porto). On cherche donc
+// par ville, et le quartier reste affiché à titre indicatif dans la carte.
+//   "Ribeira, Porto"               → "Porto"
+//   "Baixa, Lisbonne"              → "Lisbonne"
+//   "Cascais centre"               → "Cascais"
+//   "Ribeira / Centre historique"  → "Ribeira" (pas de ville dispo : 1er segment)
+//   "38.696, -9.421"               → "" (coordonnées : inexploitables)
+function cityOf(label) {
+  let s = String(label || '').trim();
+  if (!s) return '';
+  if (/^-?\d{1,3}\.\d+\s*[,;]\s*-?\d{1,3}\.\d+$/.test(s)) return '';
+  s = s.replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
+  // Format "Quartier, Ville" → la ville est la dernière partie après la virgule.
+  if (s.includes(',')) {
+    const city = s.split(',').pop().trim();
+    if (city) return city;
+  }
+  // Sinon, on ramène au nom de lieu propre (sans "centre", parenthèses, etc.).
+  return bookingDestination(s);
 }
 
-export { bookingDestination, pickBookingDestination };
+// Choisit la meilleure VILLE de recherche Booking parmi plusieurs libellés
+// candidats (indice de lieu, zone, ville du jour), dans l'ordre de fiabilité.
+function pickBookingCity(candidates, fallback) {
+  for (const c of candidates) {
+    const city = cityOf(c);
+    if (city) return city;
+  }
+  return fallback;
+}
+
+export { bookingDestination, cityOf, pickBookingCity };
 
 export function googleMapsSearch(query) {
   return `https://www.google.com/maps/search/?api=1&query=${q(cleanLocation(query) || query)}`;
@@ -353,12 +378,12 @@ export function bestAccommodationLink(accommodation, ctx = {}) {
   // endroit (« Sintra » au lieu de « Cascais center »).
   const zone = area || hint;
   const userConfirmed = !!accommodation._user_edited && !!accommodation.name;
-  // Pour Booking : on choisit le libellé le plus géolocalisable parmi l'indice
-  // de lieu (souvent "Quartier, Ville") et la zone conseillée (souvent
-  // descriptive). Sinon Booking retombe sur la ville du jour, voire une autre
-  // ville qui partage un nom de quartier générique. Pour Google Maps : on garde
-  // la zone brute (les coordonnées y fonctionnent très bien).
-  const bookingZone = pickBookingDestination([hint, area], cityName);
+  // Pour Booking : on cherche par VILLE (le seul niveau géolocalisé de façon
+  // fiable ; un nom de quartier peut renvoyer vers un autre pays). On prend la
+  // ville de l'indice de lieu ("Quartier, Ville"), sinon de la zone, sinon la
+  // ville du jour. Pour Google Maps : on garde la zone brute (les coordonnées y
+  // fonctionnent très bien).
+  const bookingZone = pickBookingCity([hint, area, cityName], cityName);
   const zoneQuery = zone || cityName;
   const bookingQuery = userConfirmed
     ? `${accommodation.name}${cityName ? ', ' + cityName : ''}`
