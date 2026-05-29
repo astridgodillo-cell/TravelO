@@ -157,6 +157,7 @@ export default function ImportHotelFromScreenshotModal({
           services: Array.isArray(hotel.services) ? hotel.services : [],
           coordinates_hint: hotel.address_hint || '',
           booking_url: hotel.booking_url || null,
+          nights: Math.max(1, Math.round(Number(hotel.nights) || 1)),
           extraction_note: hotel.extraction_note || '',
           user_photo: compressedUrl,
         });
@@ -203,6 +204,7 @@ export default function ImportHotelFromScreenshotModal({
           services: Array.isArray(hotel.services) ? hotel.services : [],
           coordinates_hint: hotel.address_hint || '',
           booking_url: hotel.booking_url || null,
+          nights: Math.max(1, Math.round(Number(hotel.nights) || 1)),
           extraction_note: hotel.extraction_note || '',
           // On stocke la capture COMPRESSÉE comme photo de l'hôtel. Pour les
           // utilisateurs qui voudraient une photo "propre" (sans UI Booking),
@@ -243,6 +245,7 @@ export default function ImportHotelFromScreenshotModal({
       services: [],
       coordinates_hint: '',
       booking_url: null,
+      nights: 1,
       extraction_note: '',
       user_photo: null,
     });
@@ -401,7 +404,7 @@ export default function ImportHotelFromScreenshotModal({
                 />
               </Field>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 <Field label="Type">
                   <input
                     type="text"
@@ -422,7 +425,30 @@ export default function ImportHotelFromScreenshotModal({
                     className="input"
                   />
                 </Field>
+                <Field label="Nombre de nuits">
+                  <input
+                    type="number"
+                    min="1"
+                    max="30"
+                    value={extracted.nights || 1}
+                    onChange={(e) =>
+                      updateField(
+                        'nights',
+                        Math.max(1, Math.round(Number(e.target.value) || 1))
+                      )
+                    }
+                    className="input"
+                  />
+                </Field>
               </div>
+
+              {(extracted.nights || 1) > 1 && (
+                <p className="text-xs text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-md px-3 py-2">
+                  🏨 Cet hôtel sera appliqué à{' '}
+                  <strong>{extracted.nights} nuits consécutives</strong> à partir
+                  de cette journée (jours suivants inclus).
+                </p>
+              )}
 
               {extracted.currency_detected && extracted.currency_detected !== 'EUR' && (
                 <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">

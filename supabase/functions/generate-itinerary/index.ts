@@ -3634,6 +3634,7 @@ INSTRUCTIONS — extrais avec PRÉCISION depuis l'image :
 - "services" : tableau des équipements/services majeurs visibles (ex : ["WiFi gratuit", "Petit-déjeuner inclus", "Climatisation", "Piscine", "Parking", "Animaux acceptés", "Accessible PMR"]). Maximum 8, en français.
 - "address_hint" : indication de quartier / adresse / repère géographique si visible (ex : "Centre-ville", "Près de la Sagrada Familia", "À 5 min du métro"). Sinon null.
 - "booking_url" : URL visible ou identifiant de l'annonce si présent (ex : nom de domaine "booking.com"). Sinon null.
+- "nights" : nombre de NUITS de la réservation si déductible de la capture (ex : "3 nuits", ou dates arrivée→départ). Défaut 1 si non visible. C'est le nombre de nuits consécutives au MÊME hôtel.
 - "extraction_note" : courte note (1-2 phrases) si certaines infos n'ont pas pu être extraites avec certitude (ex : "Prix affiché en USD converti à 0.92, vérifiez le taux du jour"). Sinon chaîne vide.
 
 Renvoie UNIQUEMENT du JSON valide selon ce schéma (rien d'autre, pas de markdown, pas de texte autour) :
@@ -3647,6 +3648,7 @@ Renvoie UNIQUEMENT du JSON valide selon ce schéma (rien d'autre, pas de markdow
   "services": ["..."],
   "address_hint": "...",
   "booking_url": null,
+  "nights": 1,
   "extraction_note": ""
 }
 

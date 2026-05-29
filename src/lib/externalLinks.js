@@ -114,6 +114,28 @@ export function park4nightSearch(location) {
 const BOOKING_AFFILIATE_ID = import.meta.env?.VITE_BOOKING_AFFILIATE_ID || '';
 const BOOKING_LABEL = 'travelo-itinerary';
 
+// Vrai = URL pointant vers une vraie fiche d'établissement Booking.com (et non
+// une recherche). On ouvrira l'hôtel EXACT au lieu d'une recherche.
+function isBookingHotelUrl(url) {
+  return (
+    typeof url === 'string' &&
+    /^https?:\/\/(www\.)?booking\.com\/hotel\//i.test(url.trim())
+  );
+}
+
+// Ajoute l'AID partenaire (commission) à une URL Booking existante.
+function withBookingAffiliate(url) {
+  if (!BOOKING_AFFILIATE_ID) return url;
+  try {
+    const u = new URL(url);
+    u.searchParams.set('aid', BOOKING_AFFILIATE_ID);
+    u.searchParams.set('label', BOOKING_LABEL);
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
 // Booking exige checkout > checkin. Si on a juste la date du jour, on ajoute
 // +1 jour pour le checkout (1 nuit par défaut).
 function addOneDay(isoDate) {
@@ -409,6 +431,16 @@ export function bestAccommodationLink(accommodation, ctx = {}) {
     };
   }
   if (provider === 'booking') {
+    // Hôtel confirmé par l'utilisateur (capture ou saisie) :
+    //  - si on a l'URL exacte de la fiche Booking → on l'ouvre directement ;
+    //  - sinon on cherche par NOM (sans les filtres gamme/prix/note, sinon
+    //    l'hôtel exact pourrait être masqué) → il ressort en tête.
+    if (userConfirmed && isBookingHotelUrl(accommodation.booking_url)) {
+      return {
+        provider: 'Booking',
+        url: withBookingAffiliate(accommodation.booking_url.trim()),
+      };
+    }
     return {
       provider: 'Booking',
       url: bookingSearch(
@@ -418,7 +450,7 @@ export function bestAccommodationLink(accommodation, ctx = {}) {
         ctx.adults,
         // Préfère les âges détaillés ; retombe sur le compte si non fournis
         ctx.childrenAges != null ? ctx.childrenAges : ctx.children,
-        bookingOptions
+        userConfirmed ? {} : bookingOptions
       ),
     };
   }

@@ -241,14 +241,24 @@ export default function ItineraryDetailPage() {
   async function handleApplyImportedHotel(hotel, mode = 'replace') {
     if (!trip || !importHotelState) return;
     const { dayIndex } = importHotelState;
+    // On ne stocke pas "nights" dans l'hébergement (info de réservation, pas de
+    // la nuit elle-même).
+    const { nights: rawNights, ...hotelData } = hotel || {};
     if (mode === 'add_alternative') {
       await handleUpdateItinerary((it) =>
-        addAccommodationAlternative(it, dayIndex, hotel)
+        addAccommodationAlternative(it, dayIndex, hotelData)
       );
     } else {
-      await handleUpdateItinerary((it) =>
-        replaceAccommodation(it, dayIndex, hotel)
-      );
+      // Réservation multi-nuits : on applique le même hôtel aux N nuits
+      // consécutives à partir de ce jour (jours suivants inclus).
+      const nights = Math.max(1, Math.round(Number(rawNights) || 1));
+      await handleUpdateItinerary((it) => {
+        let next = it;
+        for (let k = 0; k < nights; k++) {
+          next = replaceAccommodation(next, dayIndex + k, hotelData);
+        }
+        return next;
+      });
     }
   }
 
