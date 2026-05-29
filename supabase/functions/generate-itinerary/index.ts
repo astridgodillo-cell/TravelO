@@ -860,8 +860,8 @@ Contexte itinéraire :
 ${JSON.stringify(itinerary.summary, null, 2)}
 
 Journée à régénérer : ${day.label} (${day.date} — ${day.weekday})
-Jour précédent : ${prev ? `${prev.location}, hébergement ${prev.accommodation?.name}` : '(premier jour)'}
-Jour suivant : ${next ? next.location : '(dernier jour)'}
+Jour précédent : ${prev ? `${prev.location}, hébergement ${prev.accommodation?.name} — ta journée DOIT commencer là` : '(premier jour : tu pars du lieu de départ du voyage)'}
+Jour suivant (prévu actuellement à ${next ? next.location : '(dernier jour)'}) : ${next ? "tu N'ES PAS obligé de finir à cet endroit. Si la consigne utilisateur t'amène à terminer ailleurs, c'est permis : le jour suivant sera automatiquement adapté pour repartir de là où tu termines." : 'tu finis au lieu d\'arrivée final du voyage'}
 
 Journée actuelle :
 ${JSON.stringify(day, null, 2)}
@@ -872,7 +872,7 @@ CONSIGNE UTILISATEUR :
 ${instructions}
 """
 
-Renvoie UNIQUEMENT le JSON de la nouvelle journée selon le même schéma. Garde label, date et weekday. Recalcule day_total_eur. Cohérence avec le départ du jour suivant.${flightConstraintsBlock ? ' RESPECTE IMPÉRATIVEMENT LES CONTRAINTES VOL CI-DESSUS.' : ''}`;
+Renvoie UNIQUEMENT le JSON de la nouvelle journée selon le même schéma. Garde label, date et weekday. Recalcule day_total_eur. IMPORTANT : indique clairement le LIEU DE FIN de la journée via le champ "location" et le dernier trajet (champ "to"), car le jour suivant repartira de là.${flightConstraintsBlock ? ' RESPECTE IMPÉRATIVEMENT LES CONTRAINTES VOL CI-DESSUS.' : ''}`;
 }
 
 /**

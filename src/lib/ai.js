@@ -647,7 +647,35 @@ export async function regenerateDay(itinerary, dayIndex, instructions) {
   });
   if (!data?.day) throw new Error('Réponse vide pour la journée régénérée.');
 
-  const newDays = itinerary.days.map((d, i) => (i === dayIndex ? data.day : d));
+  const newDay = data.day;
+  const newDays = itinerary.days.map((d, i) => (i === dayIndex ? newDay : d));
+
+  // Continuité : le jour suivant doit repartir de l'endroit où ce nouveau jour
+  // se TERMINE (sans qu'on régénère le jour suivant). On déduit le lieu de fin
+  // du jour régénéré (dernier trajet, sinon ville/hébergement du jour) et on
+  // l'injecte comme point de départ (1er trajet) du jour d'après.
+  const endLocation =
+    (Array.isArray(newDay.trips) && newDay.trips.length
+      ? newDay.trips[newDay.trips.length - 1]?.to
+      : null) ||
+    newDay.accommodation?.area ||
+    newDay.location;
+  const nextIndex = dayIndex + 1;
+  const nextDay = newDays[nextIndex];
+  if (
+    nextDay &&
+    endLocation &&
+    Array.isArray(nextDay.trips) &&
+    nextDay.trips.length > 0
+  ) {
+    const firstTrip = nextDay.trips[0];
+    if (firstTrip?.from && firstTrip.from !== endLocation) {
+      const patchedTrips = nextDay.trips.slice();
+      patchedTrips[0] = { ...firstTrip, from: endLocation };
+      newDays[nextIndex] = { ...nextDay, trips: patchedTrips };
+    }
+  }
+
   const budget = computeBudget(newDays, itinerary.summary);
   const metadata = addUsageToMeta(itinerary.metadata, data.model, data.usage);
   return {
