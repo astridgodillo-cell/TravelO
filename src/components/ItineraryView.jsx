@@ -51,6 +51,16 @@ const TABS = [
   { id: 'activities', label: 'Activités' },
 ];
 
+// Vrai = "activité" qui est en fait un TRAJET de vol (ex : "Vol Marseille →
+// Athènes") que l'IA range parfois dans les activités. À exclure des listes
+// d'activités (pas réservable comme une excursion). On ne touche pas aux
+// vraies activités aériennes (montgolfière, parapente…) : on exige le mot
+// "vol" + une flèche/emoji de trajet.
+function isFlightLegActivity(a) {
+  const t = `${a?.title || ''}`;
+  return /\bvol\b|✈|\bflight\b/i.test(t) && /→|🛫|🛬|->/.test(t);
+}
+
 const VAN_TRIP_TYPES = new Set([
   'roadtrip-van',
   'roadtrip-camping-car',
@@ -122,12 +132,14 @@ export default function ItineraryView({
   const allActivities = useMemo(() => {
     if (!itinerary?.days) return [];
     return itinerary.days.flatMap((d) =>
-      (d.activities || []).map((a) => ({
-        ...a,
-        day: d.label,
-        date: d.date,
-        location: a.location || d.location,
-      }))
+      (d.activities || [])
+        .filter((a) => !isFlightLegActivity(a))
+        .map((a) => ({
+          ...a,
+          day: d.label,
+          date: d.date,
+          location: a.location || d.location,
+        }))
     );
   }, [itinerary]);
 
@@ -1960,31 +1972,39 @@ function DayCardsContent({
         </div>
       </div>
 
-      {day.activities?.length > 0 && (
-        <div className="mt-4">
-          <CategoryHeader
-            category="activity"
-            title="Activités & excursions"
-            count={day.activities.length}
-          />
-          <ul className="space-y-2">
-            {day.activities.map((a, i) => (
-              <li key={i}>
-                <ActivityCard
-                  activity={a}
-                  dayLocation={day.location}
-                  dayIndex={dayIndex}
-                  activityIndex={i}
-                  canEditActivities={canEditActivities}
-                  onEditActivity={onEditActivity}
-                  onRemoveActivity={onRemoveActivity}
-                  onUpdateItinerary={onUpdateItinerary}
-                />
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      {(() => {
+        // On masque les "activités" qui sont en fait des vols-trajets, tout en
+        // gardant l'index d'origine pour l'édition/suppression.
+        const acts = (day.activities || [])
+          .map((a, i) => ({ a, i }))
+          .filter(({ a }) => !isFlightLegActivity(a));
+        if (acts.length === 0) return null;
+        return (
+          <div className="mt-4">
+            <CategoryHeader
+              category="activity"
+              title="Activités & excursions"
+              count={acts.length}
+            />
+            <ul className="space-y-2">
+              {acts.map(({ a, i }) => (
+                <li key={i}>
+                  <ActivityCard
+                    activity={a}
+                    dayLocation={day.location}
+                    dayIndex={dayIndex}
+                    activityIndex={i}
+                    canEditActivities={canEditActivities}
+                    onEditActivity={onEditActivity}
+                    onRemoveActivity={onRemoveActivity}
+                    onUpdateItinerary={onUpdateItinerary}
+                  />
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })()}
 
       {day.trips?.length > 0 && (
         <details className="mt-4 group">
