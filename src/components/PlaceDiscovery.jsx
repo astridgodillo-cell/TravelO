@@ -123,7 +123,8 @@ export default function PlaceDiscovery({
     const entries = await Promise.all(
       (list || []).map(async (p) => {
         const q = p.photo_query || `${p.name} ${p.location || ''}`.trim();
-        const photos = await fetchPhotosFor(q, 1);
+        // p.type ("ville", "plage", "montagne"…) ou "ville" pour les villes.
+        const photos = await fetchPhotosFor(q, 1, 'auto', p.type || 'ville');
         const photo = photos?.[0];
         const url =
           photo?.src?.medium || photo?.src?.large || photo?.src?.small || null;

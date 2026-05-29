@@ -2261,6 +2261,44 @@ async function extractVisionConsensus(
   return { parsed: base, usage, model, disagreed };
 }
 
+// Enrichit une requête Unsplash avec des termes évocateurs/cinématiques selon
+// le TYPE de destination, pour des visuels plus inspirants. Repli sur le nom
+// seul est géré par l'appelant (fetchPhotos) si l'enrichi ne renvoie rien.
+const UNSPLASH_KIND_TERMS: Record<string, string> = {
+  ville: 'cityscape skyline golden hour travel',
+  village: 'village charming golden hour travel',
+  capitale: 'cityscape skyline golden hour travel',
+  region: 'stunning landscape aerial view travel',
+  plage: 'beach turquoise water aerial view golden hour',
+  mer: 'coastline turquoise water aerial view golden hour',
+  ile: 'island aerial view turquoise water golden hour',
+  montagne: 'mountains dramatic landscape golden hour',
+  rando: 'mountains dramatic landscape golden hour',
+  parc: 'nature stunning landscape golden hour',
+  nature: 'nature stunning landscape golden hour',
+  panorama: 'aerial view panorama golden hour',
+  site: 'landmark architecture travel golden hour',
+  monument: 'landmark architecture travel golden hour',
+  musee: 'landmark architecture travel',
+  experience: 'travel inspiration cinematic',
+  gastronomie: 'local cuisine food',
+  destination: 'travel inspiration stunning landscape golden hour',
+};
+
+function normalizeKind(kind: string): string {
+  return String(kind || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .trim();
+}
+
+function buildUnsplashQuery(query: string, kind: string): string {
+  const terms =
+    UNSPLASH_KIND_TERMS[normalizeKind(kind)] || UNSPLASH_KIND_TERMS.destination;
+  return `${query} ${terms}`.trim();
+}
+
 async function fetchUnsplashPhotos(query: string, perPage = 5): Promise<any[]> {
   if (!UNSPLASH_ACCESS_KEY) return [];
   try {
@@ -2403,7 +2441,8 @@ async function fetchPexelsPhotos(query: string, perPage = 5): Promise<any[]> {
 async function fetchPhotos(
   query: string,
   perPage: number,
-  preferredSource: string
+  preferredSource: string,
+  kind = ''
 ): Promise<any[]> {
   // Ordre de tentative selon la préférence
   const order: Record<string, string[]> = {
@@ -2416,8 +2455,16 @@ async function fetchPhotos(
   for (const src of sources) {
     let photos: any[] = [];
     if (src === 'google-places') photos = await fetchGooglePlacesPhotos(query, perPage);
-    else if (src === 'unsplash') photos = await fetchUnsplashPhotos(query, perPage);
-    else if (src === 'pexels') photos = await fetchPexelsPhotos(query, perPage);
+    else if (src === 'unsplash') {
+      // Requête enrichie (termes cinématiques selon le type) si un "kind" est
+      // fourni ; repli automatique sur le nom seul si rien ne remonte.
+      if (kind) {
+        photos = await fetchUnsplashPhotos(buildUnsplashQuery(query, kind), perPage);
+        if (!photos.length) photos = await fetchUnsplashPhotos(query, perPage);
+      } else {
+        photos = await fetchUnsplashPhotos(query, perPage);
+      }
+    } else if (src === 'pexels') photos = await fetchPexelsPhotos(query, perPage);
     if (photos.length) return photos;
   }
   return [];
@@ -4306,12 +4353,17 @@ Si tu ne reconnais PAS un hôtel dans l'image (capture floue, page d'erreur, pho
     }
 
     if (mode === 'fetch-photos') {
-      const { query, per_page, source } = body;
+      const { query, per_page, source, kind } = body;
       if (!query || typeof query !== 'string') {
         return jsonResponse({ error: 'Paramètre "query" requis.' }, 400);
       }
       const preferred = source || 'auto';
-      const photos = await fetchPhotos(query, per_page || 5, preferred);
+      const photos = await fetchPhotos(
+        query,
+        per_page || 5,
+        preferred,
+        typeof kind === 'string' ? kind : ''
+      );
       return jsonResponse({ photos });
     }
 

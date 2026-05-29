@@ -13,8 +13,9 @@ export default function DayPhotos({
   useEffect(() => {
     let active = true;
     if (!location) return;
-    // Google Places en priorité (vraies photos), fallback Unsplash puis Pexels
-    fetchPhotosFor(location, max, 'google-places').then((list) => {
+    // Google Places en priorité (vraies photos), fallback Unsplash (enrichi
+    // "destination" : golden hour, paysage…) puis Pexels.
+    fetchPhotosFor(location, max, 'google-places', 'destination').then((list) => {
       if (active) setPhotos(list || []);
     });
     return () => {

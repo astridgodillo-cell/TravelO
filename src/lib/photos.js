@@ -148,14 +148,17 @@ export async function fetchHotelRating(hotelName, location) {
   }
 }
 
-export async function fetchPhotosFor(query, perPage = 5, source = 'auto') {
+// kind (optionnel) : type de destination ("ville", "plage", "montagne"…). Il
+// enrichit la requête Unsplash avec des termes cinématiques (golden hour, aerial
+// view…) côté serveur, avec repli automatique sur le nom seul.
+export async function fetchPhotosFor(query, perPage = 5, source = 'auto', kind = '') {
   if (!query) return [];
-  const key = `${source}|${query}|${perPage}`;
+  const key = `${source}|${kind}|${query}|${perPage}`;
   if (cache.has(key)) return cache.get(key);
 
   try {
     const { data, error } = await supabase.functions.invoke(FN_NAME, {
-      body: { mode: 'fetch-photos', query, per_page: perPage, source },
+      body: { mode: 'fetch-photos', query, per_page: perPage, source, kind },
     });
     if (error || data?.error) {
       console.warn('[photos] fetch failed', error || data.error);
