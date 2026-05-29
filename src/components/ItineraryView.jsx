@@ -1020,9 +1020,13 @@ function DayCard({
     /avion|vol|flight|plane/i.test(t?.mode || '')
   );
   const flightLeg = dayIndex === 0 ? 'aller' : 'retour';
-  const hasFlightTime = !!flightTrip?._flight?.departure_at;
+  // Le vol est "confirmé" (donc on masque l'avertissement) dès qu'on a une vraie
+  // heure de départ OU que l'utilisateur a renseigné/importé ce vol (capture ou
+  // saisie manuelle) → le trajet porte alors _user_edited.
+  const flightConfirmed =
+    !!flightTrip?._flight?.departure_at || !!flightTrip?._user_edited;
   const showUnconfirmedScheduleWarning =
-    isAirTrip && isFirstOrLastDay && flightTrip && !hasFlightTime;
+    isAirTrip && isFirstOrLastDay && flightTrip && !flightConfirmed;
   // Titre du jour :
   // 1. day_title (nouveau schéma) si présent
   // 2. Sinon, on tente de construire un titre à partir des lieux extraits
