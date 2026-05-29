@@ -396,6 +396,8 @@ export function updateAccommodationPrice(itinerary, dayIndex, newPriceEur) {
   if (!day?.accommodation) return next;
   const oldPrice = Number(day.accommodation.price_eur) || 0;
   const newPrice = Math.max(0, Math.round(Number(newPriceEur) || 0));
+  const aiZone = aiZoneSnapshot(day.accommodation);
+  if (aiZone) day.accommodation._ai_zone = aiZone;
   day.accommodation.price_eur = newPrice;
   day.accommodation._user_edited = true;
   applyDelta(next, dayIndex, 'accommodation', newPrice - oldPrice);
@@ -410,6 +412,8 @@ export function updateAccommodationName(itinerary, dayIndex, newName) {
   const next = deepClone(itinerary);
   const day = next.days?.[dayIndex];
   if (!day?.accommodation) return next;
+  const aiZone = aiZoneSnapshot(day.accommodation);
+  if (aiZone) day.accommodation._ai_zone = aiZone;
   day.accommodation.name = newName;
   day.accommodation._user_edited = true;
   return next;
@@ -425,16 +429,30 @@ export function updateAccommodationName(itinerary, dayIndex, newName) {
  *     name, type, price_eur, services?, rating?, address_hint?, ...
  *   }
  */
+// Mémorise la suggestion IA d'origine (quartier conseillé) AVANT la 1re
+// modification, pour pouvoir la restaurer si l'utilisateur supprime son hôtel.
+// Renvoie le snapshot à conserver, ou undefined s'il n'y a rien à mémoriser.
+function aiZoneSnapshot(acc) {
+  if (!acc) return undefined;
+  if (acc._ai_zone) return acc._ai_zone; // déjà mémorisé : on le garde
+  if (acc._user_edited) return undefined; // déjà édité sans snapshot : trop tard
+  // eslint-disable-next-line no-unused-vars
+  const { _user_edited, _ai_zone, user_photo, ...zone } = acc;
+  return zone;
+}
+
 export function replaceAccommodation(itinerary, dayIndex, newAccommodation) {
   const next = deepClone(itinerary);
   const day = next.days?.[dayIndex];
   if (!day) return next;
   const oldPrice = Number(day.accommodation?.price_eur) || 0;
   const newPrice = Math.max(0, Math.round(Number(newAccommodation.price_eur) || 0));
+  const aiZone = aiZoneSnapshot(day.accommodation);
   day.accommodation = {
     ...newAccommodation,
     price_eur: newPrice,
     _user_edited: true,
+    ...(aiZone ? { _ai_zone: aiZone } : {}),
   };
   applyDelta(next, dayIndex, 'accommodation', newPrice - oldPrice);
   return next;
@@ -464,8 +482,13 @@ export function clearAccommodation(itinerary, dayIndex) {
   const day = next.days?.[dayIndex];
   if (!day?.accommodation) return next;
   const oldPrice = Number(day.accommodation.price_eur) || 0;
-  day.accommodation = { type: '', area: '', price_eur: 0 };
-  applyDelta(next, dayIndex, 'accommodation', 0 - oldPrice);
+  // Si on avait mémorisé la suggestion IA d'origine (quartier conseillé), on la
+  // restaure telle quelle (non "corrigée" → le bouton Booking redevient une
+  // recherche par zone). Sinon, hébergement vide.
+  const aiZone = day.accommodation._ai_zone;
+  day.accommodation = aiZone ? { ...aiZone } : { type: '', area: '', price_eur: 0 };
+  const newPrice = Number(day.accommodation.price_eur) || 0;
+  applyDelta(next, dayIndex, 'accommodation', newPrice - oldPrice);
   return next;
 }
 
