@@ -22,6 +22,34 @@ function cleanLocation(loc) {
 
 export { cleanLocation };
 
+// Transforme une "zone conseillée" descriptive (générée par l'IA) en une
+// destination que le moteur de recherche de Booking sait géolocaliser. Booking
+// échoue souvent sur les libellés bavards ou en français et retombe alors sur
+// une mauvaise ville. On le ramène donc au nom de lieu reconnaissable.
+//   "Cascais centre"               → "Cascais"
+//   "Stare Miasto (vieille ville)" → "Stare Miasto"
+//   "Lisbonne city center"         → "Lisbonne"
+//   "38.696, -9.421"               → "" (coordonnées : inexploitables en texte)
+function bookingDestination(zone) {
+  let s = String(zone || '').trim();
+  if (!s) return '';
+  // Coordonnées brutes (lat, long) → Booking ne les comprend pas dans "ss".
+  if (/^-?\d{1,3}\.\d+\s*[,;]\s*-?\d{1,3}\.\d+$/.test(s)) return '';
+  // Retire un complément entre parenthèses : "(vieille ville)"
+  s = s.replace(/\([^)]*\)/g, ' ').replace(/\s+/g, ' ').trim();
+  // Retire un qualificatif générique de centre-ville en fin de chaîne, qui
+  // embrouille le géocodeur de Booking ("Cascais centre" → "Cascais").
+  s = s
+    .replace(
+      /[\s,-]+(centre[-\s]?ville|centre|centro|center|downtown|vieille\s+ville|old\s+town|city\s+cent(?:er|re))\s*$/i,
+      ''
+    )
+    .trim();
+  return s;
+}
+
+export { bookingDestination };
+
 export function googleMapsSearch(query) {
   return `https://www.google.com/maps/search/?api=1&query=${q(cleanLocation(query) || query)}`;
 }
@@ -302,10 +330,14 @@ export function bestAccommodationLink(accommodation, ctx = {}) {
   // endroit (« Sintra » au lieu de « Cascais center »).
   const zone = area || hint;
   const userConfirmed = !!accommodation._user_edited && !!accommodation.name;
+  // Pour Booking : on nettoie la zone en nom de lieu géolocalisable (sinon
+  // Booking retombe sur la ville du jour). Pour Google Maps : on garde la zone
+  // brute (les coordonnées y fonctionnent très bien).
+  const bookingZone = bookingDestination(zone) || cityName;
   const zoneQuery = zone || cityName;
   const bookingQuery = userConfirmed
     ? `${accommodation.name}${cityName ? ', ' + cityName : ''}`
-    : zoneQuery;
+    : bookingZone;
   const fallbackText = userConfirmed
     ? `${accommodation.name} ${accommodation.coordinates_hint || cityName}`.trim()
     : zoneQuery;
