@@ -687,6 +687,7 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
   const [uploadError, setUploadError] = useState(null);
   const fileRef = useRef(null);
   const fileRef2 = useRef(null);
+  const fileRef3 = useRef(null); // mode manuel : import par capture
 
   // Transport implicite = avion-intl (transmis au backend pour J1 + buffer retour)
   useEffect(() => {
@@ -934,9 +935,9 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
     if (file) handleCaptureFile(file);
   }
 
-  // Ctrl+V pour coller une capture
+  // Ctrl+V pour coller une capture (modes "Chercher" ET "J'ai mes billets")
   useEffect(() => {
-    if (mode !== 'search') return;
+    if (mode !== 'search' && mode !== 'manual') return;
     if (uploadPhase === 'extracting') return;
     function onPaste(e) {
       const items = e.clipboardData?.items;
@@ -1265,13 +1266,102 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
         </ConfirmedFlightCard>
       )}
 
-      {/* Mode MANUAL : saisie manuelle */}
-      {mode === 'manual' && (
-        <ManualFlightForm
-          values={values}
-          update={update}
-          updateManualFlight={updateManualFlight}
-        />
+      {/* Mode MANUAL : import par capture OU saisie à la main */}
+      {mode === 'manual' && confirmed && (
+        <ConfirmedFlightCard
+          confirmed={confirmed}
+          onClear={clearConfirmedFlight}
+          onPickFile={() => fileRef2.current?.click()}
+          onDropFile={onDrop}
+          uploadPhase={uploadPhase}
+          uploadError={uploadError}
+        >
+          <input
+            ref={fileRef2}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => handleCaptureFile(e.target.files?.[0])}
+          />
+        </ConfirmedFlightCard>
+      )}
+      {mode === 'manual' && !confirmed && (
+        <div className="space-y-5">
+          {/* Import par capture — l'IA lit les infos automatiquement */}
+          <div className="rounded-2xl border-2 border-dashed border-slate-300 bg-white p-5">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-xl">📸</span>
+              <h3 className="font-bold text-slate-900">
+                Colle une capture de tes billets — l'IA lit tout
+              </h3>
+            </div>
+            <p className="text-sm text-slate-600 mb-3">
+              Capture d'écran de ta confirmation (e-mail, appli compagnie,
+              Skyscanner, Google Flights…). L'IA en extrait compagnie, horaires,
+              aéroports et prix. Tu pourras corriger ensuite.
+            </p>
+
+            {uploadPhase === 'extracting' ? (
+              <div className="py-6 text-center bg-slate-50 rounded-xl">
+                <div className="inline-flex items-center gap-2 text-sm text-slate-700">
+                  <span className="inline-block h-2 w-2 rounded-full bg-sky-500 animate-pulse" />
+                  Lecture de ta capture par l'IA…
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  Compagnie, horaires, aéroports, escales, prix…
+                </p>
+              </div>
+            ) : (
+              <div
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={onDrop}
+                onClick={() => fileRef3.current?.click()}
+                className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 p-6 text-center cursor-pointer transition-colors"
+              >
+                <div className="text-3xl mb-1">📸</div>
+                <p className="text-sm font-medium text-slate-800">
+                  Glisse ta capture, clique ici ou colle avec{' '}
+                  <kbd className="rounded border border-slate-300 bg-white px-1.5 py-0.5 font-mono text-[11px] text-slate-700">
+                    Ctrl
+                  </kbd>
+                  <span className="mx-0.5 text-slate-400">+</span>
+                  <kbd className="rounded border border-slate-300 bg-white px-1.5 py-0.5 font-mono text-[11px] text-slate-700">
+                    V
+                  </kbd>
+                </p>
+                <p className="text-xs text-slate-500 mt-1">
+                  PNG / JPG / WebP — 8 Mo max
+                </p>
+                <input
+                  ref={fileRef3}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => handleCaptureFile(e.target.files?.[0])}
+                />
+              </div>
+            )}
+
+            {uploadError && (
+              <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {uploadError}
+              </div>
+            )}
+          </div>
+
+          {/* Séparateur */}
+          <div className="flex items-center gap-3 text-xs font-medium text-slate-400">
+            <div className="h-px flex-1 bg-slate-200" />
+            ou saisis tes vols à la main
+            <div className="h-px flex-1 bg-slate-200" />
+          </div>
+
+          <ManualFlightForm
+            values={values}
+            update={update}
+            updateManualFlight={updateManualFlight}
+          />
+        </div>
       )}
 
       {/* Mode LATER : l'IA propose un vol probable */}
