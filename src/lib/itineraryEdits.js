@@ -455,6 +455,21 @@ export function copyAccommodationFromPreviousDay(itinerary, dayIndex) {
 }
 
 /**
+ * Supprime l'hôtel d'une nuit : on remet un hébergement VIDE (prix 0, pas de
+ * nom), de sorte que la carte reste affichée (pour pouvoir re-renseigner) et
+ * que le budget de la nuit retombe à 0. Recalcule le budget hébergement.
+ */
+export function clearAccommodation(itinerary, dayIndex) {
+  const next = deepClone(itinerary);
+  const day = next.days?.[dayIndex];
+  if (!day?.accommodation) return next;
+  const oldPrice = Number(day.accommodation.price_eur) || 0;
+  day.accommodation = { type: '', area: '', price_eur: 0 };
+  applyDelta(next, dayIndex, 'accommodation', 0 - oldPrice);
+  return next;
+}
+
+/**
  * Ajoute un hôtel comme ALTERNATIVE au choix actuel (ne change pas la
  * priorité 1 ni le budget). Utile pour empiler plusieurs candidats trouvés
  * sur Booking et trancher plus tard.
