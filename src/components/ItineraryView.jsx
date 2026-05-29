@@ -187,6 +187,25 @@ export default function ItineraryView({
     setRegenTarget(null);
   }
 
+  // Recalcul propre d'un jour dont le point de départ a changé après la
+  // régénération du jour précédent (bouton "Mettre à jour ce jour").
+  async function handleResyncDay(index) {
+    const startFrom = itinerary?.days?.[index]?.trips?.[0]?.from;
+    const instruction = startFrom
+      ? `Le jour précédent a été modifié : cette journée démarre désormais de "${startFrom}". Recalcule-la pour qu'elle PARTE de "${startFrom}" — mets à jour le premier trajet (from = "${startFrom}", avec distance, durée et prix réalistes) et tout l'enchaînement. Conserve au maximum le reste du programme (activités, repas, hébergement du soir) tant que ça reste géographiquement cohérent.`
+      : "Recalcule cette journée pour qu'elle parte de l'endroit où se termine le jour précédent (premier trajet, distance, durée et prix).";
+    await onRegenerateDay?.(index, instruction);
+  }
+
+  // Ignore l'invitation à recalculer (l'utilisateur garde le jour tel quel).
+  function handleDismissResync(index) {
+    onUpdateItinerary?.((it) => {
+      const next = JSON.parse(JSON.stringify(it));
+      if (next.days?.[index]) delete next.days[index]._resync_needed;
+      return next;
+    });
+  }
+
   async function handleSubmitModify({ instructions, cascade }) {
     if (!modifyTarget) return;
     if (cascade && onReplanFromDay) {
@@ -374,6 +393,9 @@ export default function ItineraryView({
             onSuggestMomentAlternatives={onSuggestMomentAlternatives}
             onImportHotelFromImage={onImportHotelFromImage}
             onImportFlightFromImage={onImportFlightFromImage}
+            onResyncDay={handleResyncDay}
+            onDismissResync={handleDismissResync}
+            regenerating={regenerating}
           />
         </div>
         <div className={tab === 'table' ? '' : 'hidden'}>
@@ -450,6 +472,9 @@ function Planning({
   onSuggestMomentAlternatives,
   onImportHotelFromImage,
   onImportFlightFromImage,
+  onResyncDay,
+  onDismissResync,
+  regenerating,
 }) {
   // Tous les jours fermés par défaut : on voit la liste d'un coup d'œil
   // et on déplie au besoin.
@@ -520,6 +545,9 @@ function Planning({
           onSuggestMomentAlternatives={onSuggestMomentAlternatives}
           onImportHotelFromImage={onImportHotelFromImage}
           onImportFlightFromImage={onImportFlightFromImage}
+          onResyncDay={onResyncDay ? () => onResyncDay(i) : null}
+          onDismissResync={onDismissResync ? () => onDismissResync(i) : null}
+          regenerating={regenerating}
         />
       ))}
     </section>
@@ -714,6 +742,9 @@ function DayCard({
   onSuggestMomentAlternatives,
   onImportHotelFromImage,
   onImportFlightFromImage,
+  onResyncDay,
+  onDismissResync,
+  regenerating,
 }) {
   // Détecte les jours d'arrivée/départ d'un voyage avion-* sans horaire
   // confirmé : on a une trip de mode "Avion" mais sans heure de départ
@@ -864,6 +895,49 @@ function DayCard({
           )}
         </div>
       </header>
+
+      {day._resync_needed && (onResyncDay || onDismissResync) && (
+        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 print:hidden">
+          <div className="flex items-start gap-2">
+            <span className="text-base leading-none mt-0.5">🔄</span>
+            <div className="flex-1">
+              <div className="font-semibold">
+                Le jour précédent a changé de destination
+              </div>
+              <p className="text-xs mt-1 text-amber-800 leading-relaxed">
+                Cette journée repart maintenant de «{' '}
+                {day.trips?.[0]?.from || day.location} », mais son premier
+                trajet (distance et prix) n'a pas été recalculé. Mets-la à jour
+                pour des chiffres justes, ou garde-la telle quelle.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {onResyncDay && (
+                  <button
+                    type="button"
+                    onClick={onResyncDay}
+                    disabled={regenerating}
+                    className="chip bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-60"
+                    title="Recalculer cette journée à partir du nouveau point de départ"
+                  >
+                    {regenerating ? '… Mise à jour' : '🔄 Mettre à jour ce jour'}
+                  </button>
+                )}
+                {onDismissResync && (
+                  <button
+                    type="button"
+                    onClick={onDismissResync}
+                    disabled={regenerating}
+                    className="chip bg-white text-amber-800 border border-amber-300 hover:bg-amber-100 disabled:opacity-60"
+                    title="Garder la journée telle quelle"
+                  >
+                    Garder tel quel
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="mt-4 grid lg:grid-cols-2 gap-3">
         <DayMiniMap

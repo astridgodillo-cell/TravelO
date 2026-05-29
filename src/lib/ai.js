@@ -672,7 +672,14 @@ export async function regenerateDay(itinerary, dayIndex, instructions) {
     if (firstTrip?.from && firstTrip.from !== endLocation) {
       const patchedTrips = nextDay.trips.slice();
       patchedTrips[0] = { ...firstTrip, from: endLocation };
-      newDays[nextIndex] = { ...nextDay, trips: patchedTrips };
+      // Marqueur : ce jour repart d'un nouvel endroit mais son trajet
+      // (distance/durée/prix) n'a pas été recalculé → on propose à l'utilisateur
+      // un bouton "Mettre à jour ce jour" dans l'interface.
+      newDays[nextIndex] = {
+        ...nextDay,
+        trips: patchedTrips,
+        _resync_needed: true,
+      };
     }
   }
 
