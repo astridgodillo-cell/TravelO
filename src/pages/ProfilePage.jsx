@@ -23,8 +23,10 @@ import {
 import PreferencesEditor from '../components/PreferencesEditor';
 import PageHeader from '../components/PageHeader';
 import Icon from '../components/Icon';
+import TravelMap from '../components/TravelMap';
 
 const TABS = [
+  { id: 'map', label: 'Carte du monde', icon: 'map' },
   { id: 'preferences', label: 'Mes préférences', icon: 'sliders' },
   { id: 'personas', label: 'Profils de voyage', icon: 'mask' },
   { id: 'travelers', label: 'Mes voyageurs', icon: 'users' },
@@ -34,7 +36,7 @@ const TABS = [
 
 export default function ProfilePage() {
   const { user, profile: ctxProfile, refreshProfile } = useAuth();
-  const [tab, setTab] = useState('preferences');
+  const [tab, setTab] = useState('map');
   const [profile, setProfile] = useState(ctxProfile);
 
   // Recharge le profil complet (le contexte est OK mais on veut être sûr d'avoir
@@ -84,6 +86,7 @@ export default function ProfilePage() {
         ))}
       </div>
 
+      {tab === 'map' && <TravelMap />}
       {tab === 'preferences' && (
         <DefaultPreferencesTab profile={profile} onUpdated={onProfileUpdated} />
       )}

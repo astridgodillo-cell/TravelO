@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.105.4",
+    "canvas-confetti": "^1.9.4",
     "date-fns": "^4.2.1",
     "leaflet": "^1.9.4",
     "pdfjs-dist": "^5.7.284",

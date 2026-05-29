@@ -356,6 +356,12 @@ export default function ItineraryView({
             <span>{summary?.return_location}</span>
           </div>
 
+          <Countdown
+            startDate={summary?.start_date}
+            endDate={summary?.end_date}
+            destination={summary?.destinations || summary?.return_location}
+          />
+
           {googleMapsUrl && (
             <div className="mt-5 print:hidden">
               <a
@@ -3433,6 +3439,40 @@ function NoteBlock({ title, children }) {
         {title}
       </h3>
       <div className="mt-1 text-slate-700 leading-relaxed">{children}</div>
+    </div>
+  );
+}
+
+// Compteur festif "Plus que X jours avant [destination]" affiché dans le hero.
+// Disparaît une fois le voyage passé ; affiche "C'est aujourd'hui / En cours".
+function Countdown({ startDate, endDate, destination }) {
+  const parse = (iso) => {
+    if (!iso || typeof iso !== 'string') return null;
+    const m = iso.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return null;
+    const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    return Number.isNaN(d.getTime()) ? null : d;
+  };
+  const start = parse(startDate);
+  const end = parse(endDate) || start;
+  if (!start) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const msPerDay = 86400000;
+  const daysToStart = Math.round((start - today) / msPerDay);
+
+  let label;
+  if (daysToStart > 1) label = `🧳 Plus que ${daysToStart} jours avant le départ${destination ? ` pour ${destination}` : ''} !`;
+  else if (daysToStart === 1) label = `🧳 Départ demain${destination ? ` pour ${destination}` : ''} !`;
+  else if (daysToStart === 0) label = `🎉 C'est aujourd'hui — bon voyage !`;
+  else if (end && today <= end) label = `✈️ Voyage en cours — profite bien !`;
+  else return null; // voyage passé
+
+  return (
+    <div className="mt-4 print:hidden">
+      <span className="inline-flex items-center gap-2 rounded-full bg-white text-slate-900 px-4 py-2 text-sm font-bold shadow-pop animate-fade-up">
+        {label}
+      </span>
     </div>
   );
 }

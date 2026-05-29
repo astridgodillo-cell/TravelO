@@ -112,7 +112,7 @@ export default function NewItineraryPage() {
       }
 
       if (data?.id) {
-        navigate(`/itineraire/${data.id}`);
+        navigate(`/itineraire/${data.id}`, { state: { justCreated: true } });
       } else {
         navigate('/mes-voyages');
       }

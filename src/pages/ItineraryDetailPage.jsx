@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useLocation } from 'react-router-dom';
+import confetti from 'canvas-confetti';
 import { getItinerary, updateItinerary } from '../lib/supabase';
 import {
   regenerateDay,
@@ -24,9 +25,24 @@ import SharePanel from '../components/SharePanel';
 import AdminTemplatePanel from '../components/AdminTemplatePanel';
 import { useAuth } from '../context/AuthContext';
 
+// Petite salve de confettis festive (3 bouffées) — célébration à la création.
+function fireConfetti() {
+  const base = { spread: 70, startVelocity: 45, ticks: 200, zIndex: 9999 };
+  confetti({ ...base, particleCount: 80, origin: { x: 0.5, y: 0.5 } });
+  setTimeout(
+    () => confetti({ ...base, particleCount: 60, angle: 60, origin: { x: 0, y: 0.7 } }),
+    150
+  );
+  setTimeout(
+    () => confetti({ ...base, particleCount: 60, angle: 120, origin: { x: 1, y: 0.7 } }),
+    300
+  );
+}
+
 export default function ItineraryDetailPage() {
   const { isAdmin } = useAuth();
   const { id } = useParams();
+  const location = useLocation();
   const [trip, setTrip] = useState(null);
   const [loading, setLoading] = useState(true);
   const [regenerating, setRegenerating] = useState(false);
@@ -54,6 +70,14 @@ export default function ItineraryDetailPage() {
       active = false;
     };
   }, [id]);
+
+  // Confettis une seule fois, à l'arrivée sur un itinéraire fraîchement créé.
+  useEffect(() => {
+    if (!trip || !location.state?.justCreated) return;
+    fireConfetti();
+    // On efface le drapeau pour ne pas refaire les confettis au rafraîchissement.
+    window.history.replaceState({}, '');
+  }, [trip, location.state]);
 
   async function handleRegenerateDay(dayIndex, instructions) {
     if (!trip) return;
