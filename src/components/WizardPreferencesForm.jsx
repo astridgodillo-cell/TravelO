@@ -541,44 +541,11 @@ function StepTripType({ values, update }) {
         title="Comment voyages-tu ?"
         subtitle="Choisis le mode principal de transport. On adaptera ensuite les étapes suivantes."
       />
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {TRIP_TYPES.map((t) => {
-          const active = values.tripType === t.id;
-          return (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => update('tripType', t.id)}
-              className={`flex items-center gap-3 rounded-xl border p-4 text-left transition-all ${
-                active
-                  ? 'border-brand-600 bg-brand-50 ring-2 ring-brand-500 shadow-glow'
-                  : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-md'
-              }`}
-            >
-              <span
-                className={`inline-grid place-items-center h-10 w-10 rounded-xl shrink-0 ${
-                  active ? 'bg-brand-600 text-white' : 'bg-slate-900 text-white'
-                }`}
-              >
-                <Icon name={t.icon} className="h-5 w-5" />
-              </span>
-              <span
-                className={`font-medium ${
-                  active ? 'text-brand-700' : 'text-slate-900'
-                }`}
-              >
-                {t.label}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Question vol — bien visible. Pour les types avion-*, le vol est
-          implicite (petit bandeau d'info). Pour les autres, 2 gros boutons
-          "Comment rejoins-tu ta destination ?" pour ne pas rater l'option. */}
+      {/* Question vol — placée EN HAUT, avant les types de voyage. Pour les
+          types avion-*, le vol est implicite (petit bandeau d'info). Pour les
+          autres, 2 gros boutons "Comment rejoins-tu ta destination ?". */}
       {isAutoAir ? (
-        <div className="mt-6 rounded-xl border-2 border-sky-200 bg-sky-50 p-4 text-sm text-sky-900 flex items-center gap-2">
+        <div className="mb-6 rounded-xl border-2 border-sky-200 bg-sky-50 p-4 text-sm text-sky-900 flex items-center gap-2">
           <span className="text-lg">✈️</span>
           <span>
             <strong>Ce voyage inclut un vol.</strong> Tu pourras chercher,
@@ -586,7 +553,7 @@ function StepTripType({ values, update }) {
           </span>
         </div>
       ) : (
-        <div className="mt-6">
+        <div className="mb-6">
           <h3 className="text-sm font-semibold text-slate-900 mb-1 flex items-center gap-1.5">
             <span>✈️</span> Comment rejoins-tu ta destination ?
           </h3>
@@ -630,6 +597,39 @@ function StepTripType({ values, update }) {
           </div>
         </div>
       )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {TRIP_TYPES.map((t) => {
+          const active = values.tripType === t.id;
+          return (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => update('tripType', t.id)}
+              className={`flex items-center gap-3 rounded-xl border p-4 text-left transition-all ${
+                active
+                  ? 'border-brand-600 bg-brand-50 ring-2 ring-brand-500 shadow-glow'
+                  : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-md'
+              }`}
+            >
+              <span
+                className={`inline-grid place-items-center h-10 w-10 rounded-xl shrink-0 ${
+                  active ? 'bg-brand-600 text-white' : 'bg-slate-900 text-white'
+                }`}
+              >
+                <Icon name={t.icon} className="h-5 w-5" />
+              </span>
+              <span
+                className={`font-medium ${
+                  active ? 'text-brand-700' : 'text-slate-900'
+                }`}
+              >
+                {t.label}
+              </span>
+            </button>
+          );
+        })}
+      </div>
 
       {showLicenseQuestion && (
         <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
