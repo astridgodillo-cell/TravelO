@@ -184,16 +184,23 @@ export default function ItineraryView({
     return out;
   }, [days]);
   const hasFlights = flights.length > 0;
-  // Onglets : on insère "Vols" après "Carte" UNIQUEMENT s'il y a un vol.
+  const hasAccommodations = useMemo(
+    () => (days || []).some((d) => d.accommodation),
+    [days]
+  );
+  // Onglets : on insère "Vols" puis "Hôtels" après "Carte", chacun seulement
+  // s'il y a quelque chose à montrer.
   const tabs = useMemo(() => {
-    if (!hasFlights) return TABS;
     const out = [];
     for (const t of TABS) {
       out.push(t);
-      if (t.id === 'map') out.push({ id: 'flights', label: '✈️ Vols' });
+      if (t.id === 'map') {
+        if (hasFlights) out.push({ id: 'flights', label: '✈️ Vols' });
+        if (hasAccommodations) out.push({ id: 'hotels', label: '🏨 Hôtels' });
+      }
     }
     return out;
-  }, [hasFlights]);
+  }, [hasFlights, hasAccommodations]);
   // Critères d'hébergement saisis dans le wizard → pré-remplissent Booking.
   // Fallback pour les anciens itinéraires sans ces critères.
   const accommodationPrefs = summary?.accommodation_prefs || {
@@ -438,6 +445,20 @@ export default function ItineraryView({
               flights={flights}
               pax={pax}
               onImportFlightFromImage={onImportFlightFromImage}
+            />
+          </div>
+        )}
+        {hasAccommodations && (
+          <div className={tab === 'hotels' ? '' : 'hidden'}>
+            <HotelsTab
+              days={days}
+              adults={adults}
+              childrenCount={children}
+              childrenAges={childrenAges}
+              accommodationPrefs={accommodationPrefs}
+              isVanTrip={isVanTrip}
+              onUpdateItinerary={onUpdateItinerary}
+              onImportHotelFromImage={onImportHotelFromImage}
             />
           </div>
         )}
@@ -731,6 +752,94 @@ const CATEGORY_STYLES = {
  * une identité visuelle nette à chaque catégorie pour éviter le mur de
  * texte.
  */
+// Construit le lien Booking d'une nuit (mêmes critères que dans le planning :
+// dates, voyageurs, gamme, note, fourchette de prix).
+function computeAccomLink(
+  day,
+  { allDays, dayIndex, adults, childrenCount, childrenAges, accommodationPrefs }
+) {
+  const nextDayDate = Array.isArray(allDays)
+    ? allDays[dayIndex + 1]?.date
+    : null;
+  const accomPrice = Number(day.accommodation?.price_eur) || 0;
+  return bestAccommodationLink(day.accommodation, {
+    location: day.location,
+    checkin: day.date,
+    checkout: nextDayDate || day.date,
+    adults,
+    children: childrenCount,
+    childrenAges,
+    rooms: accommodationPrefs?.rooms,
+    stars: accommodationPrefs?.stars,
+    reviewScore: accommodationPrefs?.reviewScore,
+    amenities: accommodationPrefs?.amenities,
+    priceMin: accomPrice > 0 ? Math.round(accomPrice * 0.65) : undefined,
+    priceMax: accomPrice > 0 ? Math.round(accomPrice * 1.4) : undefined,
+  });
+}
+
+// Onglet "Hôtels" : récapitulatif de tous les hébergements, nuit par nuit.
+// On réutilise la carte hébergement complète (LodgingCard) → capture, saisie
+// manuelle, prix éditable, "même hôtel que la veille" et lien Booking, le tout
+// mettant à jour l'itinéraire et les budgets.
+function HotelsTab({
+  days,
+  adults,
+  childrenCount,
+  childrenAges,
+  accommodationPrefs,
+  isVanTrip,
+  onUpdateItinerary,
+  onImportHotelFromImage,
+}) {
+  const nights = (days || [])
+    .map((day, dayIndex) => ({ day, dayIndex }))
+    .filter(({ day }) => day.accommodation);
+  return (
+    <section className="space-y-4">
+      <div>
+        <h2 className="text-xl font-semibold text-slate-900">
+          Tes hébergements
+        </h2>
+        <p className="text-sm text-slate-500 mt-1">
+          Tous tes hôtels, nuit par nuit. Mets-les à jour avec une capture
+          (Booking, voucher PDF…) ou à la main — le budget se recalcule tout
+          seul.
+        </p>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        {nights.map(({ day, dayIndex }) => {
+          const accomLink = computeAccomLink(day, {
+            allDays: days,
+            dayIndex,
+            adults,
+            childrenCount,
+            childrenAges,
+            accommodationPrefs,
+          });
+          return (
+            <div key={dayIndex}>
+              <div className="text-[10px] uppercase tracking-widest text-slate-400 font-semibold mb-1">
+                {day.label} · {day.weekday} {day.date} — {day.location}
+              </div>
+              <LodgingCard
+                day={day}
+                dayIndex={dayIndex}
+                isVanTrip={isVanTrip}
+                accomLink={accomLink}
+                isBookingCta={accomLink?.provider === 'Booking'}
+                prevAccommodation={days?.[dayIndex - 1]?.accommodation}
+                onUpdateItinerary={onUpdateItinerary}
+                onImportHotelFromImage={onImportHotelFromImage}
+              />
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 // Onglet "Vols" : récapitulatif de tous les vols de l'itinéraire, avec un
 // bouton pour mettre à jour chacun (capture ou saisie manuelle). La mise à jour
 // recalcule automatiquement le(s) jour(s) concerné(s) côté page itinéraire.

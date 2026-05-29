@@ -229,6 +229,26 @@ export default function ImportHotelFromScreenshotModal({
     if (file) handleFile(file);
   }
 
+  // Saisie 100 % manuelle : on saute directement à l'aperçu éditable, vide.
+  function startManual() {
+    setError(null);
+    setDataUrl(null);
+    setExtracted({
+      name: '',
+      type: 'Hôtel',
+      price_eur: 0,
+      currency_detected: 'EUR',
+      rating: null,
+      rating_count: null,
+      services: [],
+      coordinates_hint: '',
+      booking_url: null,
+      extraction_note: '',
+      user_photo: null,
+    });
+    setPhase('preview');
+  }
+
   async function applyAction(mode) {
     if (!extracted) return;
     setBusy(true);
@@ -313,6 +333,23 @@ export default function ImportHotelFromScreenshotModal({
                 onChange={(e) => handleFile(e.target.files?.[0])}
               />
             </div>
+          )}
+
+          {phase === 'upload' && (
+            <div className="mt-4 flex items-center gap-3 text-xs font-medium text-slate-400">
+              <div className="h-px flex-1 bg-slate-200" />
+              ou
+              <div className="h-px flex-1 bg-slate-200" />
+            </div>
+          )}
+          {phase === 'upload' && (
+            <button
+              type="button"
+              onClick={startManual}
+              className="mt-3 w-full rounded-xl border border-slate-300 bg-white hover:bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700 transition-colors"
+            >
+              ✏️ Saisir l'hôtel à la main (nom, prix par nuit…)
+            </button>
           )}
 
           {phase === 'extracting' && (
