@@ -26,6 +26,7 @@ import {
 } from '../lib/flightSearchLinks';
 import { findGatewaysForCountry, formatGateway } from '../lib/airportCities';
 import { extractFlightFromImage } from '../lib/ai';
+import PlaceDiscovery from './PlaceDiscovery';
 
 // --- Helpers dates ---
 function toIsoDate(d) {
@@ -1758,6 +1759,58 @@ function StepVehicle({ values, updateVehicle, pickVehicleType }) {
   );
 }
 
+function StepComposition({ values, onPick }) {
+  const mode = values.compositionMode || 'ai';
+  const OPTIONS = [
+    {
+      id: 'ai',
+      icon: 'sparkles',
+      title: 'Laisse faire l\'IA',
+      desc: 'Tu donnes juste tes envies, et l\'IA compose tout l\'itinéraire de A à Z.',
+    },
+    {
+      id: 'choose',
+      icon: 'compass',
+      title: 'Je choisis mes lieux',
+      desc: 'On te propose une sélection de villes et de lieux. Tu coches ce qui te plaît, l\'IA bâtit le voyage autour.',
+    },
+  ];
+  return (
+    <div>
+      <StepHeader
+        icon="route"
+        title="Comment veux-tu composer ton voyage ?"
+        subtitle="Deux façons de faire : tout déléguer à l'IA, ou choisir toi-même les lieux à visiter."
+      />
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {OPTIONS.map((o) => {
+          const active = mode === o.id;
+          return (
+            <button
+              key={o.id}
+              type="button"
+              onClick={() => onPick(o.id)}
+              className={`text-left rounded-2xl border-2 p-5 transition-all ${
+                active
+                  ? 'border-brand-600 bg-brand-50 ring-2 ring-brand-500 shadow-glow'
+                  : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-md'
+              }`}
+            >
+              <div className="inline-grid place-items-center h-12 w-12 rounded-xl bg-brand-600 text-white mb-3">
+                <Icon name={o.icon} className="h-6 w-6" />
+              </div>
+              <div className="font-semibold text-slate-900">{o.title}</div>
+              <p className="text-sm text-slate-600 mt-1 leading-relaxed">
+                {o.desc}
+              </p>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function StepInterests({ values, toggle }) {
   const noneSelected = values.interests.length === 0;
   return (
@@ -2137,12 +2190,33 @@ export default function WizardPreferencesForm({
     initialValues ? { ...DEFAULTS, ...initialValues } : DEFAULTS
   );
   const [currentStep, setCurrentStep] = useState(0);
+  // État de l'écran "Je choisis mes lieux" (porté ici pour survivre quand on
+  // change d'étape du wizard).
+  const [discover, setDiscover] = useState(null);
 
   useEffect(() => {
     if (initialValues) {
       setValues((v) => ({ ...DEFAULTS, ...v, ...initialValues }));
     }
   }, [initialValues]);
+
+  // Choix du mode de composition (étape "Comment composer ton voyage ?").
+  function pickComposition(modeId) {
+    if (modeId === 'ai') {
+      // On repart sur une page blanche : l'IA décide tout.
+      setValues((v) => ({
+        ...v,
+        compositionMode: 'ai',
+        mustInclude: '',
+        _selectedPlaces: [],
+      }));
+      setDiscover((dd) =>
+        dd ? { ...dd, selectedCities: [], selectedPlaces: [] } : dd
+      );
+    } else {
+      setValues((v) => ({ ...v, compositionMode: 'choose' }));
+    }
+  }
 
   const tripType = normalizeTripType(values.tripType);
   // L'étape "Tes vols" apparaît si :
@@ -2249,6 +2323,42 @@ export default function WizardPreferencesForm({
         ),
       });
     }
+    base.push({
+      id: 'composition',
+      canNext: () => true,
+      render: () => (
+        <StepComposition values={values} onPick={pickComposition} />
+      ),
+    });
+    if (values.compositionMode === 'choose') {
+      base.push({
+        id: 'discover',
+        // On exige au moins une ville ou un lieu sélectionné pour avancer.
+        canNext: () =>
+          (discover?.selectedCities?.length || 0) +
+            (discover?.selectedPlaces?.length || 0) >
+          0,
+        render: () => (
+          <PlaceDiscovery
+            destination={values.destinations}
+            startDate={values.startDate}
+            endDate={values.endDate}
+            tripType={values.tripType}
+            adults={values.adults}
+            childrenAges={values.childrenAges}
+            state={discover}
+            onState={setDiscover}
+            onSelectionChange={(mustInclude, selectedPlaces) => {
+              setValues((v) => ({
+                ...v,
+                mustInclude,
+                _selectedPlaces: selectedPlaces,
+              }));
+            }}
+          />
+        ),
+      });
+    }
     base.push(
       {
         id: 'interests',
@@ -2282,7 +2392,7 @@ export default function WizardPreferencesForm({
     );
     return base;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [values, isAir, isMotorized]);
+  }, [values, isAir, isMotorized, discover]);
 
   // Si l'utilisateur change de tripType et qu'on était au-delà de l'étape vol,
   // on s'assure que currentStep reste valide.

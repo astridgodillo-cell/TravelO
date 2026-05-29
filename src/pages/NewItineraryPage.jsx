@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import PreferencesForm from '../components/PreferencesForm';
 import WizardPreferencesForm from '../components/WizardPreferencesForm';
-import InspireMeFlow from '../components/InspireMeFlow';
 import LocalActivitiesFlow from '../components/LocalActivitiesFlow';
 import GeneratingLoader from '../components/GeneratingLoader';
 import PrefillBanner from '../components/PrefillBanner';
@@ -15,17 +14,10 @@ import { useNavigate } from 'react-router-dom';
 const MODES = [
   {
     id: 'expert',
-    label: 'J\'ai mon plan en tête',
+    label: 'Créer mon voyage',
     icon: 'map',
     description:
-      'Formulaire détaillé : vous précisez tout (étapes, activités, hébergement, budget…).',
-  },
-  {
-    id: 'inspire',
-    label: 'Inspire-moi',
-    icon: 'sparkles',
-    description:
-      'Vous tapez juste une destination. On vous propose des lieux à visiter, vous choisissez, on construit l\'itinéraire.',
+      'Un parcours guidé pas-à-pas. En cours de route, choisissez : laisser l\'IA tout composer, ou choisir vous-même les lieux à visiter.',
   },
   {
     id: 'local',
@@ -55,19 +47,6 @@ export default function NewItineraryPage() {
   function handlePrefill({ preferences, travelers, personalInfo, visitedPlaces, wishlistPlaces }) {
     setPrefillPrefs(preferences);
     setProfileExtras({ travelers, personalInfo, visitedPlaces, wishlistPlaces });
-  }
-
-  // Inspire-moi → wizard : une fois les lieux choisis, on bascule sur le
-  // pas-à-pas guidé (mêmes étapes que "J'ai mon plan en tête") pré-rempli avec
-  // la destination, les dates, les voyageurs et les lieux sélectionnés. La
-  // génération se fera depuis le wizard, après avoir complété budget/hébergement.
-  function handleInspireContinue(prefs) {
-    setPrefillPrefs(prefs);
-    setMode('expert');
-    setExpertView('wizard');
-    if (typeof window !== 'undefined') {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
   }
 
   async function handleGenerate(prefs) {
@@ -157,7 +136,7 @@ export default function NewItineraryPage() {
 
       {!loading && (
         <div className="card">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {MODES.map((m) => {
               const active = mode === m.id;
               return (
@@ -228,10 +207,6 @@ export default function NewItineraryPage() {
             </>
           )}
         </>
-      )}
-
-      {!loading && mode === 'inspire' && (
-        <InspireMeFlow onContinue={handleInspireContinue} loading={loading} />
       )}
 
       {!loading && mode === 'local' && <LocalActivitiesFlow />}

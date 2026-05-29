@@ -26,6 +26,10 @@ export const DEFAULTS = {
   adults: 2,
   childrenAges: [],
   tripType: 'itinerant',
+  // Mode de composition du voyage (étape du wizard) :
+  //   'ai'     → l'IA compose tout de A à Z
+  //   'choose' → l'utilisateur choisit ses lieux (découverte type "Inspire-moi")
+  compositionMode: 'ai',
   // Vide par défaut : si l'utilisateur ne coche rien, on considère qu'il
   // est ouvert à tout (l'IA propose un mix équilibré).
   interests: [],
