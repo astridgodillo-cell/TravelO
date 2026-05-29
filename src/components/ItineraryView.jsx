@@ -26,6 +26,7 @@ import RegenerateDayModal from './RegenerateDayModal';
 import ModifyDayModal from './ModifyDayModal';
 import EditActivityModal from './EditActivityModal';
 import DayPhotos from './DayPhotos';
+import GygActivityWidget, { GYG_ENABLED } from './GygActivityWidget';
 import DaySpecialties from './DaySpecialties';
 import ItineraryTable from './ItineraryTable';
 import Icon from './Icon';
@@ -3419,17 +3420,28 @@ function FichesActivites({ activities }) {
           <div className="mt-3 flex flex-wrap gap-4 text-sm">
             <span
               className="text-slate-500"
-              title="Estimation TravelO. Le prix réel sur GetYourGuide peut varier."
+              title="Estimation TravelO pour le budget. Les vrais prix sont affichés dans l'encart GetYourGuide ci-dessous ; ajuste le prix depuis l'onglet Planning si besoin."
             >
-              à partir de {formatEurEstimate(a.price_per_person_eur)} / personne
+              ≈ {formatEurEstimate(a.price_per_person_eur)} / personne
+              <span className="text-slate-400"> (estimation budget)</span>
             </span>
             <span className="font-semibold text-slate-800">
               Total famille : {formatEurEstimate(a.family_total_eur)}
             </span>
           </div>
-          {isLikelyBookable(a) && (
-            <ActivityBookingCta activity={a} location={a.location} />
-          )}
+          {isLikelyBookable(a) &&
+            (GYG_ENABLED ? (
+              <div className="mt-3">
+                <div className="text-xs font-semibold text-slate-500 mb-1.5">
+                  💶 Vrais prix & réservation (GetYourGuide)
+                </div>
+                <GygActivityWidget
+                  query={`${a.title} ${a.location || ''}`.trim()}
+                />
+              </div>
+            ) : (
+              <ActivityBookingCta activity={a} location={a.location} />
+            ))}
         </article>
       ))}
     </section>
