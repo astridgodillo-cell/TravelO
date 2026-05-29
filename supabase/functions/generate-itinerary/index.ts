@@ -2172,6 +2172,88 @@ Réponds UNIQUEMENT avec le JSON valide. Aucun texte autour, aucun bloc markdown
   );
 }
 
+// ─── Extraction vision FIABILISÉE : on lit l'image PLUSIEURS fois et on
+// recoupe les champs-clés (chiffres, heures, codes) par vote majoritaire. En
+// cas d'égalité sur des nombres, on prend la médiane. Réduit fortement les
+// erreurs de lecture (ex : 284 € / 3 nuits lu par erreur comme 2 nuits).
+function getPath(obj: any, path: string): any {
+  return path.split('.').reduce((o, k) => (o == null ? undefined : o[k]), obj);
+}
+function setPath(obj: any, path: string, val: any): void {
+  const ks = path.split('.');
+  let o = obj;
+  for (let i = 0; i < ks.length - 1; i++) {
+    if (o[ks[i]] == null) return; // ne crée pas de sous-objet manquant
+    o = o[ks[i]];
+  }
+  o[ks[ks.length - 1]] = val;
+}
+function consensusValue(values: any[]): any {
+  const vals = values.filter((v) => v !== null && v !== undefined && v !== '');
+  if (!vals.length) return undefined;
+  const counts = new Map<string, { n: number; raw: any }>();
+  for (const v of vals) {
+    const k = typeof v === 'number' ? String(Math.round(v)) : String(v).trim();
+    const e = counts.get(k) || { n: 0, raw: v };
+    e.n++;
+    counts.set(k, e);
+  }
+  let best: { n: number; raw: any } | null = null;
+  for (const e of counts.values()) if (!best || e.n > best.n) best = e;
+  const topCount = best!.n;
+  const tied = [...counts.values()].filter((e) => e.n === topCount);
+  if (tied.length > 1 && vals.every((v) => typeof v === 'number')) {
+    const sorted = [...(vals as number[])].sort((a, b) => a - b);
+    return sorted[Math.floor(sorted.length / 2)]; // médiane
+  }
+  return best!.raw;
+}
+
+async function extractVisionConsensus(
+  prompt: string,
+  imageBase64: string,
+  mime: string,
+  maxTokens: number,
+  keyFields: string[],
+  isValid: (r: any) => boolean,
+  passes = 3
+): Promise<{ parsed: any; usage: any; model: string; disagreed: boolean }> {
+  const results: any[] = [];
+  let usage: any = null;
+  let model = '';
+  for (let i = 0; i < passes; i++) {
+    try {
+      const r = await callVisionLLM(prompt, imageBase64, mime, maxTokens);
+      const parsed = await parseOrRepair(r.text, async (p, t) => await callExpansion(p, t));
+      if (parsed) {
+        results.push(parsed);
+        usage = r.usage;
+        model = r.modelUsed;
+      }
+    } catch (e) {
+      console.warn('[vision-consensus] passe échouée :', (e as Error).message);
+    }
+  }
+  if (!results.length) throw new Error('Extraction échouée (aucune lecture exploitable).');
+  // Base = 1re lecture "valide" (qui a bien reconnu un hôtel / un vol).
+  const base = results.find((r) => isValid(r)) || results[0];
+  let disagreed = false;
+  for (const f of keyFields) {
+    const vals = results.map((r) => getPath(r, f));
+    const c = consensusValue(vals);
+    if (c !== undefined) {
+      const distinct = new Set(
+        vals
+          .filter((v) => v !== null && v !== undefined && v !== '')
+          .map((v) => (typeof v === 'number' ? Math.round(v) : String(v).trim()))
+      ).size;
+      if (distinct > 1) disagreed = true;
+      setPath(base, f, c);
+    }
+  }
+  return { parsed: base, usage, model, disagreed };
+}
+
 async function fetchUnsplashPhotos(query: string, perPage = 5): Promise<any[]> {
   if (!UNSPLASH_ACCESS_KEY) return [];
   try {
@@ -3578,15 +3660,29 @@ Si tu ne reconnais PAS un vol exploitable (capture floue, écran d'erreur, page 
 { "outbound": null, "extraction_note": "L'image ne contient pas d'informations de vol exploitables." }`;
 
       try {
-        const { text, usage, modelUsed } = await callVisionLLM(
-          prompt,
-          image_base64,
-          mime,
-          2500
-        );
-        const parsed = await parseOrRepair(text, async (p, t) => {
-          return await callExpansion(p, t);
-        });
+        const { parsed, usage, model: modelUsed, disagreed } =
+          await extractVisionConsensus(
+            prompt,
+            image_base64,
+            mime,
+            2500,
+            [
+              'total_price_eur',
+              'passengers_total',
+              'outbound.departure_at',
+              'outbound.arrival_at',
+              'outbound.origin_iata',
+              'outbound.destination_iata',
+              'outbound.flight_number',
+              'return.departure_at',
+              'return.arrival_at',
+            ],
+            (r) => !!r?.outbound?.origin_iata,
+            3
+          );
+        if (parsed && disagreed) {
+          parsed.extraction_note = `${parsed.extraction_note || ''} (Lecture vérifiée plusieurs fois — confirme les horaires et le prix.)`.trim();
+        }
         return jsonResponse({ flight: parsed, usage, model: modelUsed });
       } catch (e) {
         console.error('[extract-flight-from-image] error:', e);
@@ -3627,28 +3723,32 @@ CONTEXTE :
 INSTRUCTIONS — extrais avec PRÉCISION depuis l'image :
 - "name" : nom EXACT de l'hôtel tel qu'écrit (sans abréviation).
 - "type" : type d'hébergement et catégorie ★ si visible (ex : "Hôtel 4★", "Appart-hôtel 3★", "Auberge", "Maison d'hôtes").
-- "price_per_night_eur" : prix par nuit EN EUROS. Si la devise affichée n'est pas l'euro, convertis grossièrement (1 USD ≈ 0,92 €, 1 GBP ≈ 1,17 €, 1 CAD ≈ 0,68 €, 1 CHF ≈ 1,05 €, 1 JPY ≈ 0,006 €). Si le prix affiché est un total séjour, divise par le nombre de nuits si tu peux le déduire de l'image, sinon laisse null et précise dans extraction_note.
+- "nights" : nombre de NUITS de la réservation. ⚠️ LIS-LE sur la capture : soit le texte explicite ("3 nuits"), soit le nombre de nuits entre la date d'arrivée et la date de départ. NE le déduis JAMAIS du prix. Si vraiment aucune indication, mets 1.
+- "total_price_eur" : le PRIX TOTAL affiché pour le séjour montré (toutes nuits confondues), EN EUROS. C'est le grand prix mis en avant (ex : "284 €"). Convertis si autre devise (1 USD ≈ 0,92 €, 1 GBP ≈ 1,17 €, 1 CAD ≈ 0,68 €, 1 CHF ≈ 1,05 €, 1 JPY ≈ 0,006 €).
+- "price_per_night_eur" : prix par nuit = total_price_eur ÷ nights, ARRONDI. ⚠️ AUTO-VÉRIFICATION OBLIGATOIRE : price_per_night_eur × nights DOIT être ≈ total_price_eur. Exemple : 284 € pour 3 nuits → 284 ÷ 3 = 95 €/nuit (et NON 142). Si la capture n'affiche QUE le prix/nuit, reprends-le tel quel et mets total_price_eur = price_per_night_eur × nights.
 - "currency_detected" : devise détectée sur la capture (ex : "EUR", "USD", "CAD"…).
 - "rating" : note sur 10 ou sur 5 (si sur 5, multiplie par 2 pour la mettre sur 10). Sinon null.
 - "rating_count" : nombre d'avis si visible. Sinon null.
 - "services" : tableau des équipements/services majeurs visibles (ex : ["WiFi gratuit", "Petit-déjeuner inclus", "Climatisation", "Piscine", "Parking", "Animaux acceptés", "Accessible PMR"]). Maximum 8, en français.
 - "address_hint" : indication de quartier / adresse / repère géographique si visible (ex : "Centre-ville", "Près de la Sagrada Familia", "À 5 min du métro"). Sinon null.
 - "booking_url" : URL visible ou identifiant de l'annonce si présent (ex : nom de domaine "booking.com"). Sinon null.
-- "nights" : nombre de NUITS de la réservation si déductible de la capture (ex : "3 nuits", ou dates arrivée→départ). Défaut 1 si non visible. C'est le nombre de nuits consécutives au MÊME hôtel.
-- "extraction_note" : courte note (1-2 phrases) si certaines infos n'ont pas pu être extraites avec certitude (ex : "Prix affiché en USD converti à 0.92, vérifiez le taux du jour"). Sinon chaîne vide.
+- "extraction_note" : courte note (1-2 phrases) si conversion de devise ou doute. Sinon chaîne vide.
+
+AVANT DE RÉPONDRE, relis la capture et VÉRIFIE la cohérence : total_price_eur ≈ price_per_night_eur × nights. Si ça ne colle pas, corrige (le nombre de nuits LU sur la capture est la référence, pas une déduction depuis le prix).
 
 Renvoie UNIQUEMENT du JSON valide selon ce schéma (rien d'autre, pas de markdown, pas de texte autour) :
 {
   "name": "...",
   "type": "...",
-  "price_per_night_eur": 165,
+  "nights": 3,
+  "total_price_eur": 284,
+  "price_per_night_eur": 95,
   "currency_detected": "EUR",
   "rating": 8.4,
   "rating_count": 2228,
   "services": ["..."],
   "address_hint": "...",
   "booking_url": null,
-  "nights": 1,
   "extraction_note": ""
 }
 
@@ -3656,16 +3756,28 @@ Si tu ne reconnais PAS un hôtel dans l'image (capture floue, page d'erreur, pho
 { "name": null, "extraction_note": "L'image ne contient pas d'informations d'hôtel exploitables." }`;
 
       try {
-        const { text, usage, modelUsed } = await callVisionLLM(
-          prompt,
-          image_base64,
-          mime,
-          2000
-        );
-        const parsed = await parseOrRepair(text, async (p, t) => {
-          // pas de retry vision pour la réparation : on garde l'appel texte
-          return await callExpansion(p, t);
-        });
+        const { parsed, usage, model: modelUsed, disagreed } =
+          await extractVisionConsensus(
+            prompt,
+            image_base64,
+            mime,
+            2000,
+            ['name', 'nights', 'total_price_eur', 'price_per_night_eur', 'rating'],
+            (r) => !!r?.name,
+            3
+          );
+        // Cohérence garantie : prix/nuit = total ÷ nuits (arrondi).
+        if (parsed) {
+          const nights = Math.max(1, Math.round(Number(parsed.nights) || 1));
+          const total = Math.round(Number(parsed.total_price_eur) || 0);
+          parsed.nights = nights;
+          if (total > 0) {
+            parsed.price_per_night_eur = Math.round(total / nights);
+          }
+          if (disagreed) {
+            parsed.extraction_note = `${parsed.extraction_note || ''} (Lecture vérifiée plusieurs fois — confirme le prix et le nombre de nuits.)`.trim();
+          }
+        }
         return jsonResponse({ hotel: parsed, usage, model: modelUsed });
       } catch (e) {
         console.error('[extract-hotel-from-image] error:', e);
