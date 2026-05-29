@@ -31,16 +31,24 @@ export default function DaySpecialties({
   }
 
   return (
-    <div className="mt-4">
-      <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500 mb-2">
-        🍽️ Spécialités culinaires{location ? ` — ${location}` : ''}
-      </h4>
-      <div className="grid sm:grid-cols-2 gap-3">
+    <details className="group mt-4 rounded-2xl border border-slate-200 bg-white">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 select-none">
+        <span className="text-sm font-semibold text-slate-700">
+          🍽️ Spécialités culinaires{location ? ` — ${location}` : ''}
+          <span className="ml-2 text-xs font-normal text-slate-400">
+            ({specialties.length})
+          </span>
+        </span>
+        <span className="shrink-0 text-slate-400 transition-transform group-open:rotate-180 print:hidden">
+          ⌄
+        </span>
+      </summary>
+      <div className="grid sm:grid-cols-2 gap-3 px-4 pb-4">
         {specialties.map((s, i) => (
           <SpecialtyCard key={`${s.name}-${i}`} specialty={s} />
         ))}
       </div>
-    </div>
+    </details>
   );
 }
 

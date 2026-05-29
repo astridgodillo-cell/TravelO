@@ -143,7 +143,7 @@ export default function DayMiniMap({
     <div
       ref={containerRef}
       className="rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 w-full print:hidden relative"
-      style={{ aspectRatio: '4 / 3' }}
+      style={{ aspectRatio: '16 / 9' }}
       aria-label={`Carte : ${location || ''}`}
     >
       {visible ? (

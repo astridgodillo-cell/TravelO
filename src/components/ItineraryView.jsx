@@ -985,20 +985,26 @@ function DayCard({
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={onToggleExpand}
-        className="mt-4 w-full rounded-xl border border-dashed border-slate-200 bg-slate-50 hover:bg-slate-100 text-sm text-slate-600 py-2.5 transition-colors print:hidden"
-      >
-        {expanded
-          ? '↑ Replier les détails de la journée'
-          : '↓ Voir tous les détails de la journée'}
-      </button>
+      <div className="mt-4 flex justify-center print:hidden">
+        <button
+          type="button"
+          onClick={onToggleExpand}
+          className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300 text-sm font-medium text-slate-600 px-5 py-2 shadow-sm transition-colors"
+        >
+          <span
+            className={`text-xs transition-transform ${expanded ? 'rotate-180' : ''}`}
+            aria-hidden="true"
+          >
+            ⌄
+          </span>
+          {expanded ? 'Replier la journée' : 'Voir tous les détails'}
+        </button>
+      </div>
 
       {expanded && (
         <>
           {/* Bloc résumé 24h — toujours en tête : "où je dors, ce que je mange aujourd'hui" */}
-          <div className="mt-4 grid md:grid-cols-2 gap-3">
+          <div className="mt-4 grid md:grid-cols-2 gap-3 items-start">
             {day.accommodation && (
               <LodgingCard
                 day={day}

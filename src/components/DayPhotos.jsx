@@ -32,14 +32,14 @@ export default function DayPhotos({
     return [...photos.slice(n), ...photos.slice(0, n)];
   }, [photos, photoOffset]);
 
-  // Mode aspect : wrapper en aspect-[4/3] pour s'aligner avec la mini-carte.
+  // Mode aspect : wrapper en aspect-[16/9] pour s'aligner avec la mini-carte.
   // Mode classique : hauteur fixe (utilisation hors grille).
   if (aspect) {
     if (photos === null) {
       return (
         <div
           className="print:hidden w-full rounded-2xl bg-slate-100 animate-pulse"
-          style={{ aspectRatio: '4 / 3' }}
+          style={{ aspectRatio: '16 / 9' }}
         />
       );
     }
