@@ -286,9 +286,16 @@ export function bestAccommodationLink(accommodation, ctx = {}) {
   // au lieu de chercher un hôtel inventé par son nom. On ne cherche par nom
   // QUE si l'utilisateur a confirmé un vrai hôtel (réservation importée).
   const area = (accommodation.area || '').trim();
+  const hint = (accommodation.coordinates_hint || '').trim();
+  // Zone conseillée affichée dans la carte (même priorité que l'affichage :
+  // area, puis indice de coordonnées). Cette zone peut désigner une AUTRE
+  // ville que le lieu du jour (ex : on dort à Cascais alors que la journée se
+  // passe à Sintra). On cherche donc cette zone TELLE QUELLE sur Booking et on
+  // n'y ajoute PAS le lieu du jour, sinon Booking chercherait au mauvais
+  // endroit (« Sintra » au lieu de « Cascais center »).
+  const zone = area || hint;
   const userConfirmed = !!accommodation._user_edited && !!accommodation.name;
-  const zoneQuery =
-    [area, cityName].filter(Boolean).join(', ') || cityName;
+  const zoneQuery = zone || cityName;
   const bookingQuery = userConfirmed
     ? `${accommodation.name}${cityName ? ', ' + cityName : ''}`
     : zoneQuery;
