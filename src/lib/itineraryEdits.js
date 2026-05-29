@@ -411,6 +411,20 @@ export function replaceAccommodation(itinerary, dayIndex, newAccommodation) {
 }
 
 /**
+ * Copie l'hébergement du jour PRÉCÉDENT sur ce jour (même hôtel plusieurs nuits
+ * de suite). Reprend tout à l'identique (nom, type, prix, services, note,
+ * photo importée…) et recalcule le budget hébergement + le total du jour.
+ */
+export function copyAccommodationFromPreviousDay(itinerary, dayIndex) {
+  if (dayIndex <= 0) return itinerary;
+  const prev = itinerary?.days?.[dayIndex - 1]?.accommodation;
+  if (!prev) return itinerary;
+  const copy = deepClone(prev);
+  copy._user_edited = true;
+  return replaceAccommodation(itinerary, dayIndex, copy);
+}
+
+/**
  * Ajoute un hôtel comme ALTERNATIVE au choix actuel (ne change pas la
  * priorité 1 ni le budget). Utile pour empiler plusieurs candidats trouvés
  * sur Booking et trancher plus tard.

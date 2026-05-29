@@ -15,6 +15,7 @@ import {
   getAdults,
   getChildrenAges,
   replaceAccommodation,
+  copyAccommodationFromPreviousDay,
 } from '../lib/itineraryEdits';
 import { useDayLayout } from '../hooks/useDayLayout';
 import EditableValue from './EditableValue';
@@ -931,6 +932,7 @@ function DayCard({
                 isVanTrip={isVanTrip}
                 accomLink={accomLink}
                 isBookingCta={isBookingCta}
+                prevAccommodation={allDays?.[dayIndex - 1]?.accommodation}
                 onUpdateItinerary={onUpdateItinerary}
                 onImportHotelFromImage={onImportHotelFromImage}
               />
@@ -998,11 +1000,20 @@ function LodgingCard({
   isVanTrip,
   accomLink,
   isBookingCta,
+  prevAccommodation,
   onUpdateItinerary,
   onImportHotelFromImage,
 }) {
   const s = CATEGORY_STYLES.lodging;
   const canEdit = typeof onUpdateItinerary === 'function';
+  // Hôtel de la veille réellement renseigné (par capture, voucher ou saisie
+  // manuelle) → on propose de le réutiliser tel quel pour cette nuit.
+  const prevName = prevAccommodation?.name?.trim();
+  const canCopyPrev =
+    canEdit &&
+    dayIndex > 0 &&
+    !!prevAccommodation &&
+    !!(prevAccommodation._user_edited || prevName);
   const userEdited = !!day.accommodation._user_edited;
   const [lightbox, setLightbox] = useState(null); // dataUrl ouverte ou null
   const [manualOpen, setManualOpen] = useState(false); // formulaire saisie manuelle
@@ -1271,22 +1282,42 @@ function LodgingCard({
         </div>
       )}
 
-      {typeof onImportHotelFromImage === 'function' && (
-        <div className="print:hidden mt-3 pt-2 border-t border-slate-100">
-          <button
-            type="button"
-            onClick={() =>
-              onImportHotelFromImage(
-                dayIndex,
-                day.accommodation?.name,
-                day.location
-              )
-            }
-            className="inline-flex items-center gap-1.5 rounded-full bg-indigo-100 text-indigo-800 hover:bg-indigo-200 transition-colors px-3 py-1.5 text-xs font-medium"
-            title="Renseigner l'hôtel réservé via une capture d'écran ou un voucher PDF (Booking, Airbnb…)"
-          >
-            📸 J'ai réservé — capture ou voucher PDF
-          </button>
+      {(typeof onImportHotelFromImage === 'function' || canCopyPrev) && (
+        <div className="print:hidden mt-3 pt-2 border-t border-slate-100 flex flex-wrap gap-2">
+          {canCopyPrev && (
+            <button
+              type="button"
+              onClick={() =>
+                onUpdateItinerary((it) =>
+                  copyAccommodationFromPreviousDay(it, dayIndex)
+                )
+              }
+              className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 text-emerald-800 hover:bg-emerald-200 transition-colors px-3 py-1.5 text-xs font-medium"
+              title={
+                prevName
+                  ? `Réutiliser « ${prevName} » (l'hôtel de la nuit précédente) pour cette nuit`
+                  : "Réutiliser l'hôtel de la nuit précédente pour cette nuit"
+              }
+            >
+              🏨 Même hôtel que la veille
+            </button>
+          )}
+          {typeof onImportHotelFromImage === 'function' && (
+            <button
+              type="button"
+              onClick={() =>
+                onImportHotelFromImage(
+                  dayIndex,
+                  day.accommodation?.name,
+                  day.location
+                )
+              }
+              className="inline-flex items-center gap-1.5 rounded-full bg-indigo-100 text-indigo-800 hover:bg-indigo-200 transition-colors px-3 py-1.5 text-xs font-medium"
+              title="Renseigner l'hôtel réservé via une capture d'écran ou un voucher PDF (Booking, Airbnb…)"
+            >
+              📸 J'ai réservé — capture ou voucher PDF
+            </button>
+          )}
         </div>
       )}
     </div>
