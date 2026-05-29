@@ -57,11 +57,12 @@ function addOneDay(isoDate) {
 // bons tarifs. On accepte aussi un nombre (rétrocompat) → ages inconnus.
 //
 // options (tous optionnels) :
-//   rooms     : nombre de chambres (no_rooms)
-//   stars     : '3' | '4' | '5'  → filtre classe (nflt class)
-//   priceMin  : prix mini /nuit en EUR (filtre nflt price)
-//   priceMax  : prix maxi /nuit en EUR
-//   amenities : ['breakfast','free_cancellation','parking','pool'] → filtres nflt
+//   rooms       : nombre de chambres (no_rooms)
+//   stars       : '3' | '4' | '5'  → filtre classe (nflt class)
+//   reviewScore : '6' | '7' | '8' | '9' → note mini des voyageurs (nflt review_score)
+//   priceMin    : prix mini /nuit en EUR (filtre nflt price)
+//   priceMax    : prix maxi /nuit en EUR
+//   amenities   : ['breakfast','free_cancellation','parking','pool'] → filtres nflt
 export function bookingSearch(
   location,
   checkin,
@@ -102,6 +103,12 @@ export function bookingSearch(
   }
   if (options.stars && ['3', '4', '5'].includes(String(options.stars))) {
     nflt.push(`class=${options.stars}`);
+  }
+  // Note minimale des voyageurs. Booking attend la note × 10 :
+  // 9+ → 90, 8+ → 80, 7+ → 70, 6+ → 60 (paramètre nflt review_score).
+  const reviewScore = String(options.reviewScore || '');
+  if (['6', '7', '8', '9'].includes(reviewScore)) {
+    nflt.push(`review_score=${Number(reviewScore) * 10}`);
   }
   const amenities = Array.isArray(options.amenities) ? options.amenities : [];
   // IDs de facilités Booking les plus stables :
@@ -307,6 +314,7 @@ export function bestAccommodationLink(accommodation, ctx = {}) {
   const bookingOptions = {
     rooms: ctx.rooms,
     stars: ctx.stars,
+    reviewScore: ctx.reviewScore,
     priceMin: ctx.priceMin,
     priceMax: ctx.priceMax,
     amenities: ctx.amenities,

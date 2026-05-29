@@ -1895,7 +1895,7 @@ function StepStyle({ values, update, toggle }) {
             />
           </div>
           <div>
-            <label className="label">Gamme</label>
+            <label className="label">Gamme (étoiles)</label>
             <select
               className="input"
               value={values.hotelStars || ''}
@@ -1907,7 +1907,25 @@ function StepStyle({ values, update, toggle }) {
               <option value="5">5 étoiles</option>
             </select>
           </div>
+          <div>
+            <label className="label">Note minimale des voyageurs</label>
+            <select
+              className="input"
+              value={values.hotelReviewScore || ''}
+              onChange={(e) => update('hotelReviewScore', e.target.value)}
+            >
+              <option value="">Peu importe</option>
+              <option value="9">Exceptionnel : 9+</option>
+              <option value="8">Très bien : 8+</option>
+              <option value="7">Bien : 7+</option>
+              <option value="6">Agréable : 6+</option>
+            </select>
+          </div>
         </div>
+        <p className="text-xs text-slate-400 mt-2">
+          Tu peux choisir l'un, l'autre, les deux… ou aucun. On applique tes
+          choix directement dans la recherche Booking.
+        </p>
 
         <div className="mt-4">
           <label className="label">Options souhaitées</label>

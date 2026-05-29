@@ -51,6 +51,7 @@ export const DEFAULTS = {
   // TOUTES les nuits de l'itinéraire (saisis une seule fois).
   rooms: 1,                 // nombre de chambres
   hotelStars: '',           // '' (peu importe) | '3' | '4' | '5'
+  hotelReviewScore: '',     // '' (peu importe) | '6' | '7' | '8' | '9' (note mini)
   hotelAmenities: [],       // ['breakfast','free_cancellation','parking','pool']
   cooking: 'restaurants',
   needsServicePoints: false,

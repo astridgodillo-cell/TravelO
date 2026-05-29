@@ -94,6 +94,7 @@ export default function NewItineraryPage() {
       itinerary.summary.accommodation_prefs = {
         rooms: Number(prefs.rooms) || 1,
         stars: prefs.hotelStars || '',
+        reviewScore: prefs.hotelReviewScore || '',
         amenities: Array.isArray(prefs.hotelAmenities)
           ? prefs.hotelAmenities
           : [],

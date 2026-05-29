@@ -14,6 +14,7 @@ import {
   withRecomputedDayTotals,
   getAdults,
   getChildrenAges,
+  replaceAccommodation,
 } from '../lib/itineraryEdits';
 import { useDayLayout } from '../hooks/useDayLayout';
 import EditableValue from './EditableValue';
@@ -173,6 +174,7 @@ export default function ItineraryView({
   const accommodationPrefs = summary?.accommodation_prefs || {
     rooms: 1,
     stars: '',
+    reviewScore: '',
     amenities: [],
   };
   const isVanTrip = VAN_TRIP_TYPES.has(summary?.trip_type);
@@ -762,6 +764,7 @@ function DayCard({
     childrenAges,
     rooms: accommodationPrefs?.rooms,
     stars: accommodationPrefs?.stars,
+    reviewScore: accommodationPrefs?.reviewScore,
     amenities: accommodationPrefs?.amenities,
     priceMin: accomPrice > 0 ? Math.round(accomPrice * 0.65) : undefined,
     priceMax: accomPrice > 0 ? Math.round(accomPrice * 1.4) : undefined,
@@ -1002,6 +1005,7 @@ function LodgingCard({
   const canEdit = typeof onUpdateItinerary === 'function';
   const userEdited = !!day.accommodation._user_edited;
   const [lightbox, setLightbox] = useState(null); // dataUrl ouverte ou null
+  const [manualOpen, setManualOpen] = useState(false); // formulaire saisie manuelle
   return (
     <div className={`rounded-xl border border-slate-200 border-l-4 ${s.border} ${s.tint} p-3 text-sm`}>
       <div className="flex items-center gap-2 mb-1.5">
