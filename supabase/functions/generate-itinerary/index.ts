@@ -673,13 +673,21 @@ Contraintes :
   ❌ "Éveil des sens au marché de Toyosu" (ne couvre que le matin, oublie Todoroki et Shibuya)
   ❌ "Belle journée à Kyoto" (creux, pas de lieux)
 - emoji météo : ☀️ 🌤️ ⛅ 🌧️ ❄️ 🌫️ 🌩️
-- accommodation.area = QUARTIER / ZONE conseillé(e) pour dormir cette nuit-là,
-  choisi pour être PROCHE des excursions et activités du jour (ex : "Stare Miasto
-  (vieille ville)", "Quartier de Gràcia", "Près de la gare centrale"). C'est ce
-  qui sera utilisé pour la recherche d'hôtels — donne une zone PRÉCISE et réelle,
-  pas juste le nom de la ville. accommodation.name peut rester générique (ex :
-  "Hôtel 3-4★ confortable") car on n'affiche pas de nom inventé : on guide vers
-  Booking sur la bonne zone.
+- accommodation.area = QUARTIER + VILLE conseillé(e) pour dormir cette nuit-là,
+  choisi pour être PROCHE des excursions et activités du jour. FORMAT IMPOSÉ :
+  "Quartier, Ville" avec des noms RÉELS que Booking.com sait géolocaliser
+  (ex : "Ribeira, Porto", "Gràcia, Barcelone", "Stare Miasto, Cracovie").
+  ⚠️ Ce texte est envoyé tel quel à la recherche Booking, donc :
+  • TOUJOURS inclure la vraie ville où l'on dort (qui peut DIFFÉRER du lieu
+    principal de la journée : ex. journée à "Vallée du Douro" mais nuit à Porto
+    → area = "Ribeira, Porto").
+  • JAMAIS de "/", ni de mots vagues seuls ("centre historique", "centre-ville",
+    "près de la gare") : ils renvoient vers la mauvaise ville.
+  • Pas de coordonnées GPS dans ce champ.
+  accommodation.name peut rester générique (ex : "Hôtel 3-4★ confortable") car
+  on n'affiche pas de nom inventé : on guide vers Booking sur la bonne zone.
+- accommodation.coordinates_hint = même zone au format "Quartier, Ville"
+  (ex : "Ribeira, Porto"), JAMAIS de simples coordonnées GPS.
 - day_total_eur = trips + accommodation + activities + meals + service_stops du jour.
 - grand_total_eur = somme des day_total_eur.
 - per_person_eur = grand_total / (adults + enfants).
