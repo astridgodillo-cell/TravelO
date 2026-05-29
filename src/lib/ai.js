@@ -283,15 +283,44 @@ export async function generateItinerary(preferences, onProgress) {
 // Un 4ème appel en parallèle récupère les villes principales (si destination = pays/région).
 const PLACE_CATEGORIES = ['incontournable', 'insolite', 'hors-sentiers'];
 
-export async function suggestPlaces({
+// Étape 1 de "Je choisis mes lieux" : les 10-15 villes / régions / lieux
+// incontournables de la destination.
+export async function suggestCities({
   destination,
   tripType,
   startDate,
   endDate,
   adults,
   childrenAges,
+}) {
+  const data = await invoke({
+    mode: 'suggest-cities',
+    destination,
+    tripType,
+    startDate,
+    endDate,
+    adults,
+    childrenAges,
+  });
+  const cities = Array.isArray(data?.cities) ? data.cities : [];
+  if (cities.length === 0) {
+    throw new Error('Aucune ville n\'a pu être suggérée. Réessayez.');
+  }
+  return cities;
+}
+
+// Étape 2 : les activités (incontournables / insolites / hors-sentiers)
+// ASSOCIÉES aux étapes choisies (focus = noms des villes/lieux sélectionnés).
+// Streaming : chaque catégorie s'affiche dès qu'elle arrive.
+export async function suggestActivities({
+  destination,
+  tripType,
+  startDate,
+  endDate,
+  adults,
+  childrenAges,
+  focus = [],
   onCategoryReady,
-  onCitiesReady,
 }) {
   const baseArgs = {
     destination,
@@ -300,23 +329,9 @@ export async function suggestPlaces({
     endDate,
     adults,
     childrenAges,
+    focus,
   };
-
-  // Villes principales (4ème appel parallèle, indépendant)
-  const citiesPromise = (async () => {
-    try {
-      const data = await invoke({ mode: 'suggest-cities', ...baseArgs });
-      const cities = Array.isArray(data?.cities) ? data.cities : [];
-      onCitiesReady?.(cities);
-      return cities;
-    } catch (err) {
-      console.warn('[suggest-cities] échec', err);
-      onCitiesReady?.([]);
-      return [];
-    }
-  })();
-
-  const placesPromise = Promise.all(
+  const groups = await Promise.all(
     PLACE_CATEGORIES.map(async (category) => {
       try {
         const data = await invoke({
@@ -330,20 +345,12 @@ export async function suggestPlaces({
         return normalized;
       } catch (err) {
         console.warn(`[suggest-places] ${category} a échoué`, err);
+        onCategoryReady?.(category, []);
         return [];
       }
     })
   );
-
-  const [cities, placesGroups] = await Promise.all([
-    citiesPromise,
-    placesPromise,
-  ]);
-  const places = placesGroups.flat();
-  if (places.length === 0 && cities.length === 0) {
-    throw new Error('Aucune suggestion n\'a pu être générée. Réessayez.');
-  }
-  return { places, cities };
+  return groups.flat();
 }
 
 // Autocomplete d'adresses (Google Places). Renvoie [] si query < 3 chars.

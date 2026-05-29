@@ -1,20 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
-import { suggestPlaces } from '../lib/ai';
+import { suggestCities, suggestActivities } from '../lib/ai';
 import { fetchPhotosFor } from '../lib/photos';
 
-// Écran « Je choisis mes lieux » — extrait de l'ancien Inspire-moi, rendu
-// RÉUTILISABLE et CONTRÔLÉ pour vivre comme une étape du wizard.
+// Écran "Je choisis mes lieux" en DEUX temps (prop `phase`) :
+//   phase = 'cities'     → 10-15 villes / régions / lieux incontournables.
+//   phase = 'activities' → activités (incontournables / insolites /
+//                          hors-sentiers) ASSOCIÉES aux villes choisies.
 //
-// L'état (villes/lieux récupérés, photos, sélection) est porté par le parent
-// (le wizard) via `state` + `onState`, afin de SURVIVRE quand on change
-// d'étape (le composant est démonté puis remonté).
-//
-// state = {
-//   fetchedKey, citiesReady, readyCategories: string[],
-//   cities: [], places: [], photoMap: {},
-//   selectedCities: string[] (ids), selectedPlaces: string[] (ids),
-//   error,
-// }
+// L'état est porté par le parent (le wizard) via `state` + `onState`, pour
+// survivre quand on change d'étape (le composant est démonté/remonté).
 
 const CATEGORIES = [
   {
@@ -50,22 +44,26 @@ function computeTotalDays(start, end) {
   return Math.round((e - s) / 86400000) + 1;
 }
 
+const norm = (s) =>
+  (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+
 const EMPTY_DISCOVER = {
-  fetchedKey: null,
+  citiesKey: null,
   citiesReady: false,
-  readyCategories: [],
   cities: [],
-  places: [],
-  photoMap: {},
   selectedCities: [],
+  activitiesKey: null,
+  readyCategories: [],
+  places: [],
   selectedPlaces: [],
+  photoMap: {},
   error: null,
 };
 
-// Construit le texte "Étapes impératives" (mustInclude) à partir de la sélection.
+// Construit le texte "Étapes impératives" (mustInclude) depuis la sélection.
 export function buildMustInclude(cities, places, selectedCities, selectedPlaces) {
-  const selCity = cities.filter((c) => selectedCities.includes(c.id));
-  const selPlace = places.filter((p) => selectedPlaces.includes(p.id));
+  const selCity = (cities || []).filter((c) => (selectedCities || []).includes(c.id));
+  const selPlace = (places || []).filter((p) => (selectedPlaces || []).includes(p.id));
   const cityChunk = selCity
     .map(
       (c) =>
@@ -87,6 +85,7 @@ export default function PlaceDiscovery({
   tripType,
   adults,
   childrenAges,
+  phase = 'cities',
   state,
   onState,
   onSelectionChange,
@@ -95,16 +94,23 @@ export default function PlaceDiscovery({
   const [expanded, setExpanded] = useState(new Set());
 
   const totalDays = computeTotalDays(startDate, endDate);
-  const key = JSON.stringify({
-    destination: (destination || '').trim().toLowerCase(),
+  const citiesKey = JSON.stringify({
+    d: norm(destination),
     startDate,
     endDate,
     tripType,
     adults,
     childrenAges,
   });
+  const focus = useMemo(
+    () =>
+      (d.cities || [])
+        .filter((c) => (d.selectedCities || []).includes(c.id))
+        .map((c) => c.name),
+    [d.cities, d.selectedCities]
+  );
+  const activitiesKey = JSON.stringify({ base: citiesKey, focus: [...focus].sort() });
 
-  // patch immutable de l'état porté par le parent
   function patch(updater) {
     onState((prev) => {
       const base = prev || EMPTY_DISCOVER;
@@ -113,48 +119,72 @@ export default function PlaceDiscovery({
     });
   }
 
-  // Lance la recherche de lieux quand les paramètres changent (1ʳᵉ venue ou
-  // destination/dates modifiées). On évite de re-chercher si rien n'a bougé.
+  async function loadPhotosFor(list) {
+    const entries = await Promise.all(
+      (list || []).map(async (p) => {
+        const q = p.photo_query || `${p.name} ${p.location || ''}`.trim();
+        const photos = await fetchPhotosFor(q, 1);
+        const photo = photos?.[0];
+        const url =
+          photo?.src?.medium || photo?.src?.large || photo?.src?.small || null;
+        return [p.id, url];
+      })
+    );
+    patch((prev) => ({
+      photoMap: { ...prev.photoMap, ...Object.fromEntries(entries) },
+    }));
+  }
+
+  // ── Phase VILLES : on récupère les villes/régions de la destination ──
   useEffect(() => {
-    if (!destination) return;
-    if (d.fetchedKey === key) return;
+    if (phase !== 'cities' || !destination) return;
+    if (d.citiesKey === citiesKey) return;
     let cancelled = false;
+    onState((prev) => ({
+      ...(prev || EMPTY_DISCOVER),
+      citiesKey,
+      citiesReady: false,
+      cities: [],
+      selectedCities: [],
+      error: null,
+    }));
+    suggestCities({ destination, tripType, startDate, endDate, adults, childrenAges })
+      .then((cities) => {
+        if (cancelled) return;
+        patch({ cities, citiesReady: true });
+        loadPhotosFor(cities);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        patch({ citiesReady: true, error: err.message || 'Erreur lors de la recherche de villes.' });
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, citiesKey, destination]);
 
-    // Reset complet pour la nouvelle recherche
-    onState({ ...EMPTY_DISCOVER, fetchedKey: key });
-
-    async function loadPhotosFor(list) {
-      const entries = await Promise.all(
-        list.map(async (p) => {
-          const q = p.photo_query || `${p.name} ${p.location || ''}`.trim();
-          const photos = await fetchPhotosFor(q, 1);
-          const photo = photos?.[0];
-          const url =
-            photo?.src?.medium ||
-            photo?.src?.large ||
-            photo?.src?.small ||
-            null;
-          return [p.id, url];
-        })
-      );
-      if (cancelled) return;
-      patch((prev) => ({
-        photoMap: { ...prev.photoMap, ...Object.fromEntries(entries) },
-      }));
-    }
-
-    suggestPlaces({
+  // ── Phase ACTIVITÉS : activités liées aux villes choisies ──
+  useEffect(() => {
+    if (phase !== 'activities' || focus.length === 0) return;
+    if (d.activitiesKey === activitiesKey) return;
+    let cancelled = false;
+    onState((prev) => ({
+      ...(prev || EMPTY_DISCOVER),
+      activitiesKey,
+      readyCategories: [],
+      places: [],
+      selectedPlaces: [],
+      error: null,
+    }));
+    suggestActivities({
       destination,
       tripType,
       startDate,
       endDate,
       adults,
       childrenAges,
-      onCitiesReady: (newCities) => {
-        if (cancelled) return;
-        patch({ cities: newCities, citiesReady: true });
-        loadPhotosFor(newCities);
-      },
+      focus,
       onCategoryReady: (category, newPlaces) => {
         if (cancelled) return;
         patch((prev) => ({
@@ -167,16 +197,15 @@ export default function PlaceDiscovery({
       },
     }).catch((err) => {
       if (cancelled) return;
-      patch({ error: err.message || 'Erreur lors de la recherche de lieux.' });
+      patch({ error: err.message || 'Erreur lors de la recherche d\'activités.' });
     });
-
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, destination]);
+  }, [phase, activitiesKey]);
 
-  // Remonte la sélection (texte mustInclude + lieux) au parent à chaque changement.
+  // Remonte la sélection (mustInclude + lieux) au parent.
   useEffect(() => {
     const mustInclude = buildMustInclude(
       d.cities,
@@ -184,8 +213,8 @@ export default function PlaceDiscovery({
       d.selectedCities,
       d.selectedPlaces
     );
-    const selectedPlaceObjs = d.places.filter((p) =>
-      d.selectedPlaces.includes(p.id)
+    const selectedPlaceObjs = (d.places || []).filter((p) =>
+      (d.selectedPlaces || []).includes(p.id)
     );
     onSelectionChange?.(mustInclude, selectedPlaceObjs);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -216,98 +245,40 @@ export default function PlaceDiscovery({
 
   const placesByCategory = useMemo(() => {
     const groups = { incontournable: [], insolite: [], 'hors-sentiers': [] };
-    for (const p of d.places) {
+    for (const p of d.places || []) {
       const cat = groups[p.category] ? p.category : 'incontournable';
       groups[cat].push(p);
     }
     return groups;
   }, [d.places]);
 
-  // Garde-fou de faisabilité (programme trop ambitieux pour la durée ?)
-  const feasibility = useMemo(() => {
-    if (!totalDays) return null;
-    if (d.selectedCities.length === 0 && d.selectedPlaces.length === 0)
-      return null;
-    const norm = (s) =>
-      (s || '')
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[̀-ͯ]/g, '')
-        .trim();
-    const selCities = d.cities.filter((c) => d.selectedCities.includes(c.id));
-    const selPlaces = d.places.filter((p) => d.selectedPlaces.includes(p.id));
-    const cityNames = new Set(selCities.map((c) => norm(c.name)));
-    let daysNeeded = 0;
-    for (const c of selCities) daysNeeded += Number(c.suggested_days) || 2;
-    const extraBases = new Set();
-    for (const p of selPlaces) {
-      const loc = norm(p.location || p.name);
-      if (loc && !cityNames.has(loc)) extraBases.add(loc);
-    }
-    daysNeeded += extraBases.size;
-    const basesCount = cityNames.size + extraBases.size;
-    if (basesCount > 1) daysNeeded += (basesCount - 1) * 0.5;
-    return {
-      over: daysNeeded > totalDays + 0.5,
-      basesCount,
-      totalDays,
-      suggestedDays: Math.ceil(daysNeeded),
-    };
-  }, [d.cities, d.places, d.selectedCities, d.selectedPlaces, totalDays]);
+  const selectedCitiesSet = new Set(d.selectedCities || []);
+  const selectedPlacesSet = new Set(d.selectedPlaces || []);
 
-  const selectedCitiesSet = new Set(d.selectedCities);
-  const selectedPlacesSet = new Set(d.selectedPlaces);
-  const totalSelected = d.selectedCities.length + d.selectedPlaces.length;
-  const allReady = d.readyCategories.length === CATEGORIES.length;
-
-  return (
-    <div className="space-y-6">
-      <div className="text-center">
-        <h2 className="text-2xl sm:text-3xl font-bold text-slate-900">
-          Que veux-tu voir à {destination} ?
-        </h2>
-        <p className="mt-2 text-sm text-slate-600 max-w-xl mx-auto">
-          {allReady ? (
-            <>
-              {d.places.length} lieux suggérés. Coche ce qui te tente —
-              l'itinéraire sera construit autour de tes choix.
-            </>
-          ) : (
-            <>
-              Nous explorons {destination}… ({d.readyCategories.length}/
-              {CATEGORIES.length} catégories prêtes — tu peux déjà sélectionner
-              ce qui s'affiche.)
-            </>
-          )}
-        </p>
-      </div>
-
-      {d.error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {d.error}
+  // ════════════ PHASE VILLES ════════════
+  if (phase === 'cities') {
+    const feasibility = computeFeasibility(d, totalDays);
+    return (
+      <div className="space-y-5">
+        <div className="text-center">
+          <h2 className="text-2xl sm:text-3xl font-bold text-slate-900">
+            Où veux-tu aller à {destination} ?
+          </h2>
+          <p className="mt-2 text-sm text-slate-600 max-w-xl mx-auto">
+            Choisis les villes / régions qui te tentent. À l'étape suivante, on
+            te proposera des activités UNIQUEMENT dans ces endroits.
+          </p>
         </div>
-      )}
 
-      {/* Villes principales */}
-      {!d.citiesReady && (
-        <section className="space-y-3">
-          <h3 className="text-xl font-semibold bg-gradient-to-r from-sky-500 to-brand-600 bg-clip-text text-transparent">
-            🏙️ Villes principales
-          </h3>
-          <CategorySkeleton color="from-sky-500 to-brand-600" />
-        </section>
-      )}
-
-      {d.citiesReady && d.cities.length > 0 && (
-        <section className="space-y-3">
-          <div className="flex flex-wrap items-baseline gap-3">
-            <h3 className="text-xl font-semibold bg-gradient-to-r from-sky-500 to-brand-600 bg-clip-text text-transparent">
-              🏙️ Villes principales
-            </h3>
-            <span className="text-xs text-slate-400 ml-auto">
-              {d.cities.length} villes
-            </span>
+        {d.error && (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            {d.error}
           </div>
+        )}
+
+        {!d.citiesReady ? (
+          <CategorySkeleton color="from-sky-500 to-brand-600" />
+        ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {d.cities.map((city) => (
               <CityCard
@@ -319,19 +290,77 @@ export default function PlaceDiscovery({
               />
             ))}
           </div>
-        </section>
+        )}
+
+        {feasibility?.over && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+            <div className="flex items-start gap-2 text-sm text-amber-900">
+              <span className="text-base leading-none mt-0.5">⚠️</span>
+              <div>
+                <span className="font-semibold">Programme un peu ambitieux</span>{' '}
+                — {feasibility.basesCount} étapes pour {feasibility.totalDays} jour
+                {feasibility.totalDays > 1 ? 's' : ''}. Idéalement ~
+                <strong>{feasibility.suggestedDays} jours</strong>. Tu peux en
+                retirer, ou continuer (l'IA fera un programme réaliste et
+                t'indiquera ce qu'elle a écarté).
+              </div>
+            </div>
+          </div>
+        )}
+
+        <p className="text-center text-sm text-slate-600">
+          <span className="font-semibold text-brand-700">
+            {d.selectedCities?.length || 0}
+          </span>{' '}
+          étape{(d.selectedCities?.length || 0) > 1 ? 's' : ''} choisie
+          {(d.selectedCities?.length || 0) > 1 ? 's' : ''}
+          {(d.selectedCities?.length || 0) === 0 && ' — coche au moins une étape'}
+        </p>
+      </div>
+    );
+  }
+
+  // ════════════ PHASE ACTIVITÉS ════════════
+  const allReady = d.readyCategories?.length === CATEGORIES.length;
+  return (
+    <div className="space-y-6">
+      <div className="text-center">
+        <h2 className="text-2xl sm:text-3xl font-bold text-slate-900">
+          Quoi faire dans tes étapes ?
+        </h2>
+        <p className="mt-2 text-sm text-slate-600 max-w-xl mx-auto">
+          Des activités proposées UNIQUEMENT dans les étapes que tu as choisies.
+          Coche ce qui te tente (optionnel) — l'IA bâtira le voyage autour.
+        </p>
+        {focus.length > 0 && (
+          <div className="mt-3 flex flex-wrap justify-center gap-1.5">
+            {focus.map((name) => (
+              <span
+                key={name}
+                className="chip bg-brand-50 text-brand-700 border border-brand-200"
+              >
+                📍 {name}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {d.error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {d.error}
+        </div>
       )}
 
       {CATEGORIES.map((cat) => {
         const list = placesByCategory[cat.id] || [];
-        const isReady = d.readyCategories.includes(cat.id);
+        const isReady = (d.readyCategories || []).includes(cat.id);
         const isExpanded = expanded.has(cat.id);
         const visibleCount = isExpanded
           ? list.length
           : Math.min(INITIAL_VISIBLE_PER_CATEGORY, list.length);
         const visible = list.slice(0, visibleCount);
         const hidden = list.length - visibleCount;
-
         return (
           <section key={cat.id} className="space-y-3">
             <div className="flex flex-wrap items-baseline gap-3">
@@ -343,11 +372,10 @@ export default function PlaceDiscovery({
               <p className="text-xs text-slate-500">{cat.hint}</p>
               {isReady && (
                 <span className="text-xs text-slate-400 ml-auto">
-                  {list.length} lieux
+                  {list.length} activités
                 </span>
               )}
             </div>
-
             {!isReady && list.length === 0 ? (
               <CategorySkeleton color={cat.color} />
             ) : (
@@ -370,7 +398,7 @@ export default function PlaceDiscovery({
                       onClick={() => toggleExpand(cat.id)}
                       className="btn-secondary text-sm"
                     >
-                      Voir {hidden} lieu{hidden > 1 ? 'x' : ''} de plus ↓
+                      Voir {hidden} de plus ↓
                     </button>
                   </div>
                 )}
@@ -391,35 +419,34 @@ export default function PlaceDiscovery({
         );
       })}
 
-      {/* Récap sélection + alerte faisabilité */}
-      <div className="space-y-2">
-        {feasibility?.over && (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
-            <div className="flex items-start gap-2 text-sm text-amber-900">
-              <span className="text-base leading-none mt-0.5">⚠️</span>
-              <div>
-                <span className="font-semibold">Programme un peu ambitieux</span>{' '}
-                — {feasibility.basesCount} étapes assez dispersées pour{' '}
-                {feasibility.totalDays} jour
-                {feasibility.totalDays > 1 ? 's' : ''}. Idéalement, il faudrait
-                environ <strong>{feasibility.suggestedDays} jours</strong>.
-                <div className="text-xs text-amber-800 mt-1">
-                  Tu peux <strong>retirer quelques lieux</strong> (reclique
-                  dessus), ou <strong>continuer quand même</strong> : l'IA fera
-                  un choix réaliste et t'indiquera ce qu'elle a écarté.
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-        <div className="text-sm text-slate-600 text-center">
-          <span className="font-semibold text-brand-700">{totalSelected}</span>{' '}
-          sélection{totalSelected > 1 ? 's' : ''}
-          {totalSelected === 0 && ' — coche au moins une ville ou un lieu'}
-        </div>
-      </div>
+      <p className="text-center text-sm text-slate-600">
+        <span className="font-semibold text-brand-700">
+          {d.selectedPlaces?.length || 0}
+        </span>{' '}
+        activité{(d.selectedPlaces?.length || 0) > 1 ? 's' : ''} choisie
+        {(d.selectedPlaces?.length || 0) > 1 ? 's' : ''}
+        {allReady && (d.selectedPlaces?.length || 0) === 0 && ' (optionnel)'}
+      </p>
     </div>
   );
+}
+
+// Estimation de faisabilité (trop d'étapes dispersées pour la durée ?).
+function computeFeasibility(d, totalDays) {
+  if (!totalDays) return null;
+  const sel = (d.cities || []).filter((c) =>
+    (d.selectedCities || []).includes(c.id)
+  );
+  if (sel.length === 0) return null;
+  let daysNeeded = 0;
+  for (const c of sel) daysNeeded += Number(c.suggested_days) || 2;
+  if (sel.length > 1) daysNeeded += (sel.length - 1) * 0.5;
+  return {
+    over: daysNeeded > totalDays + 0.5,
+    basesCount: sel.length,
+    totalDays,
+    suggestedDays: Math.ceil(daysNeeded),
+  };
 }
 
 function CityCard({ city, photoUrl, selected, onToggle }) {
@@ -489,7 +516,7 @@ function CategorySkeleton({ color }) {
         <div
           className={`h-4 w-4 rounded-full bg-gradient-to-r ${color} animate-pulse`}
         />
-        <span>Nous rédigeons les descriptions…</span>
+        <span>Nous préparons les suggestions…</span>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {[0, 1, 2].map((i) => (
@@ -572,13 +599,11 @@ function PlaceCard({ place, photoUrl, selected, onToggle }) {
         <p className="text-sm font-semibold text-slate-900 leading-snug">
           {hook}
         </p>
-
         {expanded && hasDetail && (
           <p className="text-sm text-slate-600 leading-relaxed">
             {place.short_description}
           </p>
         )}
-
         {hasDetail && (
           <button
             type="button"
@@ -588,7 +613,6 @@ function PlaceCard({ place, photoUrl, selected, onToggle }) {
             {expanded ? '↑ Réduire' : '↓ Lire la suite'}
           </button>
         )}
-
         <div className="flex flex-wrap gap-1.5 pt-2 mt-auto border-t border-slate-100">
           {place.suggested_duration && (
             <span className="chip bg-slate-100 text-slate-700">
@@ -601,9 +625,7 @@ function PlaceCard({ place, photoUrl, selected, onToggle }) {
             </span>
           )}
           {place.type && (
-            <span className="chip bg-brand-50 text-brand-700">
-              {place.type}
-            </span>
+            <span className="chip bg-brand-50 text-brand-700">{place.type}</span>
           )}
         </div>
       </div>

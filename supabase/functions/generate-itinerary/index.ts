@@ -963,15 +963,22 @@ function buildSuggestPlacesPrompt(
   endDate: string,
   adults: number,
   childrenAges: number[],
-  category: 'incontournable' | 'insolite' | 'hors-sentiers'
+  category: 'incontournable' | 'insolite' | 'hors-sentiers',
+  focus: string[] = []
 ): string {
   const days = computeDays(startDate, endDate);
   const children = Array.isArray(childrenAges) && childrenAges.length
     ? `${childrenAges.length} enfant(s) (âges : ${childrenAges.join(', ')} ans)`
     : '0 enfant';
   const c = CATEGORY_BRIEF[category];
+  const hasFocus = Array.isArray(focus) && focus.length > 0;
+  const focusList = hasFocus ? focus.join(', ') : '';
 
-  return `Tu es l'expert voyage TravelO. L'utilisateur ne sait pas encore quoi visiter à "${destination}". Tu vas lui proposer une SÉLECTION RICHE et VARIÉE de lieux dans UNE SEULE catégorie : ${c.label}.
+  const objective = hasFocus
+    ? `OBJECTIF : 12 à 15 activités / lieux ${c.label}, situés UNIQUEMENT dans (ou à proximité immédiate de) les étapes choisies par le voyageur : ${focusList}. Répartis-les entre ces étapes.`
+    : `OBJECTIF : 15 à 18 lieux ${c.label} de ${destination}, vraiment différents les uns des autres, qui donnent toutes envie de partir.`;
+
+  return `Tu es l'expert voyage TravelO. ${hasFocus ? `Le voyageur a choisi ces étapes pour son voyage à "${destination}" : ${focusList}. Tu vas lui proposer des activités à FAIRE dans ces étapes, dans UNE SEULE catégorie : ${c.label}.` : `L'utilisateur ne sait pas encore quoi visiter à "${destination}". Tu vas lui proposer une SÉLECTION RICHE et VARIÉE de lieux dans UNE SEULE catégorie : ${c.label}.`}
 
 DÉFINITION DE LA CATÉGORIE :
 ${c.brief}
@@ -981,9 +988,9 @@ Contexte voyage :
 - Destination : ${destination}
 - Période : du ${startDate} au ${endDate} (${days} jours sur place)
 - Mode de voyage : ${tripType}
-- Participants : ${adults} adulte(s), ${children}
+- Participants : ${adults} adulte(s), ${children}${hasFocus ? `\n- Étapes choisies (à respecter STRICTEMENT) : ${focusList}` : ''}
 
-OBJECTIF : 15 à 18 lieux ${c.label} de ${destination}, vraiment différents les uns des autres, qui donnent toutes envie de partir.
+${objective}${hasFocus ? `\n⚠️ RÈGLE ABSOLUE : ne propose AUCUN lieu situé en dehors de ces étapes (${focusList}). Chaque "location" doit correspondre à l'une de ces étapes ou à ses environs immédiats (< 30 min).` : ''}
 
 STYLE D'ÉCRITURE — RÈGLE CRITIQUE :
 Pour CHAQUE lieu, tu produis DEUX TEXTES distincts :
@@ -3965,6 +3972,7 @@ Si tu ne reconnais PAS un hôtel dans l'image (capture floue, page d'erreur, pho
         adults,
         childrenAges,
         category,
+        focus,
       } = body;
       if (!destination || !startDate || !endDate) {
         return jsonResponse(
@@ -3977,6 +3985,9 @@ Si tu ne reconnais PAS un hôtel dans l'image (capture floue, page d'erreur, pho
       )
         ? category
         : 'incontournable';
+      const focusArr = Array.isArray(focus)
+        ? focus.map((x: any) => String(x || '').trim()).filter(Boolean)
+        : [];
       const prompt = buildSuggestPlacesPrompt(
         destination,
         tripType || 'itinerant',
@@ -3984,7 +3995,8 @@ Si tu ne reconnais PAS un hôtel dans l'image (capture floue, page d'erreur, pho
         endDate,
         adults || 2,
         childrenAges || [],
-        cat
+        cat,
+        focusArr
       );
       // Budget large : 15-18 lieux avec descriptions riches ~200 tokens chacun → ~3-4k tokens
       const { text, usage, modelUsed } = await callMain(prompt, 8000);

@@ -2494,32 +2494,30 @@ export default function WizardPreferencesForm({
       ),
     });
     if (values.compositionMode === 'choose') {
+      const discoverProps = {
+        destination: values.destinations,
+        startDate: values.startDate,
+        endDate: values.endDate,
+        tripType: values.tripType,
+        adults: values.adults,
+        childrenAges: values.childrenAges,
+        state: discover,
+        onState: setDiscover,
+        onSelectionChange: (mustInclude, selectedPlaces) => {
+          setValues((v) => ({ ...v, mustInclude, _selectedPlaces: selectedPlaces }));
+        },
+      };
+      // Étape 1 : villes / régions. On exige au moins une étape choisie.
       base.push({
-        id: 'discover',
-        // On exige au moins une ville ou un lieu sélectionné pour avancer.
-        canNext: () =>
-          (discover?.selectedCities?.length || 0) +
-            (discover?.selectedPlaces?.length || 0) >
-          0,
-        render: () => (
-          <PlaceDiscovery
-            destination={values.destinations}
-            startDate={values.startDate}
-            endDate={values.endDate}
-            tripType={values.tripType}
-            adults={values.adults}
-            childrenAges={values.childrenAges}
-            state={discover}
-            onState={setDiscover}
-            onSelectionChange={(mustInclude, selectedPlaces) => {
-              setValues((v) => ({
-                ...v,
-                mustInclude,
-                _selectedPlaces: selectedPlaces,
-              }));
-            }}
-          />
-        ),
+        id: 'discover-cities',
+        canNext: () => (discover?.selectedCities?.length || 0) > 0,
+        render: () => <PlaceDiscovery phase="cities" {...discoverProps} />,
+      });
+      // Étape 2 : activités associées aux villes choisies (optionnel).
+      base.push({
+        id: 'discover-activities',
+        canNext: () => true,
+        render: () => <PlaceDiscovery phase="activities" {...discoverProps} />,
       });
     }
     base.push(
