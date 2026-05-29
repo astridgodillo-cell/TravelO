@@ -170,6 +170,30 @@ export default function ItineraryView({
   const adults = getAdults(summary);
   const childrenAges = getChildrenAges(summary);
   const children = childrenAges.length;
+  const pax = Math.max(1, adults + children);
+  // Liste de tous les vols de l'itinéraire (pour l'onglet "Vols").
+  const flights = useMemo(() => {
+    const out = [];
+    (days || []).forEach((d, dayIndex) => {
+      (d.trips || []).forEach((t, tripIndex) => {
+        if (/avion|vol|flight|plane/i.test(t.mode || '')) {
+          out.push({ dayIndex, tripIndex, trip: t, day: d });
+        }
+      });
+    });
+    return out;
+  }, [days]);
+  const hasFlights = flights.length > 0;
+  // Onglets : on insère "Vols" après "Carte" UNIQUEMENT s'il y a un vol.
+  const tabs = useMemo(() => {
+    if (!hasFlights) return TABS;
+    const out = [];
+    for (const t of TABS) {
+      out.push(t);
+      if (t.id === 'map') out.push({ id: 'flights', label: '✈️ Vols' });
+    }
+    return out;
+  }, [hasFlights]);
   // Critères d'hébergement saisis dans le wizard → pré-remplissent Booking.
   // Fallback pour les anciens itinéraires sans ces critères.
   const accommodationPrefs = summary?.accommodation_prefs || {
@@ -345,7 +369,7 @@ export default function ItineraryView({
 
       <nav className="print:hidden -mx-4 sm:mx-0">
         <ul className="flex gap-1 border-b border-slate-200 overflow-x-auto scrollbar-hide px-4 sm:px-0 sm:flex-wrap">
-          {TABS.map((t) => (
+          {tabs.map((t) => (
             <li key={t.id} className="shrink-0">
               <button
                 onClick={() => setTab(t.id)}
@@ -406,6 +430,15 @@ export default function ItineraryView({
         {tab === 'map' && (
           <div>
             <RouteMap itinerary={itinerary} />
+          </div>
+        )}
+        {hasFlights && (
+          <div className={tab === 'flights' ? '' : 'hidden'}>
+            <FlightsTab
+              flights={flights}
+              pax={pax}
+              onImportFlightFromImage={onImportFlightFromImage}
+            />
           </div>
         )}
         <div className={tab === 'budget' ? '' : 'hidden print:block'}>
@@ -698,6 +731,107 @@ const CATEGORY_STYLES = {
  * une identité visuelle nette à chaque catégorie pour éviter le mur de
  * texte.
  */
+// Onglet "Vols" : récapitulatif de tous les vols de l'itinéraire, avec un
+// bouton pour mettre à jour chacun (capture ou saisie manuelle). La mise à jour
+// recalcule automatiquement le(s) jour(s) concerné(s) côté page itinéraire.
+function FlightsTab({ flights, pax, onImportFlightFromImage }) {
+  const hhmm = (iso) => {
+    if (!iso || typeof iso !== 'string') return null;
+    const m = iso.match(/T(\d{2}:\d{2})/);
+    return m ? m[1] : null;
+  };
+  return (
+    <section className="space-y-4">
+      <div>
+        <h2 className="text-xl font-semibold text-slate-900">Tes vols</h2>
+        <p className="text-sm text-slate-500 mt-1">
+          Récapitulatif de tous les vols du voyage. Mets-les à jour avec une
+          capture ou à la main — les journées concernées se recalculent
+          automatiquement.
+        </p>
+      </div>
+
+      <ul className="space-y-3">
+        {flights.map(({ dayIndex, tripIndex, trip, day }) => {
+          const f = trip._flight || {};
+          const dep = hhmm(f.departure_at);
+          const arr = hhmm(f.arrival_at);
+          const total = Math.round(Number(trip.estimated_cost_eur) || 0);
+          const perPerson = pax > 0 ? Math.round(total / pax) : total;
+          const airline = [f.airline, f.flight_number]
+            .filter(Boolean)
+            .join(' ');
+          const route =
+            f.origin_iata && f.destination_iata
+              ? `${f.origin_iata} → ${f.destination_iata}`
+              : `${trip.from || '?'} → ${trip.to || '?'}`;
+          return (
+            <li
+              key={`${dayIndex}-${tripIndex}`}
+              className="rounded-xl border border-slate-200 border-l-4 border-l-sky-500 bg-sky-50/40 p-4"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[10px] uppercase tracking-widest text-sky-700 font-bold">
+                    ✈️ {day.label} · {day.weekday} {day.date}
+                  </div>
+                  <div className="text-lg font-bold text-slate-900 mt-0.5">
+                    {route}
+                  </div>
+                  <div className="text-sm text-slate-600 mt-0.5">
+                    {airline || 'Compagnie à préciser'}
+                    {(dep || arr) && (
+                      <span className="ml-2 text-slate-500">
+                        {dep && <>🛫 {dep}</>}
+                        {dep && arr && <span className="mx-1">·</span>}
+                        {arr && <>🛬 {arr}</>}
+                      </span>
+                    )}
+                  </div>
+                  {!dep && !arr && (
+                    <div className="text-xs text-amber-700 mt-1">
+                      Heures non confirmées — mets le vol à jour pour caler la
+                      journée.
+                    </div>
+                  )}
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="text-lg font-bold text-slate-900 tabular-nums">
+                    {total > 0 ? `${total.toLocaleString('fr-FR')} €` : '—'}
+                  </div>
+                  <div className="text-[11px] text-slate-500">
+                    total famille
+                    {total > 0 && pax > 1 && (
+                      <>
+                        {' '}
+                        · {perPerson.toLocaleString('fr-FR')} € / pers.
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {typeof onImportFlightFromImage === 'function' && (
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onImportFlightFromImage(dayIndex, tripIndex, trip)
+                    }
+                    className="inline-flex items-center gap-1.5 rounded-full bg-sky-100 text-sky-800 hover:bg-sky-200 transition-colors px-3 py-1.5 text-xs font-medium"
+                  >
+                    📸 Mettre à jour ce vol (capture ou saisie)
+                  </button>
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
 function CategoryHeader({ category, title, count }) {
   const s = CATEGORY_STYLES[category];
   if (!s) return null;

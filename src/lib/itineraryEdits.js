@@ -176,6 +176,55 @@ function applyDelta(itinerary, dayIndex, bucket, delta) {
  *
  *   extracted = { is_round_trip, total_price_eur, outbound, return, ... }
  */
+// Vrai = le trip "Avion" correspond à cette jambe de vol extraite (par IATA,
+// avec repli sur le texte from/to). Utilisé pour appliquer ET pour repérer les
+// jours à recalculer.
+function flightTripMatchesLeg(trip, leg) {
+  if (!leg?.origin_iata || !leg?.destination_iata) return false;
+  const tripOrigin = trip._flight?.origin_iata || '';
+  const tripDest = trip._flight?.destination_iata || '';
+  if (
+    tripOrigin.toUpperCase() === leg.origin_iata.toUpperCase() &&
+    tripDest.toUpperCase() === leg.destination_iata.toUpperCase()
+  ) {
+    return true;
+  }
+  const fromText = String(trip.from || '').toLowerCase();
+  const toText = String(trip.to || '').toLowerCase();
+  return (
+    (fromText.includes(leg.origin_iata.toLowerCase()) ||
+      fromText.includes(leg.origin_iata.toUpperCase())) &&
+    (toText.includes(leg.destination_iata.toLowerCase()) ||
+      toText.includes(leg.destination_iata.toUpperCase()))
+  );
+}
+
+const isFlightMode = (mode) => /avion|vol|flight|plane/i.test(mode || '');
+
+/**
+ * Indices des jours qui contiennent un vol correspondant à la capture extraite
+ * (aller et/ou retour) → ce sont les jours à recalculer pour coller aux vraies
+ * heures. Tableau trié, sans doublon.
+ */
+export function flightAffectedDayIndices(itinerary, extracted) {
+  const days = Array.isArray(itinerary?.days) ? itinerary.days : [];
+  const legs = [extracted?.outbound, extracted?.return].filter(Boolean);
+  if (!legs.length) return [];
+  const set = new Set();
+  for (let di = 0; di < days.length; di++) {
+    const trips = days[di]?.trips;
+    if (!Array.isArray(trips)) continue;
+    for (const t of trips) {
+      if (!isFlightMode(t.mode)) continue;
+      if (legs.some((leg) => flightTripMatchesLeg(t, leg))) {
+        set.add(di);
+        break;
+      }
+    }
+  }
+  return [...set].sort((a, b) => a - b);
+}
+
 export function applyExtractedFlightsToItinerary(itinerary, extracted) {
   if (!extracted?.outbound) return itinerary;
   const next = deepClone(itinerary);
@@ -188,26 +237,7 @@ export function applyExtractedFlightsToItinerary(itinerary, extracted) {
   const outboundCost = isRoundTrip ? Math.round(totalPriceEur / 2) : totalPriceEur;
   const returnCost = isRoundTrip ? totalPriceEur - outboundCost : 0;
 
-  function tripMatchesLeg(trip, leg) {
-    if (!leg?.origin_iata || !leg?.destination_iata) return false;
-    const tripOrigin = trip._flight?.origin_iata || '';
-    const tripDest = trip._flight?.destination_iata || '';
-    if (
-      tripOrigin.toUpperCase() === leg.origin_iata.toUpperCase() &&
-      tripDest.toUpperCase() === leg.destination_iata.toUpperCase()
-    ) {
-      return true;
-    }
-    // Fallback texte : trip.from / to contient l'IATA ou un mot reconnu
-    const fromText = String(trip.from || '').toLowerCase();
-    const toText = String(trip.to || '').toLowerCase();
-    return (
-      (fromText.includes(leg.origin_iata.toLowerCase()) ||
-        fromText.includes(leg.origin_iata.toUpperCase())) &&
-      (toText.includes(leg.destination_iata.toLowerCase()) ||
-        toText.includes(leg.destination_iata.toUpperCase()))
-    );
-  }
+  const tripMatchesLeg = flightTripMatchesLeg;
 
   function patchTripWithLeg(trip, leg, cost) {
     const oldCost = Number(trip.estimated_cost_eur) || 0;

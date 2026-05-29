@@ -13,6 +13,7 @@ import {
   replaceAccommodation,
   addAccommodationAlternative,
   applyExtractedFlightsToItinerary,
+  flightAffectedDayIndices,
 } from '../lib/itineraryEdits';
 import { fetchSpecialties } from '../lib/photos';
 import ItineraryView from '../components/ItineraryView';
@@ -265,11 +266,39 @@ export default function ItineraryDetailPage() {
     });
   }
 
+  /**
+   * Applique un vol (capture ou saisie manuelle), PUIS recalcule
+   * automatiquement le(s) jour(s) qui contiennent ce vol pour adapter le
+   * programme aux vraies heures (arrivée allégée, départ calé sur la marge…).
+   */
   async function handleApplyImportedFlight(extractedFlight) {
     if (!trip) return;
-    await handleUpdateItinerary((it) =>
-      applyExtractedFlightsToItinerary(it, extractedFlight)
-    );
+    setRegenerating(true);
+    setError(null);
+    try {
+      const affected = flightAffectedDayIndices(trip.itinerary, extractedFlight);
+      let working = applyExtractedFlightsToItinerary(
+        trip.itinerary,
+        extractedFlight
+      );
+      // Recalcule chaque jour touché en tenant compte des nouvelles heures.
+      for (const di of affected) {
+        working = await regenerateDay(
+          working,
+          di,
+          "Les horaires de vol de cette journée viennent d'être mis à jour avec les vrais vols réservés. Adapte le programme à ces heures (arrivée / départ) en gardant les marges habituelles (transfert, installation, check-in/check-out). Conserve le vol tel quel."
+        );
+      }
+      const { data, error: dbError } = await updateItinerary(trip.id, {
+        itinerary: working,
+      });
+      if (dbError) throw dbError;
+      setTrip(data);
+    } catch (err) {
+      setError(err.message || 'Erreur lors de la mise à jour du vol.');
+    } finally {
+      setRegenerating(false);
+    }
   }
 
   if (loading) return <p className="text-slate-500">Chargement…</p>;
@@ -305,6 +334,13 @@ export default function ItineraryDetailPage() {
           Exporter en PDF
         </button>
       </div>
+
+      {regenerating && (
+        <div className="rounded-xl border border-brand-200 bg-brand-50 p-3 text-sm text-brand-800 flex items-center gap-2 print:hidden">
+          <span className="inline-block h-2 w-2 rounded-full bg-brand-500 animate-pulse" />
+          Mise à jour en cours — adaptation des journées en fonction des vols…
+        </div>
+      )}
 
       <SharePanel itinerary={trip} onUpdate={(updated) => setTrip(updated)} />
 
