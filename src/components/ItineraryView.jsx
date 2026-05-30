@@ -221,6 +221,15 @@ export default function ItineraryView({
         if (!/avion|vol|flight|plane/i.test(t?.mode || '')) return;
         flightList.push({
           city: cleanLocation(t?.to || ''),
+          // Aéroports précis (texte du vol + code IATA) pour ne pas se tromper.
+          toAirport: airportLabel(
+            t?.to,
+            t?._flight?.destination_iata || extractIataSync(t?.to)
+          ),
+          fromAirport: airportLabel(
+            t?.from,
+            t?._flight?.origin_iata || extractIataSync(t?.from)
+          ),
           date: d.date || '',
           arrivalTime: hhmm(t?._flight?.arrival_at || t?.arrival_at),
           departureTime: hhmm(t?._flight?.departure_at || t?.departure_at),
@@ -228,7 +237,8 @@ export default function ItineraryView({
       });
     });
     // Une voiture par ville d'arrivée (hors retour domicile). Prise en charge =
-    // arrivée du vol ; restitution = départ du vol SUIVANT (souvent le retour).
+    // aéroport d'arrivée du vol ; restitution = aéroport de départ du vol SUIVANT
+    // (souvent le vol retour), aux heures correspondantes.
     const rentals = [];
     flightList.forEach((f, idx) => {
       if (!f.city || f.city.toLowerCase() === home) return;
@@ -237,6 +247,8 @@ export default function ItineraryView({
       const next = flightList[idx + 1];
       rentals.push({
         city: f.city,
+        pickupAirport: f.toAirport || f.city,
+        dropoffAirport: next?.fromAirport || f.toAirport || f.city,
         pickupDate: f.date,
         pickupTime: f.arrivalTime,
         dropoffDate: next?.date || summary?.end_date || '',
@@ -252,6 +264,8 @@ export default function ItineraryView({
       return [
         {
           city,
+          pickupAirport: city,
+          dropoffAirport: city,
           pickupDate: summary?.start_date || '',
           pickupTime: '',
           dropoffDate: summary?.end_date || '',
@@ -1061,6 +1075,16 @@ function FlightsTab({ flights, pax, onImportFlightFromImage }) {
   );
 }
 
+// Construit un libellé d'aéroport précis "Londres Stansted (STN)" à partir du
+// texte du vol et, si besoin, du code IATA. Évite que le visiteur saisisse la
+// mauvaise ville/aéroport dans la barre DiscoverCars.
+function airportLabel(raw, iata) {
+  const s = String(raw || '').trim();
+  if (!s) return iata ? String(iata).toUpperCase() : '';
+  if (/\([A-Za-z]{3}\)/.test(s)) return s; // contient déjà un code IATA
+  return iata ? `${s} (${String(iata).toUpperCase()})` : s;
+}
+
 // Extrait "HH:MM" d'une date-heure ISO ("2026-06-09T14:30:00…") ou d'une heure
 // déjà au format texte. Renvoie '' si rien d'exploitable (heure non confirmée).
 function hhmm(v) {
@@ -1094,7 +1118,8 @@ function CarPickupBanner({ rental }) {
     <div className="rounded-xl border border-slate-200 border-l-4 border-l-brand-500 bg-brand-50/60 p-3 text-sm flex flex-col sm:flex-row sm:items-center gap-3">
       <div className="min-w-0 flex-1">
         <div className="font-semibold text-slate-900 flex items-center gap-1.5">
-          <span>🚗</span> Récupération de la voiture à {rental.city}
+          <span>🚗</span> Récupération de la voiture à{' '}
+          {rental.pickupAirport || rental.city}
         </div>
         {when && (
           <div className="text-xs text-slate-600 mt-0.5">
@@ -1173,9 +1198,18 @@ function CarsTab({ rentals, adults, childrenCount }) {
           <div className="text-xs text-slate-600 mt-0.5">
             {whenLabel}
             {adults} adulte(s)
-            {childrenCount ? ` + ${childrenCount} enfant(s)` : ''} — saisis «{' '}
-            <span className="font-medium text-slate-700">{r.city}</span> » comme
-            lieu de prise en charge (les dates sont déjà pré-remplies).
+            {childrenCount ? ` + ${childrenCount} enfant(s)` : ''} — dates déjà
+            pré-remplies.
+          </div>
+          <div className="text-xs text-slate-700 mt-1">
+            📍 Prise en charge :{' '}
+            <span className="font-semibold">{r.pickupAirport || r.city}</span>
+            {r.dropoffAirport && r.dropoffAirport !== r.pickupAirport && (
+              <>
+                {' '}· Restitution :{' '}
+                <span className="font-semibold">{r.dropoffAirport}</span>
+              </>
+            )}
           </div>
           {(r.pickupTime || r.dropoffTime) && (
             <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-1.5">
