@@ -2974,6 +2974,12 @@ function enrichItineraryWithFlight(itinerary: any, flight: AnyFlightData, p: any
       _flight: {
         airline: flight.airline,
         flight_number: flight.flight_number,
+        // Codes IATA orientés selon le sens (aller / retour) → permettent
+        // d'afficher l'aéroport précis (ex. STN) pour la location de voiture.
+        origin_iata:
+          label === 'aller' ? flight.origin_iata : flight.destination_iata,
+        destination_iata:
+          label === 'aller' ? flight.destination_iata : flight.origin_iata,
         departure_at: departureIso,
         arrival_at: arrivalIso,
         deeplink: flight.deeplink || null,
@@ -3087,6 +3093,8 @@ function splitFlightForLegs(flight: AnyFlightData, isRoundTrip: boolean, p: any)
       cost: outboundCost,
       departure_at: flight.departure_at,
       arrival_at: flight.arrival_at,
+      origin_iata: flight.origin_iata,
+      destination_iata: flight.destination_iata,
       airlineLabel,
       flightNumberLabel,
       airline: flight.airline,
@@ -3102,6 +3110,8 @@ function splitFlightForLegs(flight: AnyFlightData, isRoundTrip: boolean, p: any)
             cost: returnCost,
             departure_at: flight.return_at,
             arrival_at: flight.return_arrival_at,
+            origin_iata: flight.destination_iata,
+            destination_iata: flight.origin_iata,
             airlineLabel,
             flightNumberLabel,
             airline: flight.airline,
@@ -3132,6 +3142,8 @@ function buildFlightTrip(leg: FlightLeg, legLabel: 'aller' | 'retour') {
     _flight: {
       airline: leg.airline,
       flight_number: leg.flight_number,
+      origin_iata: leg.origin_iata,
+      destination_iata: leg.destination_iata,
       departure_at: leg.departure_at,
       arrival_at: leg.arrival_at,
       deeplink: leg.deeplink,

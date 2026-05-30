@@ -22,7 +22,9 @@ export interface FlightData {
   return_at: string | null;
   return_arrival_at: string | null;
   deeplink: string;
-  source: 'travelpayouts-cheap' | 'travelpayouts-latest';
+  // 'user-confirmed' = vol fourni par l'utilisateur (capture d'écran / saisie),
+  // avec vraies heures et codes IATA.
+  source: 'travelpayouts-cheap' | 'travelpayouts-latest' | 'user-confirmed';
 }
 
 // Table de codes IATA "city" (métropolitains quand possible : PAR couvre
