@@ -29,6 +29,7 @@ import DayPhotos from './DayPhotos';
 import GygActivityWidget, { GYG_ENABLED } from './GygActivityWidget';
 import DaySpecialties from './DaySpecialties';
 import ItineraryTable from './ItineraryTable';
+import CarRentalWidget from './CarRentalWidget';
 import Icon from './Icon';
 import { fetchHotelRating, checkActivityBookable } from '../lib/photos';
 import {
@@ -42,6 +43,7 @@ import {
   getYourGuideSearch,
   tiqetsSearch,
   isLikelyBookable,
+  cleanLocation,
 } from '../lib/externalLinks';
 import { buildSkyscannerUrl, extractIataSync } from '../lib/flightSearchLinks';
 
@@ -203,6 +205,52 @@ export default function ItineraryView({
     () => (days || []).some((d) => d.accommodation),
     [days]
   );
+  // Locations de voiture (DiscoverCars) — uniquement pour les voyages
+  // "Avion + voiture de location". On déduit un point de prise en charge par
+  // ville d'arrivée d'un vol (hors vol retour vers le domicile). Un voyage
+  // multi-villes peut donc générer PLUSIEURS voitures. Repli : si aucun vol
+  // exploitable, une seule voiture à la destination principale.
+  const carRentals = useMemo(() => {
+    if (summary?.trip_type !== 'avion-voiture') return [];
+    const home = (cleanLocation(summary?.departure_location) || '').toLowerCase();
+    const stops = [];
+    (days || []).forEach((d) => {
+      (d.trips || []).forEach((t) => {
+        if (!/avion|vol|flight|plane/i.test(t?.mode || '')) return;
+        const city = cleanLocation(t?.to || '');
+        if (!city || city.toLowerCase() === home) return;
+        const last = stops[stops.length - 1];
+        if (last && last.city.toLowerCase() === city.toLowerCase()) return;
+        stops.push({ city, pickupDate: d.date || '' });
+      });
+    });
+    if (stops.length === 0) {
+      const city =
+        cleanLocation(summary?.destinations) ||
+        cleanLocation(days?.[0]?.location) ||
+        '';
+      if (!city) return [];
+      return [
+        {
+          city,
+          pickupDate: summary?.start_date || '',
+          dropoffDate: summary?.end_date || '',
+        },
+      ];
+    }
+    return stops.map((s, i) => ({
+      ...s,
+      dropoffDate: stops[i + 1]?.pickupDate || summary?.end_date || '',
+    }));
+  }, [summary, days]);
+  const showCarRental = carRentals.length > 0;
+  const carPickupByDate = useMemo(() => {
+    const m = {};
+    for (const r of carRentals) {
+      if (r.pickupDate && !m[r.pickupDate]) m[r.pickupDate] = r;
+    }
+    return m;
+  }, [carRentals]);
   // Onglets : on insère "Vols" puis "Hôtels" après "Carte", chacun seulement
   // s'il y a quelque chose à montrer.
   const tabs = useMemo(() => {
@@ -212,10 +260,11 @@ export default function ItineraryView({
       if (t.id === 'map') {
         if (hasFlights) out.push({ id: 'flights', label: '✈️ Vols' });
         if (hasAccommodations) out.push({ id: 'hotels', label: '🏨 Hôtels' });
+        if (showCarRental) out.push({ id: 'cars', label: '🚗 Voitures' });
       }
     }
     return out;
-  }, [hasFlights, hasAccommodations]);
+  }, [hasFlights, hasAccommodations, showCarRental]);
   // Critères d'hébergement saisis dans le wizard → pré-remplissent Booking.
   // Fallback pour les anciens itinéraires sans ces critères.
   const accommodationPrefs = summary?.accommodation_prefs || {
@@ -395,6 +444,26 @@ export default function ItineraryView({
         </div>
       </header>
 
+      {showCarRental && (
+        <button
+          type="button"
+          onClick={() => setTab('cars')}
+          className="print:hidden w-full text-left rounded-2xl border border-brand-200 bg-gradient-to-r from-brand-50 to-coral-50 px-4 sm:px-6 py-4 flex items-center gap-4 hover:shadow-pop transition-shadow"
+        >
+          <span className="text-2xl sm:text-3xl shrink-0">🚗</span>
+          <span className="min-w-0">
+            <span className="block font-semibold text-slate-900">
+              Ton voyage inclut une voiture de location
+            </span>
+            <span className="block text-sm text-slate-600">
+              {carRentals.length > 1
+                ? `Compare et réserve tes ${carRentals.length} voitures au meilleur prix →`
+                : 'Compare et réserve ta voiture au meilleur prix →'}
+            </span>
+          </span>
+        </button>
+      )}
+
       <nav className="print:hidden -mx-4 sm:mx-0">
         <ul className="flex gap-1 border-b border-slate-200 overflow-x-auto scrollbar-hide px-4 sm:px-0 sm:flex-wrap">
           {tabs.map((t) => (
@@ -419,6 +488,7 @@ export default function ItineraryView({
           <Planning
             days={days}
             tripType={summary?.trip_type}
+            carPickupByDate={carPickupByDate}
             adults={adults}
             childrenCount={children}
             childrenAges={childrenAges}
@@ -483,6 +553,13 @@ export default function ItineraryView({
             />
           </div>
         )}
+        {/* Rendu conditionnel : on ne charge les barres de recherche
+            DiscoverCars (iframes) que lorsque l'onglet est ouvert. */}
+        {showCarRental && tab === 'cars' && (
+          <div>
+            <CarsTab rentals={carRentals} adults={adults} childrenCount={children} />
+          </div>
+        )}
         <div className={tab === 'budget' ? '' : 'hidden print:block'}>
           <BudgetGlobal
             budget={budget_summary}
@@ -530,6 +607,7 @@ export default function ItineraryView({
 function Planning({
   days,
   tripType,
+  carPickupByDate,
   adults,
   childrenCount,
   childrenAges,
@@ -598,6 +676,7 @@ function Planning({
           dayIndex={i}
           allDays={days}
           tripType={tripType}
+          carPickup={carPickupByDate?.[d.date] || null}
           expanded={expandedDays.has(i)}
           onToggleExpand={() => toggleDay(i)}
           adults={adults}
@@ -962,6 +1041,110 @@ function FlightsTab({ flights, pax, onImportFlightFromImage }) {
   );
 }
 
+// Formate "du 15 juin au 24 juin" à partir de deux dates ISO (YYYY-MM-DD).
+function formatDateRangeFr(start, end) {
+  const fmt = (iso) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
+  };
+  const a = fmt(start);
+  const b = fmt(end);
+  if (a && b) return `du ${a} au ${b}`;
+  if (a) return `à partir du ${a}`;
+  return '';
+}
+
+// Encart "récupération de la voiture" affiché sur le jour d'arrivée.
+function CarPickupBanner({ rental }) {
+  if (!rental?.city) return null;
+  const when = formatDateRangeFr(rental.pickupDate, rental.dropoffDate);
+  return (
+    <div className="rounded-xl border border-slate-200 border-l-4 border-l-brand-500 bg-brand-50/60 p-3 text-sm flex flex-col sm:flex-row sm:items-center gap-3">
+      <div className="min-w-0 flex-1">
+        <div className="font-semibold text-slate-900 flex items-center gap-1.5">
+          <span>🚗</span> Récupération de la voiture à {rental.city}
+        </div>
+        {when && (
+          <div className="text-xs text-slate-600 mt-0.5">
+            Location conseillée {when}.
+          </div>
+        )}
+      </div>
+      <a
+        href={discoverCarsSearch()}
+        target="_blank"
+        rel="noopener noreferrer sponsored"
+        className="shrink-0 inline-flex items-center gap-1.5 rounded-full bg-brand-600 text-white hover:bg-brand-700 transition-colors px-3 py-1.5 text-xs font-semibold print:hidden"
+      >
+        Comparer les voitures
+      </a>
+    </div>
+  );
+}
+
+// Onglet "Voitures" : une vraie barre de recherche DiscoverCars par point de
+// prise en charge (multi-villes possible). La ville est pré-remplie ; les dates
+// et le nombre de voyageurs sont rappelés au-dessus (DiscoverCars ne permet pas
+// de les injecter automatiquement dans la barre).
+function CarsTab({ rentals, adults, childrenCount }) {
+  return (
+    <section className="space-y-6">
+      <div>
+        <h2 className="text-xl font-semibold text-slate-900">
+          Tes locations de voiture
+        </h2>
+        <p className="text-sm text-slate-500 mt-1">
+          Indique tes dates dans la barre ci-dessous : tu verras les vraies
+          voitures disponibles et leurs prix. La ville est déjà pré-remplie.
+        </p>
+      </div>
+      {rentals.map((r, i) => {
+        const when = formatDateRangeFr(r.pickupDate, r.dropoffDate);
+        const whenLabel = when ? `${when.charAt(0).toUpperCase()}${when.slice(1)} · ` : '';
+        return (
+          <div
+            key={`${r.city}-${i}`}
+            className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5"
+          >
+            <div className="mb-3">
+              <div className="font-semibold text-slate-900 flex items-center gap-2">
+                <span>🚗</span>
+                Voiture à {r.city}
+                {rentals.length > 1 && (
+                  <span className="text-xs font-normal text-slate-400">
+                    (étape {i + 1})
+                  </span>
+                )}
+              </div>
+              <div className="text-xs text-slate-600 mt-0.5">
+                {whenLabel}
+                {adults} adulte(s)
+                {childrenCount ? ` + ${childrenCount} enfant(s)` : ''} — sélectionne
+                ces dates dans la barre.
+              </div>
+            </div>
+            <CarRentalWidget location={r.city} />
+            <div className="mt-2 text-xs text-slate-500 print:hidden">
+              La barre ne s'affiche pas ?{' '}
+              <a
+                href={discoverCarsSearch()}
+                target="_blank"
+                rel="noopener noreferrer sponsored"
+                className="text-brand-700 hover:underline font-medium"
+              >
+                Ouvrir DiscoverCars directement
+              </a>{' '}
+              (désactive ton bloqueur de pub si besoin).
+            </div>
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
 function CategoryHeader({ category, title, count }) {
   const s = CATEGORY_STYLES[category];
   if (!s) return null;
@@ -986,6 +1169,7 @@ function DayCard({
   dayIndex,
   allDays,
   tripType,
+  carPickup,
   expanded,
   onToggleExpand,
   adults,
@@ -1293,6 +1477,8 @@ function DayCard({
               />
             )}
           </div>
+
+          {carPickup && <CarPickupBanner rental={carPickup} />}
 
           {layout === 'timeline' ? (
             <DayTimeline
