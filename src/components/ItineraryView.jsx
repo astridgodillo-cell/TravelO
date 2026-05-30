@@ -1075,6 +1075,19 @@ function FlightsTab({ flights, pax, onImportFlightFromImage }) {
   );
 }
 
+// Vrai = le vol provient d'une source FIABLE (fournisseur réel ou vol confirmé
+// par l'utilisateur via capture/saisie), par opposition à un vol "inventé" par
+// l'IA ("Laisse l'IA proposer"). Sert à n'afficher l'avertissement "horaires non
+// confirmés" QUE pour les vols proposés par l'IA.
+function isRealFlightSource(source) {
+  return (
+    typeof source === 'string' &&
+    (source.startsWith('travelpayouts') ||
+      source.startsWith('duffel') ||
+      source.startsWith('user'))
+  );
+}
+
 // Construit un libellé d'aéroport précis "Londres Stansted (STN)" à partir du
 // texte du vol et, si besoin, du code IATA. Évite que le visiteur saisisse la
 // mauvaise ville/aéroport dans la barre DiscoverCars.
@@ -1316,11 +1329,15 @@ function DayCard({
     /avion|vol|flight|plane/i.test(t?.mode || '')
   );
   const flightLeg = dayIndex === 0 ? 'aller' : 'retour';
-  // Le vol est "confirmé" (donc on masque l'avertissement) dès qu'on a une vraie
-  // heure de départ OU que l'utilisateur a renseigné/importé ce vol (capture ou
-  // saisie manuelle) → le trajet porte alors _user_edited.
+  // Le vol est "confirmé" (donc on masque l'avertissement) quand il vient d'une
+  // SOURCE fiable (fournisseur réel, ou vol confirmé par capture/saisie =
+  // source "user-confirmed"), ou que l'utilisateur l'a édité après coup. On NE
+  // se fie PLUS à la simple présence d'une heure de départ : l'IA peut en
+  // inventer une (cas "Laisse l'IA proposer") → c'est justement là qu'il faut
+  // garder l'avertissement.
   const flightConfirmed =
-    !!flightTrip?._flight?.departure_at || !!flightTrip?._user_edited;
+    isRealFlightSource(flightTrip?._flight?.source) ||
+    !!flightTrip?._user_edited;
   const showUnconfirmedScheduleWarning =
     isAirTrip && isFirstOrLastDay && flightTrip && !flightConfirmed;
   // Titre du jour :
@@ -2684,10 +2701,7 @@ function TripRow({
   // Le prix vient-il vraiment d'un fournisseur (Aviasales / Duffel) ou
   // est-ce une invention de l'IA ? Si pas de source réelle, l'estimation
   // peut être 2-3x au-dessus de la réalité — on doit le signaler.
-  const isFlightPriceReal =
-    typeof flight.source === 'string' &&
-    (flight.source.startsWith('travelpayouts') ||
-      flight.source.startsWith('duffel'));
+  const isFlightPriceReal = isRealFlightSource(flight.source);
   const userEditedPrice = !!trip._user_edited;
   const isAiEstimatedFlight =
     isFlight && !isFlightPriceReal && !userEditedPrice;

@@ -2670,6 +2670,32 @@ function manualFlightToData(p: any): FlightData | null {
   };
 }
 
+// Convertit un vol CONFIRMÉ par l'utilisateur (extrait de sa capture d'écran,
+// p.confirmedFlight) en FlightData réelle. Ainsi les trips "Avion" générés
+// portent les VRAIES heures + codes IATA + une source "user-confirmed" → plus
+// d'avertissement "horaires non confirmés", prix exact, et le code aéroport
+// (ex. STN) est mémorisé pour la location de voiture.
+function confirmedFlightToData(p: any): FlightData | null {
+  const cf = p?.confirmedFlight;
+  const out = cf?.outbound;
+  if (!out?.origin_iata || !out?.destination_iata) return null;
+  const ret = cf?.return || null;
+  return {
+    origin_iata: out.origin_iata,
+    destination_iata: out.destination_iata,
+    // total_price_eur = prix famille total déjà calculé côté formulaire.
+    price_eur: Math.round(Number(cf?.total_price_eur) || 0),
+    airline: out.airline || out.airline_code || 'N/A',
+    flight_number: out.flight_number || null,
+    departure_at: out.departure_at || null,
+    arrival_at: out.arrival_at || null,
+    return_at: ret?.departure_at || null,
+    return_arrival_at: ret?.arrival_at || null,
+    deeplink: out.deeplink || '',
+    source: 'user-confirmed',
+  };
+}
+
 /**
  * Filet de sécurité : si l'IA a placé un trip "Avion" dans l'itinéraire
  * MAIS qu'on n'a pas réussi à récupérer un vrai vol en amont (cas typique :
@@ -2769,6 +2795,11 @@ async function recoverFlightDataIfNeeded(
 }
 
 async function resolveFlightData(p: any): Promise<AnyFlightData | null> {
+  // 0) Vol confirmé par l'utilisateur (capture d'écran) — priorité absolue :
+  // vraies heures + codes IATA, source "user-confirmed".
+  const confirmed = confirmedFlightToData(p);
+  if (confirmed) return confirmed;
+
   // 1) Saisie manuelle prioritaire
   const manual = manualFlightToData(p);
   if (manual) return manual;
