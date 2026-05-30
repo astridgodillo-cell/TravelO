@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { discoverCarsSearch } from '../lib/externalLinks';
+import DiscoverCarsWidget from '../components/DiscoverCarsWidget';
 
 /* ------------------------------------------------------------------ */
 /* Photos de voyage (Unsplash, URL stables, libres de droits)          */
@@ -471,8 +471,8 @@ function CarRental() {
   return (
     <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10">
       <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl border border-slate-200 bg-gradient-to-r from-brand-50 to-coral-50">
-        <div className="relative px-6 sm:px-10 lg:px-14 py-10 sm:py-12 lg:py-14 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-          <div className="max-w-2xl">
+        <div className="relative px-6 sm:px-10 lg:px-14 py-10 sm:py-12 lg:py-14 grid lg:grid-cols-2 items-center gap-8">
+          <div className="max-w-xl">
             <div className="text-xs uppercase tracking-[0.2em] text-brand-700 font-semibold">
               Sur la route
             </div>
@@ -482,18 +482,11 @@ function CarRental() {
             <p className="mt-3 text-sm sm:text-base text-slate-600 leading-relaxed">
               Comparez les loueurs dans plus de 145 pays et réservez au meilleur
               prix avec notre partenaire DiscoverCars — annulation gratuite sur la
-              plupart des offres.
+              plupart des offres. Indiquez votre ville et vos dates ci-contre.
             </p>
           </div>
-          <div className="shrink-0">
-            <a
-              href={discoverCarsSearch()}
-              target="_blank"
-              rel="noopener noreferrer sponsored"
-              className="btn-primary inline-flex items-center gap-2 whitespace-nowrap"
-            >
-              🚗 Comparer les voitures
-            </a>
+          <div className="w-full">
+            <DiscoverCarsWidget />
           </div>
         </div>
       </div>
