@@ -114,8 +114,19 @@ export function recomputeBudgetFromDays(itinerary) {
         service_stops_eur += Number(s.cost_eur) || 0;
     }
   }
+  // Location de voiture (voyages "Avion + voiture de location") : le prix réel
+  // DiscoverCars n'est pas lisible par le site → on compte soit le montant
+  // saisi par l'utilisateur (summary.car_rental_eur), soit une estimation
+  // TravelO (nb de jours × tarif moyen). Modifiable depuis le tableau budget.
+  const car_rental_eur = computeCarRentalEur(itinerary, days);
+
   const grand_total_eur =
-    trips_eur + accommodation_eur + meals_eur + activities_eur + service_stops_eur;
+    trips_eur +
+    accommodation_eur +
+    meals_eur +
+    activities_eur +
+    service_stops_eur +
+    car_rental_eur;
   const pax = getPax(itinerary);
   const per_person_eur = Math.round(grand_total_eur / pax);
   return {
@@ -127,9 +138,46 @@ export function recomputeBudgetFromDays(itinerary) {
     meals_eur: Math.round(meals_eur),
     activities_eur: Math.round(activities_eur),
     service_stops_eur: Math.round(service_stops_eur),
+    car_rental_eur: Math.round(car_rental_eur),
     grand_total_eur: Math.round(grand_total_eur),
     per_person_eur,
   };
+}
+
+// Tarif moyen estimé d'une location de voiture, en € par jour (estimation
+// TravelO par défaut, remplaçable par le vrai prix saisi par l'utilisateur).
+export const DEFAULT_CAR_RENTAL_DAILY_EUR = 45;
+
+// Montant de location de voiture à compter dans le budget :
+//  - si l'utilisateur a saisi un montant (summary.car_rental_eur) → on l'utilise
+//    tel quel (y compris 0, ex. "déjà compté ailleurs / pas de voiture") ;
+//  - sinon, pour un voyage "avion-voiture", estimation = jours × tarif/jour ;
+//  - sinon 0.
+export function computeCarRentalEur(itinerary, days) {
+  const stored = Number(itinerary?.summary?.car_rental_eur);
+  if (Number.isFinite(stored) && stored >= 0) return stored;
+  if (itinerary?.summary?.trip_type !== 'avion-voiture') return 0;
+  const dayCount = Array.isArray(days) ? days.length : 0;
+  const duration = Number(itinerary?.summary?.duration_days) || dayCount || 0;
+  return Math.max(1, duration) * DEFAULT_CAR_RENTAL_DAILY_EUR;
+}
+
+// Vrai si le montant affiché est une estimation TravelO (l'utilisateur n'a pas
+// encore saisi le vrai prix).
+export function isCarRentalEstimated(itinerary) {
+  return !Number.isFinite(Number(itinerary?.summary?.car_rental_eur));
+}
+
+// Enregistre le vrai prix de location saisi par l'utilisateur (clone, ne mute
+// pas l'itinéraire d'origine). eur = null pour revenir à l'estimation.
+export function setCarRentalCost(itinerary, eur) {
+  const next = { ...itinerary, summary: { ...(itinerary?.summary || {}) } };
+  if (eur == null || eur === '' || !Number.isFinite(Number(eur))) {
+    delete next.summary.car_rental_eur;
+  } else {
+    next.summary.car_rental_eur = Math.max(0, Math.round(Number(eur)));
+  }
+  return next;
 }
 
 /**

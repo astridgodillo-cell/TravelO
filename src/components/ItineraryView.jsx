@@ -17,6 +17,7 @@ import {
   replaceAccommodation,
   copyAccommodationFromPreviousDay,
   clearAccommodation,
+  setCarRentalCost,
 } from '../lib/itineraryEdits';
 import { useDayLayout } from '../hooks/useDayLayout';
 import EditableValue from './EditableValue';
@@ -565,6 +566,8 @@ export default function ItineraryView({
             budget={budget_summary}
             days={days}
             metadata={metadata}
+            summary={summary}
+            onUpdateItinerary={onUpdateItinerary}
           />
         </div>
         <div className={tab === 'notes' ? '' : 'hidden print:block'}>
@@ -3139,9 +3142,18 @@ function categorizeMode(mode) {
   return 'Autre';
 }
 
-function BudgetGlobal({ budget, days, metadata }) {
+function BudgetGlobal({ budget, days, metadata, summary, onUpdateItinerary }) {
   if (!budget) return null;
   const aiEur = costEur(metadata?.total_cost_usd);
+
+  // Location de voiture : ligne éditable (estimation TravelO tant que le vrai
+  // prix DiscoverCars n'a pas été saisi). Affichée pour les voyages
+  // "avion-voiture" ou dès qu'un montant > 0 est présent.
+  const carRentalEur = Number(budget.car_rental_eur) || 0;
+  const carRentalEstimated = !Number.isFinite(Number(summary?.car_rental_eur));
+  const showCarRental =
+    summary?.trip_type === 'avion-voiture' || carRentalEur > 0;
+  const canEditCarRental = typeof onUpdateItinerary === 'function';
 
   // Liste complète des trajets pour le détail dépliable de "Trajets (total)"
   const allTrips = useMemo(() => {
@@ -3289,6 +3301,40 @@ function BudgetGlobal({ budget, days, metadata }) {
               </td>
             </tr>
           ))}
+
+          {showCarRental && (
+            <tr className="border-b border-slate-100">
+              <td className="py-2 text-slate-600">
+                🚗 Location de voiture
+                {carRentalEstimated && (
+                  <span className="ml-1.5 text-[10px] text-slate-400">
+                    (estimation — clique pour saisir le vrai prix)
+                  </span>
+                )}
+              </td>
+              <td className="py-2 text-right font-medium">
+                {canEditCarRental ? (
+                  <EditableValue
+                    value={carRentalEur}
+                    type="number"
+                    min={0}
+                    step={10}
+                    suffix="€"
+                    prefix="≈ "
+                    allowEmpty
+                    format={(v) => formatEurEstimate(v)}
+                    label="Saisir le vrai prix de la location (vide = estimation)"
+                    onSave={async (v) =>
+                      onUpdateItinerary((it) => setCarRentalCost(it, v))
+                    }
+                  />
+                ) : (
+                  formatEurEstimate(carRentalEur)
+                )}
+              </td>
+            </tr>
+          )}
+
           <tr className="border-t-2 border-slate-200">
             <td className="py-3 font-semibold text-slate-900">Grand total estimé</td>
             <td className="py-3 text-right text-lg font-bold text-brand-700">
