@@ -29,7 +29,7 @@ import DayPhotos from './DayPhotos';
 import GygActivityWidget, { GYG_ENABLED } from './GygActivityWidget';
 import DaySpecialties from './DaySpecialties';
 import ItineraryTable from './ItineraryTable';
-import CarRentalWidget from './CarRentalWidget';
+import DiscoverCarsWidget from './DiscoverCarsWidget';
 import Icon from './Icon';
 import { fetchHotelRating, checkActivityBookable } from '../lib/photos';
 import {
@@ -1084,13 +1084,20 @@ function CarPickupBanner({ rental }) {
   );
 }
 
-// Onglet "Voitures" : une vraie barre de recherche DiscoverCars par point de
-// prise en charge (multi-villes possible). La ville est pré-remplie ; les dates
-// et le nombre de voyageurs sont rappelés au-dessus (DiscoverCars ne permet pas
-// de les injecter automatiquement dans la barre).
+// Onglet "Voitures" : une vraie barre de recherche DiscoverCars avec la ville
+// pré-remplie. Le script DiscoverCars n'autorisant qu'UNE barre par page, les
+// voyages multi-villes affichent un sélecteur de ville (chips) au-dessus d'une
+// barre unique qui se recharge à chaque changement de ville. Les dates et le
+// nombre de voyageurs sont rappelés au-dessus (DiscoverCars ne permet pas de les
+// injecter automatiquement dans la barre).
 function CarsTab({ rentals, adults, childrenCount }) {
+  const [sel, setSel] = useState(0);
+  const r = rentals[sel] || rentals[0];
+  if (!r) return null;
+  const when = formatDateRangeFr(r.pickupDate, r.dropoffDate);
+  const whenLabel = when ? `${when.charAt(0).toUpperCase()}${when.slice(1)} · ` : '';
   return (
-    <section className="space-y-6">
+    <section className="space-y-4">
       <div>
         <h2 className="text-xl font-semibold text-slate-900">
           Tes locations de voiture
@@ -1100,47 +1107,56 @@ function CarsTab({ rentals, adults, childrenCount }) {
           voitures disponibles et leurs prix. La ville est déjà pré-remplie.
         </p>
       </div>
-      {rentals.map((r, i) => {
-        const when = formatDateRangeFr(r.pickupDate, r.dropoffDate);
-        const whenLabel = when ? `${when.charAt(0).toUpperCase()}${when.slice(1)} · ` : '';
-        return (
-          <div
-            key={`${r.city}-${i}`}
-            className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5"
-          >
-            <div className="mb-3">
-              <div className="font-semibold text-slate-900 flex items-center gap-2">
-                <span>🚗</span>
-                Voiture à {r.city}
-                {rentals.length > 1 && (
-                  <span className="text-xs font-normal text-slate-400">
-                    (étape {i + 1})
-                  </span>
-                )}
-              </div>
-              <div className="text-xs text-slate-600 mt-0.5">
-                {whenLabel}
-                {adults} adulte(s)
-                {childrenCount ? ` + ${childrenCount} enfant(s)` : ''} — sélectionne
-                ces dates dans la barre.
-              </div>
-            </div>
-            <CarRentalWidget location={r.city} />
-            <div className="mt-2 text-xs text-slate-500 print:hidden">
-              La barre ne s'affiche pas ?{' '}
-              <a
-                href={discoverCarsSearch()}
-                target="_blank"
-                rel="noopener noreferrer sponsored"
-                className="text-brand-700 hover:underline font-medium"
-              >
-                Ouvrir DiscoverCars directement
-              </a>{' '}
-              (désactive ton bloqueur de pub si besoin).
-            </div>
+      {rentals.length > 1 && (
+        <div className="flex flex-wrap gap-2">
+          {rentals.map((x, i) => (
+            <button
+              key={`${x.city}-${i}`}
+              type="button"
+              onClick={() => setSel(i)}
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors ${
+                i === sel
+                  ? 'bg-brand-600 text-white'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              🚗 {x.city}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+        <div className="mb-3">
+          <div className="font-semibold text-slate-900 flex items-center gap-2">
+            <span>🚗</span>
+            Voiture à {r.city}
+            {rentals.length > 1 && (
+              <span className="text-xs font-normal text-slate-400">
+                (étape {sel + 1}/{rentals.length})
+              </span>
+            )}
           </div>
-        );
-      })}
+          <div className="text-xs text-slate-600 mt-0.5">
+            {whenLabel}
+            {adults} adulte(s)
+            {childrenCount ? ` + ${childrenCount} enfant(s)` : ''} — sélectionne
+            ces dates dans la barre.
+          </div>
+        </div>
+        <DiscoverCarsWidget key={r.city} location={r.city} />
+        <div className="mt-2 text-xs text-slate-500 print:hidden">
+          La barre ne s'affiche pas ?{' '}
+          <a
+            href={discoverCarsSearch()}
+            target="_blank"
+            rel="noopener noreferrer sponsored"
+            className="text-brand-700 hover:underline font-medium"
+          >
+            Ouvrir DiscoverCars directement
+          </a>{' '}
+          (désactive ton bloqueur de pub si besoin).
+        </div>
+      </div>
     </section>
   );
 }
