@@ -178,8 +178,8 @@ export default function ItineraryView({
   // de désynchronisation entre encart "Budget estimé" et "Grand total
   // estimé", ni entre détail du jour et total du jour.
   const days = useMemo(
-    () => withRecomputedDayTotals(itinerary?.days),
-    [itinerary]
+    () => normalizeRoadModes(withRecomputedDayTotals(itinerary?.days), summary),
+    [itinerary, summary]
   );
   const budget_summary = useMemo(
     () => recomputeBudgetFromDays(itinerary),
@@ -3199,6 +3199,59 @@ function summarizeTrips(trips) {
   return `${fmt(trips[0])} + ${trips.length - 1} autres trajets`;
 }
 
+// Détermine LE libellé routier canonique d'un itinéraire (Van / Camping-car /
+// Voiture), pour que tous les trajets routiers soient affichés de façon
+// COHÉRENTE (l'IA écrit sinon tantôt "Voiture", "Van", "camping-car (CC
+// intégral)", "Driving", "Conduite CC"…). Priorité : le résumé véhicule, sinon
+// la catégorie routière la plus fréquente, sinon le type de voyage.
+function canonicalRoadLabel(summary, days) {
+  const v = (summary?.vehicle_summary || '').toLowerCase();
+  if (/camping[-\s]?car|\bcc\b|capucine|profil[ée]|int[ée]gral/.test(v))
+    return 'Camping-car';
+  if (/\bvan\b|fourgon/.test(v)) return 'Van';
+  if (/voiture|suv|berline|citadine|break/.test(v)) return 'Voiture';
+  // Sinon : catégorie routière la plus fréquente parmi les trajets.
+  const counts = { 'Camping-car': 0, Van: 0, Voiture: 0 };
+  for (const d of days || []) {
+    for (const t of d.trips || []) {
+      const c = categorizeMode(t.mode);
+      if (c in counts) counts[c] += 1;
+    }
+  }
+  const best = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+  if (best && best[1] > 0) return best[0];
+  if (summary?.trip_type === 'roadtrip-van') return 'Van';
+  if (
+    summary?.trip_type === 'roadtrip-voiture' ||
+    summary?.trip_type === 'avion-voiture'
+  )
+    return 'Voiture';
+  return null;
+}
+
+// Réécrit le mode de CHAQUE trajet routier (voiture/van/camping-car) avec le
+// libellé canonique de l'itinéraire → affichage cohérent partout (planning,
+// budget, détail par mode). Les autres modes (avion, ferry, train, à pied…)
+// sont laissés intacts. Ne mute pas les objets d'origine.
+function normalizeRoadModes(days, summary) {
+  if (!Array.isArray(days) || !days.length) return days;
+  const canonical = canonicalRoadLabel(summary, days);
+  if (!canonical) return days;
+  const ROAD = new Set(['Voiture', 'Van', 'Camping-car']);
+  return days.map((d) => {
+    if (!Array.isArray(d.trips) || !d.trips.length) return d;
+    let changed = false;
+    const trips = d.trips.map((t) => {
+      if (ROAD.has(categorizeMode(t.mode)) && t.mode !== canonical) {
+        changed = true;
+        return { ...t, mode: canonical };
+      }
+      return t;
+    });
+    return changed ? { ...d, trips } : d;
+  });
+}
+
 function categorizeMode(mode) {
   const m = (mode || '').toLowerCase();
   if (m.includes('avion') || m.includes('vol') || m.includes('flight') || m.includes('plane'))
@@ -3224,7 +3277,9 @@ function categorizeMode(mode) {
     m.includes('voiture') ||
     m.includes('location') ||
     m.includes('rental') ||
-    m.includes('car')
+    m.includes('car') ||
+    m.includes('driving') ||
+    m.includes('conduite')
   )
     return 'Voiture';
   if (m.includes('taxi') || m.includes('uber') || m.includes('vtc'))
