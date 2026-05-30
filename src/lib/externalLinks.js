@@ -220,6 +220,21 @@ export function bookingSearch(
   return `https://www.booking.com/searchresults.fr.html?${params.toString()}`;
 }
 
+// Location de voiture en affiliation DiscoverCars. L'identifiant d'affilié
+// (a_aid) est PUBLIC (il apparaît dans l'URL à chaque clic) : on peut donc le
+// laisser en valeur par défaut pour que les commissions fonctionnent sans
+// configuration, tout en permettant de le surcharger via VITE_DISCOVERCARS_AID.
+// Cookie de 365 jours → la commission est attribuée même si le client réserve
+// des semaines plus tard. DiscoverCars ne pré-remplit pas la ville par l'URL de
+// façon fiable : on ouvre la page d'accueil affiliée (le cookie suffit pour
+// toucher la commission) et l'utilisateur saisit son lieu de prise en charge.
+const DISCOVERCARS_AID =
+  import.meta.env?.VITE_DISCOVERCARS_AID || 'TravelO';
+
+export function discoverCarsSearch() {
+  return `https://www.discovercars.com/?a_aid=${encodeURIComponent(DISCOVERCARS_AID)}`;
+}
+
 export function directFerriesSearch(from, to, date) {
   const params = new URLSearchParams({
     from: from || '',

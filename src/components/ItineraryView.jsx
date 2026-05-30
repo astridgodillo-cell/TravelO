@@ -37,6 +37,7 @@ import {
   googleMapsSearch,
   googleMapsMultiStop,
   directFerriesSearch,
+  discoverCarsSearch,
   park4nightSearch,
   getYourGuideSearch,
   tiqetsSearch,
@@ -2607,6 +2608,17 @@ function TripRow({
             className="text-brand-700 hover:underline"
           >
             ⛴️ Comparer ferries
+          </a>
+        )}
+        {isFlight && (
+          <a
+            href={discoverCarsSearch()}
+            target="_blank"
+            rel="noopener noreferrer sponsored"
+            className="text-brand-700 hover:underline"
+            title={`Louer une voiture à l'arrivée${trip.to ? ' à ' + trip.to : ''} (DiscoverCars)`}
+          >
+            🚗 Louer une voiture
           </a>
         )}
         {isFlight && (() => {
