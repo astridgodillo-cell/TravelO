@@ -10,19 +10,20 @@ import { useEffect, useRef } from 'react';
 // collage de HTML n'exécuterait pas le script).
 //
 // IMPORTANT : le script repère sa cible par l'identifiant FIXE "dchwidget".
-// On ne peut donc afficher qu'UNE barre à la fois sur une page. Pour proposer
-// plusieurs villes, on remonte ce composant avec une `key` différente (l'appelant
-// affiche un sélecteur de ville) → une seule barre vivante à chaque instant.
+// On ne peut donc afficher qu'UNE barre à la fois sur une page.
+//
+// ⚠️ NE PAS pré-remplir data-location avec un nom de ville libre : DiscoverCars
+// attend un code interne précis, pas un nom écrit librement. Un nom libre
+// ("londres") fait charger une page inexistante → "Page non trouvée". On laisse
+// donc le champ vide (le visiteur saisit la ville, l'appelant l'affiche en
+// rappel au-dessus de la barre).
 
 const AFF_CODE = import.meta.env?.VITE_DISCOVERCARS_AID || 'TravelO';
 
-// location : nom de ville/aéroport pré-rempli dans le champ "prise en charge".
-// DiscoverCars le reconnaît par son nom (aéroports et grandes villes) ; sinon
-// le visiteur le saisit lui-même (autocomplétion).
-function widgetAttrs(location) {
+function widgetAttrs() {
   return [
     ['data-dev-env', 'com'],
-    ['data-location', location || ''],
+    ['data-location', ''],
     ['data-lang', 'fr'],
     ['data-currency', 'eur'],
     ['data-utm-source', AFF_CODE],
@@ -46,23 +47,23 @@ function widgetAttrs(location) {
   ];
 }
 
-export default function DiscoverCarsWidget({ location = '', className = '' }) {
+export default function DiscoverCarsWidget({ className = '' }) {
   const containerRef = useRef(null);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    // Repart d'un conteneur propre (changement de ville / remontage).
+    // Repart d'un conteneur propre (remontage).
     container.innerHTML = '';
     const s = document.createElement('script');
     s.id = 'dchwidget';
     s.src = 'https://www.discovercars.com/widget.js?v1';
     s.async = true;
-    for (const [name, value] of widgetAttrs(location)) {
+    for (const [name, value] of widgetAttrs()) {
       s.setAttribute(name, value);
     }
     container.appendChild(s);
-  }, [location]);
+  }, []);
 
   // print:hidden → on n'imprime pas la barre interactive dans les PDF.
   return <div ref={containerRef} className={`print:hidden ${className}`} />;

@@ -1106,8 +1106,8 @@ function CarsTab({ rentals, adults, childrenCount }) {
           Tes locations de voiture
         </h2>
         <p className="text-sm text-slate-500 mt-1">
-          Indique tes dates dans la barre ci-dessous : tu verras les vraies
-          voitures disponibles et leurs prix. La ville est déjà pré-remplie.
+          Saisis la ville et tes dates dans la barre ci-dessous : tu verras les
+          vraies voitures disponibles et leurs prix.
         </p>
       </div>
       {rentals.length > 1 && (
@@ -1142,11 +1142,12 @@ function CarsTab({ rentals, adults, childrenCount }) {
           <div className="text-xs text-slate-600 mt-0.5">
             {whenLabel}
             {adults} adulte(s)
-            {childrenCount ? ` + ${childrenCount} enfant(s)` : ''} — sélectionne
-            ces dates dans la barre.
+            {childrenCount ? ` + ${childrenCount} enfant(s)` : ''} — saisis «{' '}
+            <span className="font-medium text-slate-700">{r.city}</span> » comme
+            lieu de prise en charge et ces dates dans la barre.
           </div>
         </div>
-        <DiscoverCarsWidget key={r.city} location={r.city} />
+        <DiscoverCarsWidget />
         <div className="mt-2 text-xs text-slate-500 print:hidden">
           La barre ne s'affiche pas ?{' '}
           <a
