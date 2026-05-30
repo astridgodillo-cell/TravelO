@@ -104,7 +104,22 @@ export function googleMapsDirections(from, to) {
   return `https://www.google.com/maps/dir/${safeFrom}/${safeTo}/`;
 }
 
-export function park4nightSearch(location) {
+// Extrait { lat, lng } d'une chaîne "41.8806, 16.1720" (ou avec ;). null sinon.
+function parseLatLng(s) {
+  const m = String(s || '')
+    .trim()
+    .match(/^(-?\d{1,3}\.\d+)\s*[,;]\s*(-?\d{1,3}\.\d+)$/);
+  return m ? { lat: m[1], lng: m[2] } : null;
+}
+
+// Park4Night : si on a des coordonnées GPS précises (coordinates_hint de
+// l'hébergement, ou la location elle-même), on centre la carte dessus
+// (?lat=&lng=). Sinon, recherche par nom de lieu (?text=).
+export function park4nightSearch(location, coords) {
+  const c = parseLatLng(coords) || parseLatLng(location);
+  if (c) {
+    return `https://park4night.com/fr/search?lat=${c.lat}&lng=${c.lng}`;
+  }
   return `https://park4night.com/fr/search?text=${q(cleanLocation(location) || location)}`;
 }
 
@@ -464,7 +479,11 @@ export function bestAccommodationLink(accommodation, ctx = {}) {
   if (provider === 'park4night') {
     return {
       provider: 'Park4Night',
-      url: park4nightSearch(cityName || fallbackText),
+      // Coordonnées GPS de l'hébergement si dispo → carte centrée au bon endroit.
+      url: park4nightSearch(
+        cityName || fallbackText,
+        accommodation.coordinates_hint
+      ),
     };
   }
   if (provider === 'booking') {

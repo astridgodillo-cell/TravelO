@@ -1865,7 +1865,10 @@ function LodgingCard({
             </a>
             {isVanTrip && (
               <a
-                href={park4nightSearch(day.location)}
+                href={park4nightSearch(
+                  day.location,
+                  day.accommodation?.coordinates_hint
+                )}
                 target="_blank"
                 rel="noreferrer"
                 className="text-slate-400 hover:text-slate-600 hover:underline"
@@ -1890,7 +1893,10 @@ function LodgingCard({
           )}
           {isVanTrip && accomLink?.provider !== 'Park4Night' && (
             <a
-              href={park4nightSearch(day.location)}
+              href={park4nightSearch(
+                day.location,
+                day.accommodation?.coordinates_hint
+              )}
               target="_blank"
               rel="noreferrer"
               className="text-emerald-700 hover:underline"
