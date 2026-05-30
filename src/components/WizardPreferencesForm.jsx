@@ -28,6 +28,7 @@ import {
 import { findGatewaysForCountry, formatGateway } from '../lib/airportCities';
 import { extractFlightFromImage } from '../lib/ai';
 import PlaceDiscovery from './PlaceDiscovery';
+import EditableValue from './EditableValue';
 import ExtractionLoader from './ExtractionLoader';
 
 // --- Helpers dates ---
@@ -1036,6 +1037,19 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
     setUploadError(null);
   }
 
+  // Correction manuelle du prix total du vol confirmé (souvent la valeur qui
+  // diverge entre deux lectures de la capture). On marque _price_user_edited
+  // pour ne pas l'écraser si une 2e capture est ajoutée ensuite.
+  function setConfirmedPrice(eur) {
+    const current = values.confirmedFlight;
+    if (!current) return;
+    updateConfirmedFlight({
+      ...current,
+      total_price_eur: Math.max(0, Math.round(Number(eur) || 0)),
+      _price_user_edited: true,
+    });
+  }
+
   const confirmed = values.confirmedFlight;
 
   return (
@@ -1321,6 +1335,7 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
         <ConfirmedFlightCard
           confirmed={confirmed}
           onClear={clearConfirmedFlight}
+          onSetPrice={setConfirmedPrice}
           onPickFile={() => fileRef2.current?.click()}
           onDropFile={onDrop}
           uploadPhase={uploadPhase}
@@ -1341,6 +1356,7 @@ function StepFlight({ values, update, updateManualFlight, updateConfirmedFlight 
         <ConfirmedFlightCard
           confirmed={confirmed}
           onClear={clearConfirmedFlight}
+          onSetPrice={setConfirmedPrice}
           onPickFile={() => fileRef2.current?.click()}
           onDropFile={onDrop}
           uploadPhase={uploadPhase}
@@ -1487,6 +1503,7 @@ function ModeTab({ active, onClick, children }) {
 function ConfirmedFlightCard({
   confirmed,
   onClear,
+  onSetPrice,
   onPickFile,
   onDropFile,
   uploadPhase,
@@ -1556,9 +1573,28 @@ function ConfirmedFlightCard({
             👥 <strong>{pax}</strong> voyageur{pax > 1 ? 's' : ''}
           </div>
           <div className="text-right">
-            <div className="text-xl font-bold text-slate-900">{total} €</div>
+            {typeof onSetPrice === 'function' ? (
+              <EditableValue
+                value={total}
+                type="number"
+                min={0}
+                step={10}
+                suffix="€"
+                format={(v) => `${Math.round(Number(v) || 0)} €`}
+                label="Corriger le prix total du vol (souvent ce qui diffère d'une lecture à l'autre)"
+                className="text-xl font-bold text-slate-900"
+                onSave={async (v) => onSetPrice(v)}
+              />
+            ) : (
+              <div className="text-xl font-bold text-slate-900">{total} €</div>
+            )}
             <div className="text-xs text-slate-500">
               soit {perPerson} € / personne
+              {typeof onSetPrice === 'function' && (
+                <span className="block text-[11px] text-emerald-700">
+                  ✏️ clique sur le prix pour le corriger
+                </span>
+              )}
             </div>
           </div>
         </div>
