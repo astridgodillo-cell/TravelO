@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { discoverCarsLang } from '../lib/externalLinks';
 
 // Widget officiel DiscoverCars : une vraie barre de recherche de location de
 // voiture. Le visiteur saisit sa ville et ses dates SUR ton site, puis voit les
@@ -20,11 +21,14 @@ import { useEffect, useRef } from 'react';
 
 const AFF_CODE = import.meta.env?.VITE_DISCOVERCARS_AID || 'TravelO';
 
+// data-lang suit la langue du visiteur. On NE met PAS de textes personnalisés
+// (titre / bouton) : ainsi DiscoverCars utilise ses propres libellés traduits
+// dans la langue choisie, et tout reste cohérent quelle que soit la langue.
 function widgetAttrs() {
   return [
     ['data-dev-env', 'com'],
     ['data-location', ''],
-    ['data-lang', 'fr'],
+    ['data-lang', discoverCarsLang()],
     ['data-currency', 'eur'],
     ['data-utm-source', AFF_CODE],
     ['data-utm-medium', 'widget'],
@@ -34,9 +38,7 @@ function widgetAttrs() {
     ['data-style-submit-font-color', '#ffffff'],
     ['data-style-form-bg-color', '#fcd34d'],
     ['data-style-form-font-color', '#000000'],
-    ['data-style-submit-text', 'Rechercher'],
     ['data-style-title-color', '#000000'],
-    ['data-title-text', 'Comparez les locations de voiture et économisez jusqu’à 70 % !'],
     ['data-style_rounded_corners', 'on'],
     ['data-layout_benefits', 'on'],
     ['data-layout_description', 'off'],

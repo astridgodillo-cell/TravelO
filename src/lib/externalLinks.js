@@ -231,8 +231,30 @@ export function bookingSearch(
 const DISCOVERCARS_AID =
   import.meta.env?.VITE_DISCOVERCARS_AID || 'TravelO';
 
+// Langues prises en charge par DiscoverCars (code à 2 lettres). On déduit la
+// langue du visiteur depuis son navigateur ; si elle n'est pas supportée, on
+// retombe sur l'anglais (jamais d'URL invalide).
+const DISCOVERCARS_LANGS = new Set([
+  'en', 'fr', 'es', 'de', 'it', 'pt', 'nl', 'pl', 'ru', 'ro', 'sv', 'da',
+  'no', 'fi', 'cs', 'el', 'tr', 'hu', 'sk', 'uk', 'bg', 'hr', 'sr', 'sl',
+  'et', 'lv', 'lt', 'ja', 'ko', 'zh', 'ar', 'he', 'th', 'id', 'ms', 'vi',
+]);
+
+export function discoverCarsLang() {
+  if (typeof navigator === 'undefined') return 'en';
+  const raw = String(
+    navigator.language || navigator.languages?.[0] || 'en'
+  )
+    .slice(0, 2)
+    .toLowerCase();
+  return DISCOVERCARS_LANGS.has(raw) ? raw : 'en';
+}
+
 export function discoverCarsSearch() {
-  return `https://www.discovercars.com/?a_aid=${encodeURIComponent(DISCOVERCARS_AID)}`;
+  const lang = discoverCarsLang();
+  return `https://www.discovercars.com/${lang}/?a_aid=${encodeURIComponent(
+    DISCOVERCARS_AID
+  )}&currency=eur`;
 }
 
 export function directFerriesSearch(from, to, date) {
