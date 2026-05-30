@@ -214,18 +214,36 @@ export default function ItineraryView({
   const carRentals = useMemo(() => {
     if (summary?.trip_type !== 'avion-voiture') return [];
     const home = (cleanLocation(summary?.departure_location) || '').toLowerCase();
-    const stops = [];
+    // Liste chronologique de tous les vols, avec heures d'arrivée / départ.
+    const flightList = [];
     (days || []).forEach((d) => {
       (d.trips || []).forEach((t) => {
         if (!/avion|vol|flight|plane/i.test(t?.mode || '')) return;
-        const city = cleanLocation(t?.to || '');
-        if (!city || city.toLowerCase() === home) return;
-        const last = stops[stops.length - 1];
-        if (last && last.city.toLowerCase() === city.toLowerCase()) return;
-        stops.push({ city, pickupDate: d.date || '' });
+        flightList.push({
+          city: cleanLocation(t?.to || ''),
+          date: d.date || '',
+          arrivalTime: hhmm(t?._flight?.arrival_at || t?.arrival_at),
+          departureTime: hhmm(t?._flight?.departure_at || t?.departure_at),
+        });
       });
     });
-    if (stops.length === 0) {
+    // Une voiture par ville d'arrivée (hors retour domicile). Prise en charge =
+    // arrivée du vol ; restitution = départ du vol SUIVANT (souvent le retour).
+    const rentals = [];
+    flightList.forEach((f, idx) => {
+      if (!f.city || f.city.toLowerCase() === home) return;
+      const last = rentals[rentals.length - 1];
+      if (last && last.city.toLowerCase() === f.city.toLowerCase()) return;
+      const next = flightList[idx + 1];
+      rentals.push({
+        city: f.city,
+        pickupDate: f.date,
+        pickupTime: f.arrivalTime,
+        dropoffDate: next?.date || summary?.end_date || '',
+        dropoffTime: next?.departureTime || '',
+      });
+    });
+    if (rentals.length === 0) {
       const city =
         cleanLocation(summary?.destinations) ||
         cleanLocation(days?.[0]?.location) ||
@@ -235,14 +253,13 @@ export default function ItineraryView({
         {
           city,
           pickupDate: summary?.start_date || '',
+          pickupTime: '',
           dropoffDate: summary?.end_date || '',
+          dropoffTime: '',
         },
       ];
     }
-    return stops.map((s, i) => ({
-      ...s,
-      dropoffDate: stops[i + 1]?.pickupDate || summary?.end_date || '',
-    }));
+    return rentals;
   }, [summary, days]);
   const showCarRental = carRentals.length > 0;
   const carPickupByDate = useMemo(() => {
@@ -1044,6 +1061,16 @@ function FlightsTab({ flights, pax, onImportFlightFromImage }) {
   );
 }
 
+// Extrait "HH:MM" d'une date-heure ISO ("2026-06-09T14:30:00…") ou d'une heure
+// déjà au format texte. Renvoie '' si rien d'exploitable (heure non confirmée).
+function hhmm(v) {
+  if (!v) return '';
+  const s = String(v);
+  if (s.includes('T')) return s.substring(11, 16);
+  const m = s.match(/\b(\d{1,2}):(\d{2})\b/);
+  return m ? `${m[1].padStart(2, '0')}:${m[2]}` : '';
+}
+
 // Formate "du 15 juin au 24 juin" à partir de deux dates ISO (YYYY-MM-DD).
 function formatDateRangeFr(start, end) {
   const fmt = (iso) => {
@@ -1071,7 +1098,11 @@ function CarPickupBanner({ rental }) {
         </div>
         {when && (
           <div className="text-xs text-slate-600 mt-0.5">
-            Location conseillée {when}.
+            Location conseillée {when}
+            {rental.pickupTime
+              ? ` · prise en charge vers ${rental.pickupTime} (arrivée du vol)`
+              : ''}
+            .
           </div>
         )}
       </div>
@@ -1144,10 +1175,35 @@ function CarsTab({ rentals, adults, childrenCount }) {
             {adults} adulte(s)
             {childrenCount ? ` + ${childrenCount} enfant(s)` : ''} — saisis «{' '}
             <span className="font-medium text-slate-700">{r.city}</span> » comme
-            lieu de prise en charge et ces dates dans la barre.
+            lieu de prise en charge (les dates sont déjà pré-remplies).
           </div>
+          {(r.pickupTime || r.dropoffTime) && (
+            <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-1.5">
+              ⏰ Pense à régler l'heure dans la barre :
+              {r.pickupTime && (
+                <>
+                  {' '}prise en charge vers{' '}
+                  <span className="font-semibold">{r.pickupTime}</span> (arrivée du
+                  vol)
+                </>
+              )}
+              {r.pickupTime && r.dropoffTime && ' ·'}
+              {r.dropoffTime && (
+                <>
+                  {' '}restitution vers{' '}
+                  <span className="font-semibold">{r.dropoffTime}</span> (départ du
+                  vol)
+                </>
+              )}
+              .
+            </div>
+          )}
         </div>
-        <DiscoverCarsWidget />
+        <DiscoverCarsWidget
+          key={r.city}
+          datePickup={r.pickupDate}
+          dateDropoff={r.dropoffDate}
+        />
         <div className="mt-2 text-xs text-slate-500 print:hidden">
           La barre ne s'affiche pas ?{' '}
           <a

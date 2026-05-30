@@ -24,8 +24,13 @@ const AFF_CODE = import.meta.env?.VITE_DISCOVERCARS_AID || 'TravelO';
 // data-lang suit la langue du visiteur. On NE met PAS de textes personnalisés
 // (titre / bouton) : ainsi DiscoverCars utilise ses propres libellés traduits
 // dans la langue choisie, et tout reste cohérent quelle que soit la langue.
-function widgetAttrs() {
-  return [
+//
+// datePickup / dateDropoff (format YYYY-MM-DD) : pré-remplissent les dates de
+// prise en charge et de restitution (attributs data-date-pickup/dropoff lus par
+// widget.js). L'HEURE n'est PAS réglable par le code (le widget n'a pas
+// d'attribut pour ça) → le visiteur la choisit dans la barre.
+function widgetAttrs({ datePickup, dateDropoff } = {}) {
+  const attrs = [
     ['data-dev-env', 'com'],
     ['data-location', ''],
     ['data-lang', discoverCarsLang()],
@@ -47,9 +52,16 @@ function widgetAttrs() {
     ['data-layout_style_form_bg_color', '#007ac2'],
     ['data-layout_title', 'on'],
   ];
+  if (datePickup) attrs.push(['data-date-pickup', datePickup]);
+  if (dateDropoff) attrs.push(['data-date-dropoff', dateDropoff]);
+  return attrs;
 }
 
-export default function DiscoverCarsWidget({ className = '' }) {
+export default function DiscoverCarsWidget({
+  datePickup = '',
+  dateDropoff = '',
+  className = '',
+}) {
   const containerRef = useRef(null);
 
   useEffect(() => {
@@ -61,11 +73,11 @@ export default function DiscoverCarsWidget({ className = '' }) {
     s.id = 'dchwidget';
     s.src = 'https://www.discovercars.com/widget.js?v1';
     s.async = true;
-    for (const [name, value] of widgetAttrs()) {
+    for (const [name, value] of widgetAttrs({ datePickup, dateDropoff })) {
       s.setAttribute(name, value);
     }
     container.appendChild(s);
-  }, []);
+  }, [datePickup, dateDropoff]);
 
   // print:hidden → on n'imprime pas la barre interactive dans les PDF.
   return <div ref={containerRef} className={`print:hidden ${className}`} />;
