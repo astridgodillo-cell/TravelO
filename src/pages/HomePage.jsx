@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { discoverCarsSearch } from '../lib/externalLinks';
 
 /* ------------------------------------------------------------------ */
 /* Photos de voyage (Unsplash, URL stables, libres de droits)          */
@@ -129,6 +130,8 @@ export default function HomePage() {
       <Destinations />
 
       <Inclusions />
+
+      <CarRental />
 
       <FinalCTA user={user} isApproved={isApproved} />
     </div>
@@ -456,6 +459,43 @@ function Inclusions() {
             </p>
           </div>
         ))}
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* LOCATION DE VOITURE — encart partenaire DiscoverCars (affilié)      */
+/* ------------------------------------------------------------------ */
+function CarRental() {
+  return (
+    <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10">
+      <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl border border-slate-200 bg-gradient-to-r from-brand-50 to-coral-50">
+        <div className="relative px-6 sm:px-10 lg:px-14 py-10 sm:py-12 lg:py-14 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+          <div className="max-w-2xl">
+            <div className="text-xs uppercase tracking-[0.2em] text-brand-700 font-semibold">
+              Sur la route
+            </div>
+            <h2 className="mt-3 text-2xl sm:text-3xl lg:text-4xl font-bold text-slate-900 tracking-tight">
+              Louez une voiture pour votre voyage
+            </h2>
+            <p className="mt-3 text-sm sm:text-base text-slate-600 leading-relaxed">
+              Comparez les loueurs dans plus de 145 pays et réservez au meilleur
+              prix avec notre partenaire DiscoverCars — annulation gratuite sur la
+              plupart des offres.
+            </p>
+          </div>
+          <div className="shrink-0">
+            <a
+              href={discoverCarsSearch()}
+              target="_blank"
+              rel="noopener noreferrer sponsored"
+              className="btn-primary inline-flex items-center gap-2 whitespace-nowrap"
+            >
+              🚗 Comparer les voitures
+            </a>
+          </div>
+        </div>
       </div>
     </section>
   );
