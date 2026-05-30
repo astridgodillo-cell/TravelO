@@ -118,8 +118,9 @@ function parseLatLng(s) {
 export function park4nightSearch(location, coords) {
   const c = parseLatLng(coords) || parseLatLng(location);
   if (c) {
-    // zoom indispensable : sans lui la carte reste dézoomée sur toute l'Europe.
-    return `https://park4night.com/fr/search?lat=${c.lat}&lng=${c.lng}&zoom=13`;
+    // Le paramètre de zoom s'appelle "z" (PAS "zoom") — format réel observé sur
+    // les pages Park4Night. Sans lui, la carte reste dézoomée sur toute l'Europe.
+    return `https://park4night.com/fr/search?lat=${c.lat}&lng=${c.lng}&z=14`;
   }
   return `https://park4night.com/fr/search?text=${q(cleanLocation(location) || location)}`;
 }
