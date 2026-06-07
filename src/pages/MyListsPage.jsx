@@ -14,6 +14,8 @@ export default function MyListsPage() {
   const [error, setError] = useState(null);
   const [editing, setEditing] = useState(null); // { id?, name, items }
   const [busy, setBusy] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkText, setBulkText] = useState('');
 
   async function refresh() {
     setLoading(true);
@@ -29,10 +31,14 @@ export default function MyListsPage() {
 
   function startNew() {
     setEditing({ name: '', items: [] });
+    setBulkOpen(false);
+    setBulkText('');
   }
 
   function startEdit(list) {
     setEditing({ id: list.id, name: list.name, items: [...list.items] });
+    setBulkOpen(false);
+    setBulkText('');
   }
 
   async function handleSave() {
@@ -88,6 +94,23 @@ export default function MyListsPage() {
       ...e,
       items: e.items.filter((_, i) => i !== idx),
     }));
+  }
+  function addBulkItems() {
+    const newItems = bulkText
+      .split(/[\n,;]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (newItems.length === 0) {
+      setBulkOpen(false);
+      setBulkText('');
+      return;
+    }
+    setEditing((e) => ({
+      ...e,
+      items: [...e.items.filter((i) => i.trim()), ...newItems],
+    }));
+    setBulkText('');
+    setBulkOpen(false);
   }
 
   return (
@@ -156,13 +179,60 @@ export default function MyListsPage() {
                 </li>
               ))}
             </ul>
-            <button
-              type="button"
-              onClick={addItem}
-              className="btn-secondary mt-3 text-sm"
-            >
-              + Ajouter un item
-            </button>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={addItem}
+                className="btn-secondary text-sm"
+              >
+                + Ajouter un item
+              </button>
+              <button
+                type="button"
+                onClick={() => setBulkOpen((v) => !v)}
+                className="btn-secondary text-sm"
+              >
+                + Ajouter plusieurs items
+              </button>
+            </div>
+
+            {bulkOpen && (
+              <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
+                <p className="text-xs text-slate-500">
+                  Collez votre liste : un item par ligne (ou séparés par des
+                  virgules). Tout sera ajouté d'un coup.
+                </p>
+                <textarea
+                  autoFocus
+                  rows={6}
+                  className="input w-full"
+                  placeholder={
+                    'Bouteille de gaz\nLampe frontale\nTrousse de secours\nChargeur solaire'
+                  }
+                  value={bulkText}
+                  onChange={(e) => setBulkText(e.target.value)}
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={addBulkItems}
+                    className="btn-primary text-sm"
+                  >
+                    Tout ajouter
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBulkOpen(false);
+                      setBulkText('');
+                    }}
+                    className="btn-secondary text-sm"
+                  >
+                    Annuler
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
