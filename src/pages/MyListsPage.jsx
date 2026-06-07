@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   listPackingLists,
   savePackingList,
@@ -82,6 +82,19 @@ export default function MyListsPage() {
   const [busy, setBusy] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkText, setBulkText] = useState('');
+  const [addingArticle, setAddingArticle] = useState(false); // choix de catégorie
+  const [pendingFocus, setPendingFocus] = useState(null); // index à focaliser
+  const [dragIndex, setDragIndex] = useState(null);
+  const [dragOverIndex, setDragOverIndex] = useState(null);
+  const itemRefs = useRef([]);
+
+  // Place le curseur dans le champ d'un article fraîchement ajouté.
+  useEffect(() => {
+    if (pendingFocus != null && itemRefs.current[pendingFocus]) {
+      itemRefs.current[pendingFocus].focus();
+      setPendingFocus(null);
+    }
+  }, [editing?.items, pendingFocus]);
 
   async function refresh() {
     setLoading(true);
@@ -98,6 +111,7 @@ export default function MyListsPage() {
   function resetBulk() {
     setBulkOpen(false);
     setBulkText('');
+    setAddingArticle(false);
   }
 
   function startNew() {
@@ -155,11 +169,53 @@ export default function MyListsPage() {
     setBusy(false);
   }
 
-  function addItem() {
-    setEditing((e) => ({ ...e, items: [...e.items, ''] }));
+  const hasCategories = editing?.items?.some(isCat);
+
+  // Clic sur « + Ajouter un article » : si des catégories existent, on demande
+  // d'abord dans laquelle ranger l'article ; sinon on ajoute directement.
+  function handleAddArticleClick() {
+    if (hasCategories) setAddingArticle((v) => !v);
+    else addItemToCategory(-1);
+  }
+
+  // Ajoute un article vide à la fin de la catégorie choisie (catIdx = index du
+  // titre de catégorie, ou -1 pour « sans catégorie / au début »).
+  function addItemToCategory(catIdx) {
+    const arr = [...(editing?.items || [])];
+    let insertAt;
+    if (catIdx < 0) {
+      const firstCat = arr.findIndex(isCat);
+      insertAt = firstCat === -1 ? arr.length : firstCat;
+    } else {
+      let j = catIdx + 1;
+      while (j < arr.length && !isCat(arr[j])) j++;
+      insertAt = j;
+    }
+    arr.splice(insertAt, 0, '');
+    setEditing((e) => ({ ...e, items: arr }));
+    setPendingFocus(insertAt);
+    setAddingArticle(false);
   }
   function addCategory() {
+    const insertAt = editing.items.length;
     setEditing((e) => ({ ...e, items: [...e.items, makeCat('')] }));
+    setPendingFocus(insertAt);
+  }
+
+  // --- Glisser-déposer : déplacer un article (et le changer de catégorie) ---
+  function handleDropAt(targetInsert) {
+    if (dragIndex == null) {
+      setDragOverIndex(null);
+      return;
+    }
+    const arr = [...editing.items];
+    const [moved] = arr.splice(dragIndex, 1);
+    let insertAt = targetInsert;
+    if (dragIndex < targetInsert) insertAt -= 1;
+    arr.splice(insertAt, 0, moved);
+    setEditing((e) => ({ ...e, items: arr }));
+    setDragIndex(null);
+    setDragOverIndex(null);
   }
   function updateItem(idx, value) {
     setEditing((e) => ({
@@ -236,10 +292,26 @@ export default function MyListsPage() {
 
           <div>
             <label className="label">Articles & catégories</label>
+            <p className="text-xs text-slate-400 mb-2">
+              Astuce : glissez la poignée ⠿ d'un article pour le déplacer ou le
+              changer de catégorie.
+            </p>
             <ul className="space-y-2">
               {editing.items.map((item, i) =>
                 isCat(item) ? (
-                  <li key={i} className="flex items-center gap-2">
+                  <li
+                    key={i}
+                    onDragOver={(e) => {
+                      if (dragIndex != null) {
+                        e.preventDefault();
+                        setDragOverIndex(i);
+                      }
+                    }}
+                    onDrop={() => handleDropAt(i + 1)}
+                    className={`flex items-center gap-2 rounded-md ${
+                      dragOverIndex === i ? 'ring-2 ring-brand-400' : ''
+                    }`}
+                  >
                     <span className="text-brand-500 text-xs font-semibold uppercase tracking-wide w-6 text-right">
                       §
                     </span>
@@ -259,11 +331,33 @@ export default function MyListsPage() {
                     </button>
                   </li>
                 ) : (
-                  <li key={i} className="flex items-center gap-2">
-                    <span className="text-slate-400 text-xs w-6 text-right">
-                      •
+                  <li
+                    key={i}
+                    onDragOver={(e) => {
+                      if (dragIndex != null) {
+                        e.preventDefault();
+                        setDragOverIndex(i);
+                      }
+                    }}
+                    onDrop={() => handleDropAt(i)}
+                    className={`flex items-center gap-2 rounded-md ${
+                      dragOverIndex === i ? 'border-t-2 border-brand-400' : ''
+                    } ${dragIndex === i ? 'opacity-40' : ''}`}
+                  >
+                    <span
+                      draggable
+                      onDragStart={() => setDragIndex(i)}
+                      onDragEnd={() => {
+                        setDragIndex(null);
+                        setDragOverIndex(null);
+                      }}
+                      className="cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-500 select-none px-1 text-sm"
+                      title="Glisser pour déplacer"
+                    >
+                      ⠿
                     </span>
                     <input
+                      ref={(el) => (itemRefs.current[i] = el)}
                       className="input flex-1"
                       placeholder="Ex : Bouteille de gaz de rechange"
                       value={item}
@@ -282,10 +376,46 @@ export default function MyListsPage() {
               )}
             </ul>
 
+            {addingArticle && (
+              <div className="mt-3 rounded-lg border border-brand-200 bg-brand-50/50 p-3 space-y-2">
+                <p className="text-sm font-medium text-slate-700">
+                  Dans quelle catégorie ranger ce nouvel article ?
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {editing.items.map((it, i) =>
+                    isCat(it) ? (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => addItemToCategory(i)}
+                        className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-100"
+                      >
+                        {catLabel(it).trim() || '(catégorie sans titre)'}
+                      </button>
+                    ) : null
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => addItemToCategory(-1)}
+                    className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-500 hover:bg-slate-100"
+                  >
+                    Sans catégorie
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAddingArticle(false)}
+                    className="rounded-full px-3 py-1.5 text-xs text-slate-400 hover:text-slate-600"
+                  >
+                    Annuler
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="mt-3 flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={addItem}
+                onClick={handleAddArticleClick}
                 className="btn-secondary text-sm"
               >
                 + Ajouter un article
