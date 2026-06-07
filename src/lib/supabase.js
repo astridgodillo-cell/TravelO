@@ -156,11 +156,34 @@ export async function updateItinerary(id, patch) {
 export async function listItineraries() {
   const user = await getCurrentUser();
   if (!user) return { data: [], error: null };
-  return supabase
+  // Mes itinéraires
+  const owned = await supabase
     .from('itineraries')
     .select('*')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false });
+  if (owned.error) return owned;
+
+  // + ceux qu'on a partagés avec moi et que j'ai acceptés
+  const { data: shareRows } = await supabase
+    .from('itinerary_shares')
+    .select('itinerary_id')
+    .eq('recipient_id', user.id)
+    .eq('status', 'accepted');
+  const sharedIds = (shareRows || []).map((r) => r.itinerary_id);
+
+  let shared = [];
+  if (sharedIds.length) {
+    const res = await supabase
+      .from('itineraries')
+      .select('*')
+      .in('id', sharedIds)
+      .order('created_at', { ascending: false });
+    shared = (res.data || []).map((it) => ({ ...it, _shared: true }));
+  }
+
+  const ownedData = (owned.data || []).map((it) => ({ ...it, _shared: false }));
+  return { data: [...ownedData, ...shared], error: null };
 }
 
 export async function getItinerary(id) {
@@ -313,6 +336,50 @@ export async function listSharesForList(listId) {
 // Supprime un partage (propriétaire qui retire l'accès, ou destinataire qui quitte).
 export async function deleteShare(shareId) {
   return supabase.from('list_shares').delete().eq('id', shareId);
+}
+
+// ----- PARTAGE D'ITINÉRAIRES (entre utilisateurs, en temps réel) -----
+
+export async function shareItineraryByEmail(itineraryId, email) {
+  return supabase.rpc('share_itinerary_by_email', {
+    p_itinerary_id: itineraryId,
+    p_email: email,
+  });
+}
+
+export async function getIncomingPendingItineraryShares() {
+  const user = await getCurrentUser();
+  if (!user) return { data: [], error: null };
+  return supabase
+    .from('itinerary_shares')
+    .select('*')
+    .eq('recipient_id', user.id)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false });
+}
+
+export async function respondToItineraryShare(shareId, accept) {
+  return supabase
+    .from('itinerary_shares')
+    .update({
+      status: accept ? 'accepted' : 'refused',
+      responded_at: new Date().toISOString(),
+    })
+    .eq('id', shareId)
+    .select()
+    .single();
+}
+
+export async function listSharesForItinerary(itineraryId) {
+  return supabase
+    .from('itinerary_shares')
+    .select('*')
+    .eq('itinerary_id', itineraryId)
+    .order('created_at', { ascending: false });
+}
+
+export async function deleteItineraryShare(shareId) {
+  return supabase.from('itinerary_shares').delete().eq('id', shareId);
 }
 
 // ----- TEMPLATES (modèles d'itinéraires publics) -----

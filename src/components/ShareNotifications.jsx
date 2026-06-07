@@ -4,26 +4,48 @@ import {
   supabase,
   getIncomingPendingShares,
   respondToShare,
+  getIncomingPendingItineraryShares,
+  respondToItineraryShare,
 } from '../lib/supabase';
 
 // Affiché globalement (au-dessus de toute l'appli) pour l'utilisateur connecté.
-// - Montre une fenêtre quand quelqu'un veut partager une liste (Accepter/Refuser).
-// - Montre une fenêtre à l'initiateur quand sa proposition est acceptée/refusée.
+// Gère le partage des LISTES et des ITINÉRAIRES :
+// - Fenêtre quand quelqu'un veut partager (Accepter/Refuser).
+// - Fenêtre à l'initiateur quand sa proposition est acceptée/refusée.
+//
+// Chaque invitation porte un "kind" ('list' | 'itinerary') et un "name"
+// d'affichage, pour adapter le texte de la fenêtre.
 export default function ShareNotifications() {
   const { user } = useAuth();
   const [incoming, setIncoming] = useState([]); // invitations reçues (pending)
-  const [response, setResponse] = useState(null); // réponse reçue (pour l'initiateur)
+  const [response, setResponse] = useState(null); // réponse reçue (initiateur)
   const [busy, setBusy] = useState(false);
 
-  // Charge les invitations en attente à l'ouverture de l'appli.
+  const wordFor = (kind) => (kind === 'itinerary' ? 'le voyage' : 'la liste');
+
+  // Charge les invitations en attente (listes + itinéraires) à l'ouverture.
   useEffect(() => {
     if (!user?.id) {
       setIncoming([]);
       return;
     }
     let active = true;
-    getIncomingPendingShares().then(({ data }) => {
-      if (active) setIncoming(data || []);
+    Promise.all([
+      getIncomingPendingShares(),
+      getIncomingPendingItineraryShares(),
+    ]).then(([lists, itins]) => {
+      if (!active) return;
+      const a = (lists.data || []).map((r) => ({
+        ...r,
+        kind: 'list',
+        name: r.list_name,
+      }));
+      const b = (itins.data || []).map((r) => ({
+        ...r,
+        kind: 'itinerary',
+        name: r.title,
+      }));
+      setIncoming([...a, ...b]);
     });
     return () => {
       active = false;
@@ -35,6 +57,7 @@ export default function ShareNotifications() {
     if (!user?.id) return;
     const channel = supabase
       .channel(`share-notifs-${user.id}`)
+      // Invitations de LISTES reçues
       .on(
         'postgres_changes',
         {
@@ -43,15 +66,9 @@ export default function ShareNotifications() {
           table: 'list_shares',
           filter: `recipient_id=eq.${user.id}`,
         },
-        (payload) => {
-          const row = payload.new;
-          if (row?.status === 'pending') {
-            setIncoming((prev) =>
-              prev.some((s) => s.id === row.id) ? prev : [row, ...prev]
-            );
-          }
-        }
+        (payload) => addIncoming(payload.new, 'list')
       )
+      // Réponses à mes propositions de LISTES
       .on(
         'postgres_changes',
         {
@@ -60,14 +77,47 @@ export default function ShareNotifications() {
           table: 'list_shares',
           filter: `owner_id=eq.${user.id}`,
         },
-        (payload) => {
-          const row = payload.new;
-          if (row?.status === 'accepted' || row?.status === 'refused') {
-            setResponse(row);
-          }
-        }
+        (payload) => showResponse(payload.new, 'list')
+      )
+      // Invitations d'ITINÉRAIRES reçues
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'itinerary_shares',
+          filter: `recipient_id=eq.${user.id}`,
+        },
+        (payload) => addIncoming(payload.new, 'itinerary')
+      )
+      // Réponses à mes propositions d'ITINÉRAIRES
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'itinerary_shares',
+          filter: `owner_id=eq.${user.id}`,
+        },
+        (payload) => showResponse(payload.new, 'itinerary')
       )
       .subscribe();
+
+    function addIncoming(row, kind) {
+      if (row?.status !== 'pending') return;
+      const name = kind === 'itinerary' ? row.title : row.list_name;
+      setIncoming((prev) =>
+        prev.some((s) => s.id === row.id)
+          ? prev
+          : [{ ...row, kind, name }, ...prev]
+      );
+    }
+    function showResponse(row, kind) {
+      if (row?.status === 'accepted' || row?.status === 'refused') {
+        const name = kind === 'itinerary' ? row.title : row.list_name;
+        setResponse({ ...row, kind, name });
+      }
+    }
 
     return () => {
       supabase.removeChannel(channel);
@@ -76,15 +126,24 @@ export default function ShareNotifications() {
 
   async function handleRespond(share, accept) {
     setBusy(true);
-    const { error } = await respondToShare(share.id, accept);
+    const { error } =
+      share.kind === 'itinerary'
+        ? await respondToItineraryShare(share.id, accept)
+        : await respondToShare(share.id, accept);
     setBusy(false);
     if (error) {
       alert(error.message);
       return;
     }
     setIncoming((prev) => prev.filter((s) => s.id !== share.id));
-    // Prévient la page « Mes listes » de se rafraîchir (la liste apparaît si accepté).
-    window.dispatchEvent(new CustomEvent('travelo:lists-refresh'));
+    // Prévient les pages concernées de se rafraîchir.
+    window.dispatchEvent(
+      new CustomEvent(
+        share.kind === 'itinerary'
+          ? 'travelo:itineraries-refresh'
+          : 'travelo:lists-refresh'
+      )
+    );
   }
 
   if (!user) return null;
@@ -97,17 +156,19 @@ export default function ShareNotifications() {
       {current && (
         <Modal>
           <h2 className="text-lg font-semibold text-slate-900">
-            📋 Partage de liste
+            {current.kind === 'itinerary'
+              ? '🧳 Partage de voyage'
+              : '📋 Partage de liste'}
           </h2>
           <p className="mt-2 text-slate-600">
             <span className="font-medium text-slate-900">
               {current.owner_email || 'Un utilisateur'}
             </span>{' '}
-            souhaite partager la liste «&nbsp;
+            souhaite partager {wordFor(current.kind)} «&nbsp;
             <span className="font-medium text-slate-900">
-              {current.list_name || 'sans nom'}
+              {current.name || 'sans nom'}
             </span>
-            &nbsp;» avec toi. Vous pourrez la modifier à deux, en direct.
+            &nbsp;» avec toi. Vous pourrez le modifier à deux, en direct.
           </p>
           <div className="mt-5 flex justify-end gap-2">
             <button
@@ -147,10 +208,10 @@ export default function ShareNotifications() {
             <span className="font-medium text-slate-900">
               {response.recipient_email || 'L\'utilisateur'}
             </span>{' '}
-            a {response.status === 'accepted' ? 'accepté' : 'refusé'} de partager
-            la liste «&nbsp;
+            a {response.status === 'accepted' ? 'accepté' : 'refusé'} de partager{' '}
+            {wordFor(response.kind)} «&nbsp;
             <span className="font-medium text-slate-900">
-              {response.list_name || 'sans nom'}
+              {response.name || 'sans nom'}
             </span>
             &nbsp;».
           </p>
