@@ -288,6 +288,15 @@ export async function deletePackingList(id) {
   return supabase.from('user_packing_lists').delete().eq('id', id);
 }
 
+// Enregistre les cases cochées d'une liste (positions des articles cochés).
+// Partagé entre collaborateurs : la mise à jour déclenche le temps réel.
+export async function setPackingListChecks(id, checkedItems) {
+  return supabase
+    .from('user_packing_lists')
+    .update({ checked_items: checkedItems, updated_at: new Date().toISOString() })
+    .eq('id', id);
+}
+
 // ----- PARTAGE DE LISTES (entre utilisateurs, en temps réel) -----
 
 // Invite un utilisateur (par email) à partager une liste. Crée une invitation

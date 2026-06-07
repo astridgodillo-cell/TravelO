@@ -9,6 +9,7 @@ import {
   listSharesForList,
   deleteShare,
   getMyOutgoingListShares,
+  setPackingListChecks,
 } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import PageHeader from '../components/PageHeader';
@@ -60,24 +61,6 @@ function parseBulk(text) {
 
 // Nombre d'articles réels (hors titres de catégories).
 const countArticles = (items) => items.filter((i) => !isCat(i) && i.trim()).length;
-
-// --- Mémorisation des cases cochées (sur l'appareil, sans base de données) ---
-const checksKey = (id) => `travelo_checks_${id}`;
-function loadChecks(id) {
-  try {
-    const raw = localStorage.getItem(checksKey(id));
-    return raw ? new Set(JSON.parse(raw)) : new Set();
-  } catch {
-    return new Set();
-  }
-}
-function saveChecks(id, set) {
-  try {
-    localStorage.setItem(checksKey(id), JSON.stringify([...set]));
-  } catch {
-    /* ignore */
-  }
-}
 
 export default function MyListsPage() {
   const { user } = useAuth();
@@ -709,14 +692,16 @@ export default function MyListsPage() {
 }
 
 // Vue « checklist » : on coche les articles au fur et à mesure.
-// L'état coché est mémorisé sur l'appareil (localStorage), pas en base.
+// L'état coché est enregistré en base (colonne checked_items) et se synchronise
+// en temps réel entre les personnes qui partagent la liste.
 function ChecklistView({ list, onClose }) {
-  const [checked, setChecked] = useState(() => loadChecks(list.id));
+  const [checked, setChecked] = useState(() => new Set(list.checked_items || []));
   const [query, setQuery] = useState('');
 
+  // Resynchronise quand la liste change (modif en direct par l'autre personne).
   useEffect(() => {
-    saveChecks(list.id, checked);
-  }, [list.id, checked]);
+    setChecked(new Set(list.checked_items || []));
+  }, [list.checked_items]);
 
   const items = list.items || [];
   const total = useMemo(() => countArticles(items), [items]);
@@ -726,16 +711,18 @@ function ChecklistView({ list, onClose }) {
   );
   const percent = total ? Math.round((done / total) * 100) : 0;
 
+  function persist(next) {
+    setChecked(next);
+    setPackingListChecks(list.id, [...next]);
+  }
   function toggle(idx) {
-    setChecked((prev) => {
-      const next = new Set(prev);
-      if (next.has(idx)) next.delete(idx);
-      else next.add(idx);
-      return next;
-    });
+    const next = new Set(checked);
+    if (next.has(idx)) next.delete(idx);
+    else next.add(idx);
+    persist(next);
   }
   function uncheckAll() {
-    setChecked(new Set());
+    persist(new Set());
   }
 
   // Regroupe les articles sous leurs titres de catégories.
