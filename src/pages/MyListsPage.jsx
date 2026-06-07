@@ -8,6 +8,7 @@ import {
   shareListByEmail,
   listSharesForList,
   deleteShare,
+  getMyOutgoingListShares,
 } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import PageHeader from '../components/PageHeader';
@@ -86,6 +87,7 @@ export default function MyListsPage() {
   const [editing, setEditing] = useState(null); // { id?, name, items }
   const [checking, setChecking] = useState(null); // liste en cours de cochage
   const [sharing, setSharing] = useState(null); // liste en cours de partage
+  const [outgoing, setOutgoing] = useState([]); // mes partages (qui a accès)
   const [busy, setBusy] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkText, setBulkText] = useState('');
@@ -104,9 +106,13 @@ export default function MyListsPage() {
   }, [editing?.items, pendingFocus]);
 
   async function refresh() {
-    const { data, error } = await listPackingLists();
-    if (error) setError(error.message);
-    else setLists(data || []);
+    const [listsRes, sharesRes] = await Promise.all([
+      listPackingLists(),
+      getMyOutgoingListShares(),
+    ]);
+    if (listsRes.error) setError(listsRes.error.message);
+    else setLists(listsRes.data || []);
+    setOutgoing(sharesRes.data || []);
     setLoading(false);
   }
 
@@ -592,6 +598,7 @@ export default function MyListsPage() {
             <ul className="grid md:grid-cols-2 gap-4">
               {lists.map((l) => {
                 const nbArticles = countArticles(l.items);
+                const listShares = outgoing.filter((s) => s.list_id === l.id);
                 return (
                   <li key={l.id} className="card">
                     <div className="flex items-start justify-between gap-2">
@@ -630,6 +637,36 @@ export default function MyListsPage() {
                           </li>
                         )}
                       </ul>
+                    )}
+                    {!l._shared && listShares.length > 0 && (
+                      <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                          Partagée avec
+                        </span>
+                        {listShares.map((s) => (
+                          <span
+                            key={s.id}
+                            className={`rounded-full px-2 py-0.5 text-[11px] ${
+                              s.status === 'accepted'
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : s.status === 'refused'
+                                  ? 'bg-red-100 text-red-700'
+                                  : 'bg-amber-100 text-amber-700'
+                            }`}
+                            title={
+                              s.status === 'accepted'
+                                ? 'A accepté'
+                                : s.status === 'refused'
+                                  ? 'A refusé'
+                                  : 'En attente'
+                            }
+                          >
+                            {s.recipient_email}
+                            {s.status === 'pending' && ' (en attente)'}
+                            {s.status === 'refused' && ' (refusé)'}
+                          </span>
+                        ))}
+                      </div>
                     )}
                     <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
                       <button

@@ -333,6 +333,13 @@ export async function listSharesForList(listId) {
     .order('created_at', { ascending: false });
 }
 
+// Tous les partages que j'ai initiés (pour afficher "partagée avec…" sur mes cartes).
+export async function getMyOutgoingListShares() {
+  const user = await getCurrentUser();
+  if (!user) return { data: [], error: null };
+  return supabase.from('list_shares').select('*').eq('owner_id', user.id);
+}
+
 // Supprime un partage (propriétaire qui retire l'accès, ou destinataire qui quitte).
 export async function deleteShare(shareId) {
   return supabase.from('list_shares').delete().eq('id', shareId);
