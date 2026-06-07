@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   listPackingLists,
   savePackingList,
@@ -55,11 +55,30 @@ function parseBulk(text) {
 // Nombre d'articles réels (hors titres de catégories).
 const countArticles = (items) => items.filter((i) => !isCat(i) && i.trim()).length;
 
+// --- Mémorisation des cases cochées (sur l'appareil, sans base de données) ---
+const checksKey = (id) => `travelo_checks_${id}`;
+function loadChecks(id) {
+  try {
+    const raw = localStorage.getItem(checksKey(id));
+    return raw ? new Set(JSON.parse(raw)) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+function saveChecks(id, set) {
+  try {
+    localStorage.setItem(checksKey(id), JSON.stringify([...set]));
+  } catch {
+    /* ignore */
+  }
+}
+
 export default function MyListsPage() {
   const [lists, setLists] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [editing, setEditing] = useState(null); // { id?, name, items }
+  const [checking, setChecking] = useState(null); // liste en cours de cochage
   const [busy, setBusy] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkText, setBulkText] = useState('');
@@ -83,12 +102,19 @@ export default function MyListsPage() {
 
   function startNew() {
     setEditing({ name: '', items: [] });
+    setChecking(null);
     resetBulk();
   }
 
   function startEdit(list) {
     setEditing({ id: list.id, name: list.name, items: [...list.items] });
+    setChecking(null);
     resetBulk();
+  }
+
+  function startCheck(list) {
+    setChecking(list);
+    setEditing(null);
   }
 
   async function handleSave() {
@@ -168,9 +194,10 @@ export default function MyListsPage() {
         eyebrow="Préparatifs"
         eyebrowColor="sunset"
         title="Mes listes d'affaires"
-        description="Vos check-lists personnelles (« Van été », « Camping rando »…). Attachables à n'importe quel itinéraire depuis l'onglet Pratique."
+        description="Vos check-lists personnelles (« Van été », « Camping rando »…). Cochez-les directement ici, ou attachez-les à un itinéraire depuis l'onglet Pratique."
         action={
-          !editing && (
+          !editing &&
+          !checking && (
             <button
               onClick={startNew}
               className="btn-primary inline-flex items-center gap-1.5"
@@ -186,6 +213,10 @@ export default function MyListsPage() {
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           {error}
         </div>
+      )}
+
+      {checking && (
+        <ChecklistView list={checking} onClose={() => setChecking(null)} />
       )}
 
       {editing && (
@@ -333,7 +364,7 @@ export default function MyListsPage() {
         </div>
       )}
 
-      {!editing && (
+      {!editing && !checking && (
         <>
           {loading ? (
             <p className="text-slate-500">Chargement…</p>
@@ -382,7 +413,13 @@ export default function MyListsPage() {
                         )}
                       </ul>
                     )}
-                    <div className="mt-4 flex gap-2 border-t border-slate-100 pt-3">
+                    <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
+                      <button
+                        onClick={() => startCheck(l)}
+                        className="btn-primary text-sm"
+                      >
+                        Cocher la liste
+                      </button>
                       <button
                         onClick={() => startEdit(l)}
                         className="btn-secondary text-sm"
@@ -392,7 +429,7 @@ export default function MyListsPage() {
                       <button
                         onClick={() => handleDelete(l.id)}
                         disabled={busy}
-                        className="text-sm text-red-600 hover:underline"
+                        className="text-sm text-red-600 hover:underline ml-auto"
                       >
                         Supprimer
                       </button>
@@ -403,6 +440,164 @@ export default function MyListsPage() {
             </ul>
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+// Vue « checklist » : on coche les articles au fur et à mesure.
+// L'état coché est mémorisé sur l'appareil (localStorage), pas en base.
+function ChecklistView({ list, onClose }) {
+  const [checked, setChecked] = useState(() => loadChecks(list.id));
+  const [query, setQuery] = useState('');
+
+  useEffect(() => {
+    saveChecks(list.id, checked);
+  }, [list.id, checked]);
+
+  const items = list.items || [];
+  const total = useMemo(() => countArticles(items), [items]);
+  const done = useMemo(
+    () => items.filter((it, i) => !isCat(it) && it.trim() && checked.has(i)).length,
+    [items, checked]
+  );
+  const percent = total ? Math.round((done / total) * 100) : 0;
+
+  function toggle(idx) {
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  }
+  function uncheckAll() {
+    setChecked(new Set());
+  }
+
+  // Regroupe les articles sous leurs titres de catégories.
+  const groups = useMemo(() => {
+    const g = [];
+    let current = { label: null, entries: [] };
+    items.forEach((it, idx) => {
+      if (isCat(it)) {
+        if (current.label !== null || current.entries.length) g.push(current);
+        current = { label: catLabel(it), entries: [] };
+      } else if (it.trim()) {
+        current.entries.push({ text: it, idx });
+      }
+    });
+    if (current.label !== null || current.entries.length) g.push(current);
+    return g;
+  }, [items]);
+
+  const q = query.trim().toLowerCase();
+  const matches = (text) => !q || text.toLowerCase().includes(q);
+
+  return (
+    <div className="card space-y-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-semibold text-slate-900">{list.name}</h2>
+          <p className="text-sm text-slate-500">
+            Cochez les articles au fur et à mesure.
+          </p>
+        </div>
+        <button onClick={onClose} className="btn-secondary text-sm">
+          ← Retour
+        </button>
+      </div>
+
+      {/* Compteurs + barre de progression */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="rounded-lg bg-slate-50 px-3 py-2 text-center">
+          <div className="text-lg font-bold text-slate-900">{total}</div>
+          <div className="text-[11px] uppercase tracking-wide text-slate-400">
+            articles
+          </div>
+        </div>
+        <div className="rounded-lg bg-slate-50 px-3 py-2 text-center">
+          <div className="text-lg font-bold text-slate-900">{done}</div>
+          <div className="text-[11px] uppercase tracking-wide text-slate-400">
+            cochés
+          </div>
+        </div>
+        <div className="rounded-lg bg-slate-50 px-3 py-2 text-center">
+          <div className="text-lg font-bold text-emerald-600">{percent}%</div>
+          <div className="text-[11px] uppercase tracking-wide text-slate-400">
+            prêt
+          </div>
+        </div>
+        <div className="flex-1 min-w-[120px]">
+          <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-emerald-500 transition-all"
+              style={{ width: `${percent}%` }}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          className="input flex-1 min-w-[180px]"
+          placeholder="Rechercher un article…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <button
+          onClick={uncheckAll}
+          disabled={done === 0}
+          className="btn-secondary text-sm disabled:opacity-50"
+        >
+          Tout décocher
+        </button>
+      </div>
+
+      {total === 0 ? (
+        <p className="text-slate-500 text-sm">
+          Cette liste est vide. Cliquez sur « Modifier » pour ajouter des
+          articles.
+        </p>
+      ) : (
+        <div className="space-y-4">
+          {groups.map((g, gi) => {
+            const visible = g.entries.filter((e) => matches(e.text));
+            if (visible.length === 0) return null;
+            return (
+              <div key={gi}>
+                {g.label && (
+                  <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-2">
+                    {g.label}
+                  </h3>
+                )}
+                <ul className="grid sm:grid-cols-2 gap-2">
+                  {visible.map((e) => {
+                    const on = checked.has(e.idx);
+                    return (
+                      <li key={e.idx}>
+                        <label
+                          className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm cursor-pointer transition-colors ${
+                            on
+                              ? 'border-emerald-300 bg-emerald-50 text-slate-400 line-through'
+                              : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={on}
+                            onChange={() => toggle(e.idx)}
+                          />
+                          <span>{e.text}</span>
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );
