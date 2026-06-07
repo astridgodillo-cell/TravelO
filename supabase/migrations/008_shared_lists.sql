@@ -106,7 +106,7 @@ create policy "packing_lists_shared_select" on public.user_packing_lists
   for select using (
     exists (
       select 1 from public.list_shares s
-      where s.list_id = id
+      where s.list_id = user_packing_lists.id
         and s.recipient_id = auth.uid()
         and s.status = 'accepted'
     )
@@ -117,7 +117,7 @@ create policy "packing_lists_shared_update" on public.user_packing_lists
   for update using (
     exists (
       select 1 from public.list_shares s
-      where s.list_id = id
+      where s.list_id = user_packing_lists.id
         and s.recipient_id = auth.uid()
         and s.status = 'accepted'
     )
@@ -125,7 +125,7 @@ create policy "packing_lists_shared_update" on public.user_packing_lists
   with check (
     exists (
       select 1 from public.list_shares s
-      where s.list_id = id
+      where s.list_id = user_packing_lists.id
         and s.recipient_id = auth.uid()
         and s.status = 'accepted'
     )

@@ -102,7 +102,7 @@ create policy "itineraries_shared_select" on public.itineraries
   for select using (
     exists (
       select 1 from public.itinerary_shares s
-      where s.itinerary_id = id
+      where s.itinerary_id = itineraries.id
         and s.recipient_id = auth.uid()
         and s.status = 'accepted'
     )
@@ -113,7 +113,7 @@ create policy "itineraries_shared_update" on public.itineraries
   for update using (
     exists (
       select 1 from public.itinerary_shares s
-      where s.itinerary_id = id
+      where s.itinerary_id = itineraries.id
         and s.recipient_id = auth.uid()
         and s.status = 'accepted'
     )
@@ -121,7 +121,7 @@ create policy "itineraries_shared_update" on public.itineraries
   with check (
     exists (
       select 1 from public.itinerary_shares s
-      where s.itinerary_id = id
+      where s.itinerary_id = itineraries.id
         and s.recipient_id = auth.uid()
         and s.status = 'accepted'
     )
