@@ -3776,21 +3776,51 @@ function PackingList({ packing }) {
             <h3 className="text-sm font-semibold uppercase tracking-wide text-emerald-700 mb-2">
               👤 {l.name}
             </h3>
-            <ul className="space-y-1.5 text-sm grid sm:grid-cols-2 gap-x-4">
-              {l.items.map((item, i) => (
-                <li
-                  key={i}
-                  className="flex items-start gap-2 text-slate-700"
-                >
-                  <input type="checkbox" className="mt-0.5" />
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
+            <PersonalListItems items={l.items} />
           </div>
         ))}
       </div>
     </section>
+  );
+}
+
+// Affiche les articles d'une liste perso en respectant les titres de catégories.
+// Un item commençant par "# " est un titre de catégorie (cf. MyListsPage).
+function PersonalListItems({ items }) {
+  const CAT_PREFIX = '# ';
+  // On regroupe les articles sous leur catégorie (ou sans catégorie au début).
+  const groups = [];
+  let current = { label: null, items: [] };
+  for (const it of items || []) {
+    if (typeof it === 'string' && it.startsWith(CAT_PREFIX)) {
+      if (current.label !== null || current.items.length) groups.push(current);
+      current = { label: it.slice(CAT_PREFIX.length), items: [] };
+    } else {
+      current.items.push(it);
+    }
+  }
+  if (current.label !== null || current.items.length) groups.push(current);
+
+  return (
+    <div className="space-y-3">
+      {groups.map((g, gi) => (
+        <div key={gi}>
+          {g.label && (
+            <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
+              {g.label}
+            </h4>
+          )}
+          <ul className="space-y-1.5 text-sm grid sm:grid-cols-2 gap-x-4">
+            {g.items.map((item, i) => (
+              <li key={i} className="flex items-start gap-2 text-slate-700">
+                <input type="checkbox" className="mt-0.5" />
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
   );
 }
 
