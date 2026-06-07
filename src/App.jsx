@@ -1,6 +1,7 @@
 import { Routes, Route, useLocation } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
+import ShareNotifications from './components/ShareNotifications';
 import ProtectedRoute from './components/ProtectedRoute';
 import AdminRoute from './components/AdminRoute';
 import HomePage from './pages/HomePage';
@@ -29,6 +30,7 @@ export default function App() {
     : 'flex-1 mx-auto w-full max-w-6xl px-4 py-6 sm:py-8';
   return (
     <div className="flex min-h-full flex-col">
+      <ShareNotifications />
       <Navbar />
       <main className={mainClass}>
         <Routes>

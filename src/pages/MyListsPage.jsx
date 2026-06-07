@@ -1,10 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  supabase,
   listPackingLists,
   savePackingList,
   updatePackingList,
   deletePackingList,
+  shareListByEmail,
+  listSharesForList,
+  deleteShare,
 } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
 import PageHeader from '../components/PageHeader';
 import Icon from '../components/Icon';
 
@@ -74,11 +79,13 @@ function saveChecks(id, set) {
 }
 
 export default function MyListsPage() {
+  const { user } = useAuth();
   const [lists, setLists] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [editing, setEditing] = useState(null); // { id?, name, items }
   const [checking, setChecking] = useState(null); // liste en cours de cochage
+  const [sharing, setSharing] = useState(null); // liste en cours de partage
   const [busy, setBusy] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkText, setBulkText] = useState('');
@@ -97,7 +104,6 @@ export default function MyListsPage() {
   }, [editing?.items, pendingFocus]);
 
   async function refresh() {
-    setLoading(true);
     const { data, error } = await listPackingLists();
     if (error) setError(error.message);
     else setLists(data || []);
@@ -108,6 +114,53 @@ export default function MyListsPage() {
     refresh();
   }, []);
 
+  // Rafraîchit quand une invitation est acceptée ailleurs dans l'appli.
+  useEffect(() => {
+    const onRefresh = () => refresh();
+    window.addEventListener('travelo:lists-refresh', onRefresh);
+    return () => window.removeEventListener('travelo:lists-refresh', onRefresh);
+  }, []);
+
+  // Temps réel : recharge les listes dès qu'une liste (à moi ou partagée)
+  // change, pour voir les modifications des autres en direct. On évite de
+  // recharger pendant qu'on est en train d'éditer une liste (pour ne pas
+  // écraser la saisie en cours).
+  useEffect(() => {
+    if (!user?.id) return;
+    const channel = supabase
+      .channel(`packing-lists-${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'user_packing_lists' },
+        () => {
+          if (!editing) refresh();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'list_shares',
+          filter: `owner_id=eq.${user.id}`,
+        },
+        () => refresh()
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, editing]);
+
+  // Maintient la vue « cocher » à jour quand la liste change en temps réel.
+  useEffect(() => {
+    if (!checking) return;
+    const fresh = lists.find((l) => l.id === checking.id);
+    if (fresh && fresh !== checking) setChecking(fresh);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lists]);
+
   function resetBulk() {
     setBulkOpen(false);
     setBulkText('');
@@ -117,18 +170,27 @@ export default function MyListsPage() {
   function startNew() {
     setEditing({ name: '', items: [] });
     setChecking(null);
+    setSharing(null);
     resetBulk();
   }
 
   function startEdit(list) {
     setEditing({ id: list.id, name: list.name, items: [...list.items] });
     setChecking(null);
+    setSharing(null);
     resetBulk();
   }
 
   function startCheck(list) {
     setChecking(list);
     setEditing(null);
+    setSharing(null);
+  }
+
+  function startShare(list) {
+    setSharing(list);
+    setEditing(null);
+    setChecking(null);
   }
 
   async function handleSave() {
@@ -160,10 +222,24 @@ export default function MyListsPage() {
     }
   }
 
-  async function handleDelete(id) {
+  async function handleDelete(list) {
+    if (list._shared) {
+      // Liste partagée avec moi : je quitte le partage (sans supprimer la liste).
+      if (!confirm('Quitter cette liste partagée ?')) return;
+      setBusy(true);
+      const { data: shares } = await listSharesForList(list.id);
+      const mine = (shares || []).find((s) => s.recipient_id === user?.id);
+      const { error } = mine
+        ? await deleteShare(mine.id)
+        : { error: null };
+      if (error) setError(error.message);
+      else await refresh();
+      setBusy(false);
+      return;
+    }
     if (!confirm('Supprimer cette liste ?')) return;
     setBusy(true);
-    const { error } = await deletePackingList(id);
+    const { error } = await deletePackingList(list.id);
     if (error) setError(error.message);
     else await refresh();
     setBusy(false);
@@ -253,7 +329,8 @@ export default function MyListsPage() {
         description="Vos check-lists personnelles (« Van été », « Camping rando »…). Cochez-les directement ici, ou attachez-les à un itinéraire depuis l'onglet Pratique."
         action={
           !editing &&
-          !checking && (
+          !checking &&
+          !sharing && (
             <button
               onClick={startNew}
               className="btn-primary inline-flex items-center gap-1.5"
@@ -269,6 +346,10 @@ export default function MyListsPage() {
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           {error}
         </div>
+      )}
+
+      {sharing && (
+        <ShareDialog list={sharing} onClose={() => setSharing(null)} />
       )}
 
       {checking && (
@@ -494,7 +575,7 @@ export default function MyListsPage() {
         </div>
       )}
 
-      {!editing && !checking && (
+      {!editing && !checking && !sharing && (
         <>
           {loading ? (
             <p className="text-slate-500">Chargement…</p>
@@ -514,7 +595,14 @@ export default function MyListsPage() {
                 return (
                   <li key={l.id} className="card">
                     <div className="flex items-start justify-between gap-2">
-                      <h2 className="font-semibold text-slate-900">{l.name}</h2>
+                      <h2 className="font-semibold text-slate-900">
+                        {l.name}
+                        {l._shared && (
+                          <span className="ml-2 align-middle rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
+                            partagée
+                          </span>
+                        )}
+                      </h2>
                       <span className="text-xs text-slate-400">
                         {nbArticles} article{nbArticles > 1 ? 's' : ''}
                       </span>
@@ -556,12 +644,20 @@ export default function MyListsPage() {
                       >
                         Modifier
                       </button>
+                      {!l._shared && (
+                        <button
+                          onClick={() => startShare(l)}
+                          className="btn-secondary text-sm"
+                        >
+                          Partager
+                        </button>
+                      )}
                       <button
-                        onClick={() => handleDelete(l.id)}
+                        onClick={() => handleDelete(l)}
                         disabled={busy}
                         className="text-sm text-red-600 hover:underline ml-auto"
                       >
-                        Supprimer
+                        {l._shared ? 'Quitter' : 'Supprimer'}
                       </button>
                     </div>
                   </li>
@@ -729,6 +825,142 @@ function ChecklistView({ list, onClose }) {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+// Fenêtre de partage d'une liste : on invite par email, on voit qui a accès.
+function ShareDialog({ list, onClose }) {
+  const [email, setEmail] = useState('');
+  const [shares, setShares] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [err, setErr] = useState(null);
+
+  async function loadShares() {
+    const { data } = await listSharesForList(list.id);
+    setShares(data || []);
+  }
+  useEffect(() => {
+    loadShares();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [list.id]);
+
+  async function handleInvite(e) {
+    e.preventDefault();
+    const target = email.trim();
+    if (!target) return;
+    setBusy(true);
+    setMsg(null);
+    setErr(null);
+    const { error } = await shareListByEmail(list.id, target);
+    setBusy(false);
+    if (error) {
+      setErr(error.message);
+      return;
+    }
+    setMsg(`Invitation envoyée à ${target}. En attente de sa réponse.`);
+    setEmail('');
+    loadShares();
+  }
+
+  async function handleRemove(shareId) {
+    setBusy(true);
+    const { error } = await deleteShare(shareId);
+    setBusy(false);
+    if (error) setErr(error.message);
+    else loadShares();
+  }
+
+  const statusLabel = {
+    pending: 'En attente',
+    accepted: 'A accepté',
+    refused: 'A refusé',
+  };
+  const statusColor = {
+    pending: 'text-amber-600',
+    accepted: 'text-emerald-600',
+    refused: 'text-red-600',
+  };
+
+  return (
+    <div className="card space-y-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-semibold text-slate-900">
+            Partager « {list.name} »
+          </h2>
+          <p className="text-sm text-slate-500">
+            Invite quelqu'un par son email. Une fois qu'il accepte, vous
+            modifiez la liste à deux, en direct.
+          </p>
+        </div>
+        <button onClick={onClose} className="btn-secondary text-sm">
+          ← Retour
+        </button>
+      </div>
+
+      <form onSubmit={handleInvite} className="flex flex-wrap items-end gap-2">
+        <div className="flex-1 min-w-[200px]">
+          <label className="label">Email de la personne</label>
+          <input
+            type="email"
+            className="input"
+            placeholder="ex : ami@email.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+        </div>
+        <button type="submit" disabled={busy} className="btn-primary">
+          {busy ? 'Envoi…' : 'Envoyer l’invitation'}
+        </button>
+      </form>
+
+      {msg && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
+          {msg}
+        </div>
+      )}
+      {err && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {err}
+        </div>
+      )}
+
+      <div>
+        <h3 className="text-sm font-semibold text-slate-700 mb-2">
+          Personnes concernées
+        </h3>
+        {shares.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            Cette liste n'est partagée avec personne pour l'instant.
+          </p>
+        ) : (
+          <ul className="divide-y divide-slate-100">
+            {shares.map((s) => (
+              <li
+                key={s.id}
+                className="flex items-center justify-between gap-2 py-2 text-sm"
+              >
+                <span className="text-slate-700">{s.recipient_email}</span>
+                <span className="flex items-center gap-3">
+                  <span className={`font-medium ${statusColor[s.status]}`}>
+                    {statusLabel[s.status] || s.status}
+                  </span>
+                  <button
+                    onClick={() => handleRemove(s.id)}
+                    disabled={busy}
+                    className="text-slate-400 hover:text-red-600"
+                    aria-label="Retirer"
+                  >
+                    ×
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }

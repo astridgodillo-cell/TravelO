@@ -230,11 +230,16 @@ export async function deleteTemplate(id) {
 export async function listPackingLists() {
   const user = await getCurrentUser();
   if (!user) return { data: [], error: null };
-  return supabase
+  // RLS renvoie à la fois mes listes et celles qu'on a partagées avec moi
+  // (et que j'ai acceptées). On marque les listes partagées pour l'affichage.
+  const res = await supabase
     .from('user_packing_lists')
     .select('*')
-    .eq('user_id', user.id)
     .order('created_at', { ascending: false });
+  if (res.data) {
+    res.data = res.data.map((l) => ({ ...l, _shared: l.user_id !== user.id }));
+  }
+  return res;
 }
 
 export async function savePackingList(name, items) {
@@ -258,6 +263,56 @@ export async function updatePackingList(id, patch) {
 
 export async function deletePackingList(id) {
   return supabase.from('user_packing_lists').delete().eq('id', id);
+}
+
+// ----- PARTAGE DE LISTES (entre utilisateurs, en temps réel) -----
+
+// Invite un utilisateur (par email) à partager une liste. Crée une invitation
+// "pending" que le destinataire devra accepter ou refuser.
+export async function shareListByEmail(listId, email) {
+  return supabase.rpc('share_list_by_email', {
+    p_list_id: listId,
+    p_email: email,
+  });
+}
+
+// Invitations reçues encore en attente de réponse (pour le destinataire).
+export async function getIncomingPendingShares() {
+  const user = await getCurrentUser();
+  if (!user) return { data: [], error: null };
+  return supabase
+    .from('list_shares')
+    .select('*')
+    .eq('recipient_id', user.id)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false });
+}
+
+// Le destinataire accepte ou refuse une invitation.
+export async function respondToShare(shareId, accept) {
+  return supabase
+    .from('list_shares')
+    .update({
+      status: accept ? 'accepted' : 'refused',
+      responded_at: new Date().toISOString(),
+    })
+    .eq('id', shareId)
+    .select()
+    .single();
+}
+
+// Tous les partages liés à une liste (pour afficher avec qui elle est partagée).
+export async function listSharesForList(listId) {
+  return supabase
+    .from('list_shares')
+    .select('*')
+    .eq('list_id', listId)
+    .order('created_at', { ascending: false });
+}
+
+// Supprime un partage (propriétaire qui retire l'accès, ou destinataire qui quitte).
+export async function deleteShare(shareId) {
+  return supabase.from('list_shares').delete().eq('id', shareId);
 }
 
 // ----- TEMPLATES (modèles d'itinéraires publics) -----
