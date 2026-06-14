@@ -11,6 +11,7 @@ import MyListsPage from './pages/MyListsPage';
 import TemplatesPage from './pages/TemplatesPage';
 import TemplateDetailPage from './pages/TemplateDetailPage';
 import ItineraryDetailPage from './pages/ItineraryDetailPage';
+import BrochurePage from './pages/BrochurePage';
 import PublicItineraryPage from './pages/PublicItineraryPage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
@@ -84,6 +85,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <ItineraryDetailPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/itineraire/:id/brochure"
+            element={
+              <ProtectedRoute>
+                <BrochurePage />
               </ProtectedRoute>
             }
           />
