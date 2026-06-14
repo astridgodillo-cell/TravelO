@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -98,6 +98,48 @@ function fmtDate(iso) {
   }
 }
 
+// Garantit qu'un bloc tient dans la hauteur d'une page : si le contenu
+// dépasse, on le réduit légèrement (transform scale) tout en gardant tout.
+// La mesure se fait toujours à l'état naturel (sans transform) pour éviter
+// toute oscillation, et est rejouée le temps que photos/cartes se chargent
+// ainsi qu'avant l'impression.
+function FitToPage({ children }) {
+  const outerRef = useRef(null);
+  const innerRef = useRef(null);
+  useEffect(() => {
+    const measure = () => {
+      const outer = outerRef.current;
+      const inner = innerRef.current;
+      if (!outer || !inner) return;
+      inner.style.transform = 'none';
+      inner.style.width = '100%';
+      const avail = outer.clientHeight;
+      const needed = inner.scrollHeight;
+      if (!avail || !needed) return;
+      const s = needed > avail ? Math.max(0.5, avail / needed) : 1;
+      inner.style.transformOrigin = 'top left';
+      inner.style.transform = `scale(${s})`;
+      inner.style.width = s < 1 ? `${100 / s}%` : '100%';
+    };
+    measure();
+    const id = setInterval(measure, 400);
+    const stop = setTimeout(() => clearInterval(id), 6000);
+    window.addEventListener('resize', measure);
+    window.addEventListener('beforeprint', measure);
+    return () => {
+      clearInterval(id);
+      clearTimeout(stop);
+      window.removeEventListener('resize', measure);
+      window.removeEventListener('beforeprint', measure);
+    };
+  }, []);
+  return (
+    <div ref={outerRef} className="h-full overflow-hidden">
+      <div ref={innerRef}>{children}</div>
+    </div>
+  );
+}
+
 const MOMENTS = [
   ['morning', 'Matin'],
   ['noon', 'Midi'],
@@ -158,7 +200,7 @@ export default function Brochure({ itinerary }) {
   return (
     <div className="brochure-root">
       <style>{`
-        @page { size: A4; margin: 10mm; }
+        @page { size: A4; margin: 8mm; }
         .brochure-page {
           break-after: page;
           page-break-after: always;
@@ -166,18 +208,15 @@ export default function Brochure({ itinerary }) {
         }
         .brochure-page:last-child { break-after: auto; page-break-after: auto; }
         .b-avoid { break-inside: avoid; }
+        /* Une journée = une page : hauteur fixe, contenu ajusté pour rentrer. */
+        .brochure-day-card { height: 1040px; overflow: hidden; }
         @media print {
           nav, footer, .no-print { display: none !important; }
           .brochure-page {
             box-shadow: none !important;
             margin: 0 !important;
-            padding: 14px !important;
             border: none !important;
           }
-          .brochure-day { font-size: 10.5px; line-height: 1.35; }
-          .brochure-day h2 { font-size: 16px; }
-          .brochure-day h3 { font-size: 10px; }
-          .brochure-day p { margin: 0; }
         }
       `}</style>
 
@@ -280,7 +319,9 @@ export default function Brochure({ itinerary }) {
           const hasDayMap = isValidCoord(d.coordinates);
           const nextTrip = d.trips?.[0];
           return (
-            <section key={i} className="brochure-page brochure-day rounded-2xl bg-white p-6 shadow">
+            <section key={i} className="brochure-page brochure-day-card rounded-2xl bg-white shadow">
+              <FitToPage>
+              <div className="brochure-day p-6">
               <div className="flex items-baseline justify-between gap-3 border-b border-slate-100 pb-2">
                 <h2 className="font-serif text-2xl font-bold text-slate-900">
                   {d.label || `Jour ${i + 1}`} — {d.location}
@@ -395,6 +436,8 @@ export default function Brochure({ itinerary }) {
                   Budget du jour : {eur(d.day_total_eur)}
                 </p>
               )}
+              </div>
+              </FitToPage>
             </section>
           );
         })}
