@@ -158,17 +158,27 @@ export default function Brochure({ itinerary }) {
   return (
     <div className="brochure-root">
       <style>{`
-        @media print {
-          nav, footer, .no-print { display: none !important; }
-          .brochure-page { box-shadow: none !important; margin: 0 !important; }
-        }
-        @page { size: A4; margin: 12mm; }
+        @page { size: A4; margin: 10mm; }
         .brochure-page {
           break-after: page;
           page-break-after: always;
           background: #fff;
         }
         .brochure-page:last-child { break-after: auto; page-break-after: auto; }
+        .b-avoid { break-inside: avoid; }
+        @media print {
+          nav, footer, .no-print { display: none !important; }
+          .brochure-page {
+            box-shadow: none !important;
+            margin: 0 !important;
+            padding: 14px !important;
+            border: none !important;
+          }
+          .brochure-day { font-size: 10.5px; line-height: 1.35; }
+          .brochure-day h2 { font-size: 16px; }
+          .brochure-day h3 { font-size: 10px; }
+          .brochure-day p { margin: 0; }
+        }
       `}</style>
 
       {/* Barre d'action (cachée à l'impression) */}
@@ -240,7 +250,7 @@ export default function Brochure({ itinerary }) {
           {points.length > 0 && (
             <LeafletMap
               points={points}
-              className="mt-4 h-[420px] w-full rounded-xl border border-slate-200"
+              className="mt-4 h-[340px] w-full rounded-xl border border-slate-200"
             />
           )}
           <ol className="mt-5 space-y-1 text-sm text-slate-700">
@@ -270,8 +280,8 @@ export default function Brochure({ itinerary }) {
           const hasDayMap = isValidCoord(d.coordinates);
           const nextTrip = d.trips?.[0];
           return (
-            <section key={i} className="brochure-page rounded-2xl bg-white p-8 shadow">
-              <div className="flex items-baseline justify-between gap-3 border-b border-slate-100 pb-3">
+            <section key={i} className="brochure-page brochure-day rounded-2xl bg-white p-6 shadow">
+              <div className="flex items-baseline justify-between gap-3 border-b border-slate-100 pb-2">
                 <h2 className="font-serif text-2xl font-bold text-slate-900">
                   {d.label || `Jour ${i + 1}`} — {d.location}
                 </h2>
@@ -283,18 +293,18 @@ export default function Brochure({ itinerary }) {
               </div>
 
               {d.day_title && (
-                <p className="mt-3 font-serif text-lg italic text-slate-700">
+                <p className="mt-2 font-serif text-base italic text-slate-700">
                   {d.day_title}
                 </p>
               )}
 
-              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="b-avoid mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {photo && (
                   <figure>
                     <img
                       src={imgUrl(photo)}
                       alt={d.location}
-                      className="h-48 w-full rounded-xl object-cover"
+                      className="h-40 w-full rounded-xl object-cover"
                     />
                     {photo.photographer && (
                       <figcaption className="mt-1 text-[10px] text-slate-400">
@@ -306,24 +316,24 @@ export default function Brochure({ itinerary }) {
                 {hasDayMap && (
                   <LeafletMap
                     points={[d.coordinates]}
-                    className="h-48 w-full rounded-xl border border-slate-200"
+                    className="h-40 w-full rounded-xl border border-slate-200"
                   />
                 )}
               </div>
 
               {/* Programme */}
-              <div className="mt-5 space-y-3">
+              <div className="mt-4 space-y-2">
                 {MOMENTS.map(([key, label]) => {
                   const m = d[key];
                   if (!m || (!m.title && !m.description)) return null;
                   return (
-                    <div key={key}>
+                    <div key={key} className="b-avoid">
                       <h3 className="text-sm font-bold uppercase tracking-wide text-brand-700">
                         {label}
                         {m.title ? ` — ${m.title}` : ''}
                       </h3>
                       {m.description && (
-                        <p className="mt-0.5 text-sm leading-relaxed text-slate-700">
+                        <p className="mt-0.5 text-sm leading-snug text-slate-700">
                           {m.description}
                         </p>
                       )}
@@ -334,7 +344,7 @@ export default function Brochure({ itinerary }) {
 
               {/* Spécialités culinaires */}
               {d.culinary_specialties?.length > 0 && (
-                <div className="mt-5 rounded-xl bg-amber-50 p-4">
+                <div className="b-avoid mt-4 rounded-xl bg-amber-50 p-3">
                   <h3 className="text-sm font-bold text-amber-800">🍽️ À goûter</h3>
                   <div className="mt-2 flex gap-3">
                     {food && (
@@ -357,7 +367,7 @@ export default function Brochure({ itinerary }) {
               )}
 
               {/* Hébergement + trajet + total */}
-              <div className="mt-5 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+              <div className="b-avoid mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
                 {d.accommodation?.name && (
                   <div className="rounded-lg border border-slate-200 p-3">
                     <p className="font-semibold text-slate-800">🏨 {d.accommodation.name}</p>
