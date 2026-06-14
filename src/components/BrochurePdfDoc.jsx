@@ -117,7 +117,12 @@ function travelersLabel(s) {
   if (!a && !c) return '';
   return `${a} adulte${a > 1 ? 's' : ''}${c ? ` · ${c} enfant${c > 1 ? 's' : ''}` : ''}`;
 }
-const eur = (n) => (n == null ? null : `${Math.round(Number(n)).toLocaleString('fr-FR')} €`);
+// Formatage € avec une espace normale (la police PDF ne gère pas l'espace
+// fine insécable de toLocaleString → affichait « 1/405 »).
+const eur = (n) => {
+  if (n == null || isNaN(Number(n))) return null;
+  return `${Math.round(Number(n)).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} €`;
+};
 
 /* ============================== DOCUMENT =========================== */
 export default function BrochurePdfDoc({ itinerary, photos = {} }) {
@@ -311,9 +316,34 @@ export default function BrochurePdfDoc({ itinerary, photos = {} }) {
         <Text style={st.h1}>Informations pratiques</Text>
 
         {budget.grand_total_eur != null && (
-          <View style={st.budgetRow}>
-            <Text style={st.budgetK}>Budget prévisionnel estimé</Text>
-            <Text style={st.budgetV}>{eur(budget.grand_total_eur)}</Text>
+          <View style={st.budgetBox}>
+            <Text style={st.h3}>Budget prévisionnel</Text>
+            {[
+              ['Transports', budget.trips_eur],
+              ['Carburant', budget.fuel_eur],
+              ['Péages', budget.tolls_eur],
+              ['Ferries', budget.ferries_eur],
+              ['Hébergement', budget.accommodation_eur],
+              ['Repas', budget.meals_eur],
+              ['Activités / excursions', budget.activities_eur],
+            ]
+              .filter(([, v]) => v != null && Number(v) !== 0)
+              .map(([k, v], i) => (
+                <View key={i} style={st.budgetLine}>
+                  <Text style={st.budgetLineK}>{k}</Text>
+                  <Text style={st.budgetLineV}>{eur(v)}</Text>
+                </View>
+              ))}
+            <View style={st.budgetTotalLine}>
+              <Text style={st.budgetTotalK}>Total estimé</Text>
+              <Text style={st.budgetTotalV}>{eur(budget.grand_total_eur)}</Text>
+            </View>
+            {budget.per_person_eur != null && (
+              <View style={st.budgetLine}>
+                <Text style={st.budgetPP}>par personne</Text>
+                <Text style={st.budgetPP}>{eur(budget.per_person_eur)}</Text>
+              </View>
+            )}
           </View>
         )}
 
@@ -427,9 +457,14 @@ function makeStyles(theme) {
     tipLabel: { fontFamily: B, fontWeight: 700, fontSize: 8, letterSpacing: 1.5, textTransform: 'uppercase', color: P.accent, marginBottom: 4 },
     tipTxt: { fontFamily: B, fontWeight: 400, fontStyle: 'italic', fontSize: 10, lineHeight: 1.5, color: P.ink },
 
-    budgetRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: P.panel, paddingVertical: 12, paddingHorizontal: 16, marginBottom: 6 },
-    budgetK: { fontFamily: B, fontWeight: 700, fontSize: 9, letterSpacing: 1, textTransform: 'uppercase', color: P.primary },
-    budgetV: { fontFamily: D, fontWeight: 600, fontSize: 18, color: P.ink },
+    budgetBox: { backgroundColor: P.panel, paddingVertical: 12, paddingHorizontal: 16, marginBottom: 6 },
+    budgetLine: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 },
+    budgetLineK: { fontFamily: B, fontWeight: 400, fontSize: 10, color: P.text },
+    budgetLineV: { fontFamily: B, fontWeight: 700, fontSize: 10, color: P.ink },
+    budgetTotalLine: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: P.line },
+    budgetTotalK: { fontFamily: B, fontWeight: 700, fontSize: 10, letterSpacing: 1, textTransform: 'uppercase', color: P.primary },
+    budgetTotalV: { fontFamily: D, fontWeight: 600, fontSize: 18, color: P.ink },
+    budgetPP: { fontFamily: B, fontWeight: 400, fontSize: 9, color: P.text },
 
     twoCol: { flexDirection: 'row', gap: 24 },
     col: { flex: 1 },
