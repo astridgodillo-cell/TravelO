@@ -9,16 +9,39 @@ import { getTileUrl, getGoogleMapsRouteLink } from '../lib/mapTiles';
 const imgUrl = (p) =>
   p?.src?.large || p?.src?.medium || p?.src?.small || p?.url || '';
 
+// Ambiances (couleurs) selon la destination — change l'identité visuelle.
+const BROCHURE_THEMES = {
+  mediterranee: { accent: '#0F4C45', accent2: '#C8A04B', tint: '#F3ECDD' },
+  asie: { accent: '#27408B', accent2: '#D7482F', tint: '#F2E9DA' },
+  nordique: { accent: '#2F4858', accent2: '#5E8CA7', tint: '#EAF0F3' },
+};
+const normTxt = (s) =>
+  String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+// Priorité : override explicite (itinerary.themeKey) → destination/pays → défaut.
+function resolveBrochureTheme(itinerary) {
+  const key = itinerary?.themeKey || itinerary?.summary?.themeKey;
+  if (key && BROCHURE_THEMES[key]) return { key, ...BROCHURE_THEMES[key] };
+  const hay = normTxt(
+    `${itinerary?.summary?.destinations || ''} ${itinerary?.summary?.country || ''}`
+  );
+  const ASIE = ['japon', 'japan', 'asie', 'chine', 'china', 'thailande', 'vietnam', 'coree', 'korea', 'bali', 'indonesie', 'inde', 'cambodge', 'laos'];
+  const NORD = ['norvege', 'suede', 'islande', 'finlande', 'danemark', 'scandinavie', 'laponie', 'groenland', 'feroe'];
+  if (ASIE.some((k) => hay.includes(k))) return { key: 'asie', ...BROCHURE_THEMES.asie };
+  if (NORD.some((k) => hay.includes(k))) return { key: 'nordique', ...BROCHURE_THEMES.nordique };
+  return { key: 'mediterranee', ...BROCHURE_THEMES.mediterranee };
+}
+
 function isValidCoord(c) {
   if (!c || typeof c.lat !== 'number' || typeof c.lng !== 'number') return false;
   if (Math.abs(c.lat) < 0.5 && Math.abs(c.lng) < 0.5) return false; // (0,0)
   return c.lat >= -90 && c.lat <= 90 && c.lng >= -180 && c.lng <= 180;
 }
 
-function dotIcon(label) {
+function dotIcon(label, color = '#e2580c') {
   return L.divIcon({
     className: 'brochure-pin',
-    html: `<div style="background:#e2580c;color:#fff;border-radius:50%;width:24px;height:24px;display:grid;place-items:center;font-weight:700;font-size:11px;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)">${label || ''}</div>`,
+    html: `<div style="background:${color};color:#fff;border-radius:50%;width:24px;height:24px;display:grid;place-items:center;font-weight:700;font-size:11px;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)">${label || ''}</div>`,
     iconSize: [24, 24],
     iconAnchor: [12, 12],
   });
@@ -51,7 +74,7 @@ function FitPoints({ points }) {
 }
 
 // Carte Leaflet (mêmes tuiles que l'itinéraire — fonctionne avec la clé).
-function LeafletMap({ points, className }) {
+function LeafletMap({ points, className, accent = '#e2580c' }) {
   const pts = (points || []).filter(isValidCoord);
   if (!pts.length) return null;
   return (
@@ -70,13 +93,13 @@ function LeafletMap({ points, className }) {
         <Marker
           key={i}
           position={[p.lat, p.lng]}
-          icon={dotIcon(pts.length > 1 ? String(i + 1) : '')}
+          icon={dotIcon(pts.length > 1 ? String(i + 1) : '', accent)}
         />
       ))}
       {pts.length > 1 && (
         <Polyline
           positions={pts.map((p) => [p.lat, p.lng])}
-          pathOptions={{ color: '#e2580c', weight: 3, opacity: 0.7 }}
+          pathOptions={{ color: accent, weight: 3, opacity: 0.7 }}
         />
       )}
       <FitPoints points={pts} />
@@ -156,6 +179,7 @@ export default function Brochure({ itinerary }) {
   const days = Array.isArray(itinerary?.days) ? itinerary.days : [];
   const budget = itinerary?.budget_summary || {};
   const notes = itinerary?.notes || {};
+  const theme = resolveBrochureTheme(itinerary);
 
   const [cover, setCover] = useState(null);
   const [dayPhotos, setDayPhotos] = useState({});
@@ -173,8 +197,8 @@ export default function Brochure({ itinerary }) {
       for (let i = 0; i < days.length; i++) {
         if (!active) return;
         const d = days[i];
-        const ph = await fetchPhotosFor(d.location, 1, 'google-places', 'destination');
-        if (active && ph?.[0]) setDayPhotos((prev) => ({ ...prev, [i]: ph[0] }));
+        const ph = await fetchPhotosFor(d.location, 3, 'google-places', 'destination');
+        if (active && ph?.length) setDayPhotos((prev) => ({ ...prev, [i]: ph.slice(0, 3) }));
         const spec = d.culinary_specialties?.[0];
         if (spec?.photo_query) {
           const fp = await fetchPhotosFor(spec.photo_query, 1, 'unsplash', 'food');
@@ -198,7 +222,10 @@ export default function Brochure({ itinerary }) {
     n == null ? '—' : `${Math.round(Number(n)).toLocaleString('fr-FR')} €`;
 
   return (
-    <div className="brochure-root">
+    <div
+      className="brochure-root"
+      style={{ '--acc': theme.accent, '--acc2': theme.accent2, '--tint': theme.tint }}
+    >
       <style>{`
         @page { size: A4; margin: 8mm; }
         .brochure-page {
@@ -208,6 +235,13 @@ export default function Brochure({ itinerary }) {
         }
         .brochure-page:last-child { break-after: auto; page-break-after: auto; }
         .b-avoid { break-inside: avoid; }
+        /* Ambiance (couleurs du thème) */
+        .bro-acc { color: var(--acc) !important; }
+        .bro-acc2 { color: var(--acc2) !important; }
+        .bro-acc-bg { background: var(--acc) !important; }
+        .bro-acc2-bg { background: var(--acc2) !important; }
+        .bro-tint-bg { background: var(--tint) !important; }
+        .bro-acc-border { border-color: var(--acc2) !important; }
         /* Une journée = une page : hauteur fixe, contenu ajusté pour rentrer. */
         .brochure-day-card { height: 1040px; overflow: hidden; }
         @media print {
@@ -289,13 +323,14 @@ export default function Brochure({ itinerary }) {
           {points.length > 0 && (
             <LeafletMap
               points={points}
+              accent={theme.accent2}
               className="mt-4 h-[340px] w-full rounded-xl border border-slate-200"
             />
           )}
           <ol className="mt-5 space-y-1 text-sm text-slate-700">
             {days.map((d, i) => (
               <li key={i} className="flex gap-2">
-                <span className="font-semibold text-brand-700">{d.label || `J${i + 1}`}</span>
+                <span className="font-semibold bro-acc">{d.label || `J${i + 1}`}</span>
                 <span>— {d.location}</span>
               </li>
             ))}
@@ -305,7 +340,7 @@ export default function Brochure({ itinerary }) {
               href={gmapsLink}
               target="_blank"
               rel="noreferrer"
-              className="mt-4 inline-block text-sm font-medium text-brand-700 underline"
+              className="mt-4 inline-block text-sm font-medium bro-acc underline"
             >
               📍 Ouvrir l'itinéraire dans Google Maps
             </a>
@@ -314,7 +349,9 @@ export default function Brochure({ itinerary }) {
 
         {/* ---------- UNE PAGE PAR JOUR ---------- */}
         {days.map((d, i) => {
-          const photo = dayPhotos[i];
+          const photos = dayPhotos[i] || [];
+          const photo = photos[0];
+          const extraPhotos = photos.slice(1, 3);
           const food = foodPhotos[i];
           const hasDayMap = isValidCoord(d.coordinates);
           const nextTrip = d.trips?.[0];
@@ -357,10 +394,25 @@ export default function Brochure({ itinerary }) {
                 {hasDayMap && (
                   <LeafletMap
                     points={[d.coordinates]}
+                    accent={theme.accent2}
                     className="h-40 w-full rounded-xl border border-slate-200"
                   />
                 )}
               </div>
+
+              {/* Photos supplémentaires de la destination */}
+              {extraPhotos.length > 0 && (
+                <div className="b-avoid mt-3 grid grid-cols-2 gap-3">
+                  {extraPhotos.map((ph, k) => (
+                    <img
+                      key={k}
+                      src={imgUrl(ph)}
+                      alt={d.location}
+                      className="h-28 w-full rounded-xl object-cover"
+                    />
+                  ))}
+                </div>
+              )}
 
               {/* Programme */}
               <div className="mt-4 space-y-2">
@@ -369,7 +421,7 @@ export default function Brochure({ itinerary }) {
                   if (!m || (!m.title && !m.description)) return null;
                   return (
                     <div key={key} className="b-avoid">
-                      <h3 className="text-sm font-bold uppercase tracking-wide text-brand-700">
+                      <h3 className="text-sm font-bold uppercase tracking-wide bro-acc">
                         {label}
                         {m.title ? ` — ${m.title}` : ''}
                       </h3>
@@ -385,8 +437,8 @@ export default function Brochure({ itinerary }) {
 
               {/* Spécialités culinaires */}
               {d.culinary_specialties?.length > 0 && (
-                <div className="b-avoid mt-4 rounded-xl bg-amber-50 p-3">
-                  <h3 className="text-sm font-bold text-amber-800">🍽️ À goûter</h3>
+                <div className="b-avoid bro-tint-bg mt-4 rounded-xl p-3">
+                  <h3 className="bro-acc text-sm font-bold">🍽️ À goûter</h3>
                   <div className="mt-2 flex gap-3">
                     {food && (
                       <img
@@ -465,7 +517,7 @@ export default function Brochure({ itinerary }) {
                 ))}
               <tr className="border-t-2 border-slate-300">
                 <td className="py-2 font-bold text-slate-900">Total estimé</td>
-                <td className="py-2 text-right font-bold text-brand-700">
+                <td className="py-2 text-right font-bold bro-acc">
                   {eur(budget.grand_total_eur)}
                 </td>
               </tr>
