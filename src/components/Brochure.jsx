@@ -1,15 +1,88 @@
 import { useEffect, useState } from 'react';
+import { MapContainer, TileLayer, Marker, Polyline, useMap } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { fetchPhotosFor } from '../lib/photos';
-import {
-  getStaticMapUrl,
-  getStaticRouteMapUrl,
-  getGoogleMapsRouteLink,
-  hasStaticMaps,
-} from '../lib/mapTiles';
+import { getTileUrl, getGoogleMapsRouteLink } from '../lib/mapTiles';
 
 // URL d'image exploitable à partir d'un objet photo renvoyé par fetchPhotosFor.
 const imgUrl = (p) =>
   p?.src?.large || p?.src?.medium || p?.src?.small || p?.url || '';
+
+function isValidCoord(c) {
+  if (!c || typeof c.lat !== 'number' || typeof c.lng !== 'number') return false;
+  if (Math.abs(c.lat) < 0.5 && Math.abs(c.lng) < 0.5) return false; // (0,0)
+  return c.lat >= -90 && c.lat <= 90 && c.lng >= -180 && c.lng <= 180;
+}
+
+function dotIcon(label) {
+  return L.divIcon({
+    className: 'brochure-pin',
+    html: `<div style="background:#e2580c;color:#fff;border-radius:50%;width:24px;height:24px;display:grid;place-items:center;font-weight:700;font-size:11px;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)">${label || ''}</div>`,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+  });
+}
+
+// Recadre la carte sur les points (un seul → centré ; plusieurs → bounds).
+function FitPoints({ points }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!points?.length) return;
+    const fit = () => {
+      map.invalidateSize();
+      if (points.length === 1) {
+        map.setView([points[0].lat, points[0].lng], 11);
+      } else {
+        map.fitBounds(L.latLngBounds(points.map((p) => [p.lat, p.lng])), {
+          padding: [30, 30],
+          maxZoom: 11,
+        });
+      }
+    };
+    const t1 = setTimeout(fit, 120);
+    const t2 = setTimeout(fit, 500);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [points, map]);
+  return null;
+}
+
+// Carte Leaflet (mêmes tuiles que l'itinéraire — fonctionne avec la clé).
+function LeafletMap({ points, className }) {
+  const pts = (points || []).filter(isValidCoord);
+  if (!pts.length) return null;
+  return (
+    <MapContainer
+      className={className}
+      center={[pts[0].lat, pts[0].lng]}
+      zoom={9}
+      scrollWheelZoom={false}
+      dragging={false}
+      zoomControl={false}
+      doubleClickZoom={false}
+      attributionControl={false}
+    >
+      <TileLayer url={getTileUrl()} />
+      {pts.map((p, i) => (
+        <Marker
+          key={i}
+          position={[p.lat, p.lng]}
+          icon={dotIcon(pts.length > 1 ? String(i + 1) : '')}
+        />
+      ))}
+      {pts.length > 1 && (
+        <Polyline
+          positions={pts.map((p) => [p.lat, p.lng])}
+          pathOptions={{ color: '#e2580c', weight: 3, opacity: 0.7 }}
+        />
+      )}
+      <FitPoints points={pts} />
+    </MapContainer>
+  );
+}
 
 function fmtDate(iso) {
   if (!iso) return '';
@@ -75,10 +148,7 @@ export default function Brochure({ itinerary }) {
     };
   }, [itinerary]);
 
-  const points = days
-    .map((d) => d.coordinates)
-    .filter((c) => c && c.lat != null && c.lng != null);
-  const overviewMap = getStaticRouteMapUrl(points, { width: 800, height: 700 });
+  const points = days.map((d) => d.coordinates).filter(isValidCoord);
   const gmapsLink = getGoogleMapsRouteLink(points);
   const coverImg = imgUrl(cover);
 
@@ -108,11 +178,6 @@ export default function Brochure({ itinerary }) {
             <span className="font-medium text-emerald-700">✅ Brochure prête</span>
           ) : (
             <span>📷 Préparation des photos… {progress}%</span>
-          )}
-          {!hasStaticMaps() && (
-            <span className="ml-2 text-amber-600">
-              (cartes désactivées : ajoute une clé MapTiler pour les afficher)
-            </span>
           )}
         </div>
         <button
@@ -172,17 +237,11 @@ export default function Brochure({ itinerary }) {
           <p className="mt-1 text-sm text-slate-500">
             {points.length} étape(s){summary.total_distance_km ? ` • ${summary.total_distance_km} km` : ''}
           </p>
-          {overviewMap ? (
-            <img
-              src={overviewMap}
-              alt="Carte de l'itinéraire"
-              className="mt-4 w-full rounded-xl border border-slate-200"
+          {points.length > 0 && (
+            <LeafletMap
+              points={points}
+              className="mt-4 h-[420px] w-full rounded-xl border border-slate-200"
             />
-          ) : (
-            <div className="mt-4 rounded-xl border border-dashed border-slate-300 p-6 text-sm text-slate-500">
-              Carte non disponible (clé MapTiler manquante). Les étapes restent
-              listées ci-dessous.
-            </div>
           )}
           <ol className="mt-5 space-y-1 text-sm text-slate-700">
             {days.map((d, i) => (
@@ -208,12 +267,7 @@ export default function Brochure({ itinerary }) {
         {days.map((d, i) => {
           const photo = dayPhotos[i];
           const food = foodPhotos[i];
-          const dayMap =
-            d.coordinates && getStaticMapUrl(d.coordinates.lat, d.coordinates.lng, {
-              zoom: 11,
-              width: 600,
-              height: 340,
-            });
+          const hasDayMap = isValidCoord(d.coordinates);
           const nextTrip = d.trips?.[0];
           return (
             <section key={i} className="brochure-page rounded-2xl bg-white p-8 shadow">
@@ -249,11 +303,10 @@ export default function Brochure({ itinerary }) {
                     )}
                   </figure>
                 )}
-                {dayMap && (
-                  <img
-                    src={dayMap}
-                    alt={`Carte ${d.location}`}
-                    className="h-48 w-full rounded-xl border border-slate-200 object-cover"
+                {hasDayMap && (
+                  <LeafletMap
+                    points={[d.coordinates]}
+                    className="h-48 w-full rounded-xl border border-slate-200"
                   />
                 )}
               </div>
