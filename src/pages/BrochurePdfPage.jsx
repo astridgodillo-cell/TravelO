@@ -3,7 +3,8 @@ import { useParams, Link } from 'react-router-dom';
 import { pdf } from '@react-pdf/renderer';
 import { getItinerary } from '../lib/supabase';
 import { fetchPhotosFor } from '../lib/photos';
-import BrochurePdfDoc from '../components/BrochurePdfDoc';
+import { renderRouteMapImage } from '../lib/staticMapImage';
+import BrochurePdfDoc, { resolveTheme } from '../components/BrochurePdfDoc';
 
 const imgUrl = (p) =>
   p?.src?.large || p?.src?.medium || p?.src?.small || p?.url || '';
@@ -45,9 +46,21 @@ export default function BrochurePdfPage() {
         }
         if (!active) return;
 
+        // Carte du parcours (image fabriquée à partir des tuiles de l'app).
+        setStatus('Création de la carte…');
+        const accent = resolveTheme(it)?.palette?.accent || '#C8A04B';
+        const points = days
+          .map((d) => d.coordinates)
+          .filter((c) => c && typeof c.lat === 'number' && typeof c.lng === 'number');
+        let routeMap = null;
+        try {
+          routeMap = points.length ? await renderRouteMapImage(points, { accent }) : null;
+        } catch (_) { routeMap = null; }
+        if (!active) return;
+
         setStatus('Création du PDF…');
         const blob = await pdf(
-          <BrochurePdfDoc itinerary={it} photos={{ cover, overview, days: dayMap }} />
+          <BrochurePdfDoc itinerary={it} photos={{ cover, overview, days: dayMap, routeMap }} />
         ).toBlob();
         if (!active) return;
 

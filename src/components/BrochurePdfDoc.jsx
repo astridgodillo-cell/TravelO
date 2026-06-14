@@ -58,7 +58,7 @@ const THEMES = {
   },
 };
 const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-function resolveTheme(itinerary) {
+export function resolveTheme(itinerary) {
   const key = itinerary?.themeKey || itinerary?.summary?.themeKey;
   if (key && THEMES[key]) return THEMES[key];
   const hay = norm(`${itinerary?.summary?.destinations || ''} ${itinerary?.summary?.country || ''}`);
@@ -212,6 +212,25 @@ export default function BrochurePdfDoc({ itinerary, photos = {} }) {
         </View>
         <Footer />
       </Page>
+
+      {/* 2bis. VOTRE ITINÉRAIRE (carte du parcours) */}
+      {photos.routeMap && (
+        <Page size="A4" style={st.page}>
+          <Eyebrow>Itinéraire</Eyebrow>
+          <Text style={st.h1}>Votre parcours</Text>
+          <Text style={st.lead}>Le tracé complet de votre voyage, étape par étape.</Text>
+          <Image src={photos.routeMap} style={st.routeImg} />
+          <View style={st.routeList}>
+            {days.map((d, i) => (
+              <View key={i} style={st.routeItem}>
+                <View style={st.routeNum}><Text style={st.routeNumTxt}>{i + 1}</Text></View>
+                <Text style={st.routeLabel}>{d.location}</Text>
+              </View>
+            ))}
+          </View>
+          <Footer />
+        </Page>
+      )}
 
       {/* 3. UNE PAGE PAR JOUR */}
       {days.map((d, i) => {
@@ -368,6 +387,13 @@ function makeStyles(theme) {
     hlItem: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 7 },
     hlMark: { width: 5, height: 5, backgroundColor: P.accent, borderRadius: 2.5, marginTop: 4, marginRight: 10 },
     hlTxt: { flex: 1, fontFamily: B, fontSize: 10.5, lineHeight: 1.5, color: P.text },
+    routeImg: { width: '100%', height: 360, objectFit: 'cover', borderWidth: 1, borderColor: P.line, marginTop: 4, marginBottom: 16 },
+    routeList: { flexDirection: 'row', flexWrap: 'wrap' },
+    routeItem: { flexDirection: 'row', alignItems: 'center', width: '50%', marginBottom: 7, paddingRight: 8 },
+    routeNum: { width: 18, height: 18, borderRadius: 9, backgroundColor: P.accent, alignItems: 'center', justifyContent: 'center', marginRight: 9 },
+    routeNumTxt: { fontFamily: B, fontWeight: 700, fontSize: 8, color: WHITE },
+    routeLabel: { flex: 1, fontFamily: B, fontWeight: 400, fontSize: 10.5, color: P.ink },
+
     metaCards: { flexDirection: 'row', marginTop: 22, gap: 10 },
     metaCard: { flex: 1, borderTopWidth: 2, borderTopColor: P.accent, paddingTop: 8 },
     metaCardK: { fontFamily: B, fontWeight: 700, fontSize: 7.5, letterSpacing: 1.5, textTransform: 'uppercase', color: P.primary, marginBottom: 3 },
