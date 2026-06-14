@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { Routes, Route, useLocation } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
@@ -21,6 +22,8 @@ import PendingAccountPage from './pages/PendingAccountPage';
 import AdminPage from './pages/AdminPage';
 import ProfilePage from './pages/ProfilePage';
 import OnboardingPage from './pages/OnboardingPage';
+// Chargée à la demande (la librairie PDF est lourde) :
+const BrochurePdfPage = lazy(() => import('./pages/BrochurePdfPage'));
 
 export default function App() {
   const { pathname } = useLocation();
@@ -111,6 +114,16 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <BrochurePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/itineraire/:id/brochure-pdf"
+            element={
+              <ProtectedRoute>
+                <Suspense fallback={<div className="p-8 text-center text-slate-500">Préparation…</div>}>
+                  <BrochurePdfPage />
+                </Suspense>
               </ProtectedRoute>
             }
           />

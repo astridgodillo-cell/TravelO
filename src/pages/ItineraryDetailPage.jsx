@@ -363,10 +363,16 @@ export default function ItineraryDetailPage() {
         </div>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:shrink-0">
           <Link
-            to={`/itineraire/${id}/brochure`}
+            to={`/itineraire/${id}/brochure-pdf`}
             className="btn-primary w-full text-center sm:w-auto shrink-0"
           >
-            📖 Brochure
+            ✨ Brochure PDF
+          </Link>
+          <Link
+            to={`/itineraire/${id}/brochure`}
+            className="btn-secondary w-full text-center sm:w-auto shrink-0"
+          >
+            📖 Aperçu web
           </Link>
           <button
             onClick={() => window.print()}
