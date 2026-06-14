@@ -148,9 +148,12 @@ export default function MyTripsPage() {
         banner="https://images.unsplash.com/photo-1488646953014-85cb44e25828?auto=format&fit=crop&w=2000&q=80"
         action={
           <div className="flex flex-col gap-2 sm:flex-row">
-            <Link to="/nouveau" className="btn-primary inline-flex items-center justify-center gap-1.5">
+            <Link to="/creer-ia" className="btn-primary inline-flex items-center justify-center gap-1.5">
+              ✨ Créer avec l'IA
+            </Link>
+            <Link to="/nouveau" className="btn-secondary inline-flex items-center justify-center gap-1.5">
               <Icon name="plus" className="h-4 w-4" />
-              Nouvel itinéraire
+              Formulaire
             </Link>
             <Link to="/importer" className="btn-secondary inline-flex items-center justify-center gap-1.5">
               📥 Importer

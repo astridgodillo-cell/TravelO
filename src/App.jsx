@@ -7,6 +7,7 @@ import AdminRoute from './components/AdminRoute';
 import HomePage from './pages/HomePage';
 import NewItineraryPage from './pages/NewItineraryPage';
 import ImportItineraryPage from './pages/ImportItineraryPage';
+import CreateWithAiPage from './pages/CreateWithAiPage';
 import MyTripsPage from './pages/MyTripsPage';
 import MyListsPage from './pages/MyListsPage';
 import TemplatesPage from './pages/TemplatesPage';
@@ -50,6 +51,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <ImportItineraryPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/creer-ia"
+            element={
+              <ProtectedRoute>
+                <CreateWithAiPage />
               </ProtectedRoute>
             }
           />

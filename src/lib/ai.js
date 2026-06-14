@@ -184,6 +184,16 @@ async function invoke(body) {
   return data;
 }
 
+// Convertit une description libre du voyage (texte) en préférences
+// structurées via le moteur (mode parse-brief). Le résultat est ensuite
+// passé à generateItinerary, qui réutilise toute la chaîne de génération.
+export async function parseBrief(text) {
+  const today = new Date().toISOString().slice(0, 10);
+  const data = await invoke({ mode: 'parse-brief', text, today });
+  if (!data?.preferences) throw new Error('Préférences non extraites.');
+  return data.preferences;
+}
+
 export async function generateItinerary(preferences, onProgress) {
   const days = computeDurationDays(preferences.startDate, preferences.endDate);
   let meta = emptyMeta();

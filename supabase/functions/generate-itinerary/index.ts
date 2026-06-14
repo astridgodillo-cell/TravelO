@@ -4021,6 +4021,60 @@ Si tu ne reconnais PAS un hôtel dans l'image (capture floue, page d'erreur, pho
       }
     }
 
+    if (mode === 'parse-brief') {
+      const brief = typeof body.text === 'string' ? body.text.trim() : '';
+      const today = body.today || '';
+      if (brief.length < 5) {
+        return jsonResponse({ error: 'Décris ton voyage en quelques mots.' }, 400);
+      }
+      const prompt = `Tu extrais des préférences de voyage STRUCTURÉES à partir d'une description libre, pour l'application TravelO.
+Date du jour : ${today || 'inconnue'}.
+
+Description de l'utilisateur :
+"""
+${brief}
+"""
+
+Renvoie UNIQUEMENT un JSON valide (aucun texte autour, pas de markdown) avec ces champs :
+{
+  "destinations": "string (pays / régions / villes principales)",
+  "startDate": "YYYY-MM-DD",
+  "endDate": "YYYY-MM-DD",
+  "adults": 2,
+  "childrenAges": [],
+  "tripType": "un de: itinerant, roadtrip-voiture, roadtrip-van, avion-voiture, avion-citybreak, avion-itinerant, train-international, circuit-train, velo, trek, croisiere, sejour-fixe",
+  "budget": "un de: economique, moyen, confort, haut de gamme",
+  "interests": ["nature","culture","gastronomie","plage","sport","randonnée","modernité","hors des sentiers battus"],
+  "specificActivities": [],
+  "mustInclude": [],
+  "toAvoid": [],
+  "departureLocation": "",
+  "returnLocation": "",
+  "hasDrivingLicense": true,
+  "offDays": 0
+}
+
+Règles :
+- startDate et endDate sont OBLIGATOIRES. Si l'utilisateur donne une durée (ex. "10 jours") ou une période (ex. "en juillet") sans dates précises, choisis des dates concrètes et cohérentes, situées dans le FUTUR par rapport à la date du jour.
+- adults = 2 par défaut ; childrenAges = [] si aucun enfant mentionné.
+- tripType : déduis-le du contexte (van/camping-car → roadtrip-van ; vol + visite d'une ville → avion-citybreak ; vol + voiture sur place → avion-voiture ; sinon → itinerant).
+- budget = "moyen" par défaut.
+- interests : ne garde que ceux réellement pertinents.
+- mustInclude : seulement les lieux explicitement imposés, sinon [].`;
+      const { text, usage, modelUsed } = await callMain(prompt, 1500);
+      const parsed = await parseOrRepair(text, callMainSafe);
+      if (!parsed || !parsed.startDate || !parsed.endDate || !parsed.destinations) {
+        return jsonResponse(
+          {
+            error:
+              "Description trop floue : précise au moins la destination et la durée ou les dates.",
+          },
+          422
+        );
+      }
+      return jsonResponse({ preferences: parsed, usage, model: modelUsed });
+    }
+
     if (mode === 'suggest-cities') {
       const {
         destination,
