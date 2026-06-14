@@ -39,26 +39,31 @@ export function hasStaticMaps() {
 // la brochure. Retourne null si aucune clé MapTiler n'est configurée.
 export function getStaticMapUrl(lat, lng, { zoom = 11, width = 800, height = 450 } = {}) {
   if (!MAPTILER_KEY || lat == null || lng == null) return null;
-  const m = `${lng},${lat}`;
+  // Format MapTiler : /static/{lon},{lat},{zoom}/{w}x{h}@2x.png
   return (
-    `https://api.maptiler.com/maps/streets-v2/static/${m}/${zoom}/${width}x${height}@2x.png` +
-    `?key=${MAPTILER_KEY}&markers=${m}`
+    `https://api.maptiler.com/maps/streets-v2/static/${lng},${lat},${zoom}/${width}x${height}@2x.png` +
+    `?key=${MAPTILER_KEY}&markers=${lng},${lat}`
   );
 }
 
-// Carte statique d'ensemble : cadrage auto sur tous les points, marqueurs
-// numérotés implicites + tracé reliant les étapes. Retourne null sans clé.
+// Carte statique d'ensemble : cadrage automatique sur tous les points, avec
+// un marqueur par étape. Retourne null sans clé.
 export function getStaticRouteMapUrl(points, { width = 800, height = 600 } = {}) {
   if (!MAPTILER_KEY || !Array.isArray(points) || points.length === 0) return null;
   const valid = points.filter((p) => p && p.lat != null && p.lng != null);
   if (!valid.length) return null;
-  const coords = valid.map((p) => `${p.lng},${p.lat}`);
-  const markers = coords.join('|');
-  const path = coords.length > 1 ? `&path=stroke:%23e2580c|width:3|${coords.join('|')}` : '';
-  const center = valid.length === 1 ? `${coords[0]}/10` : 'auto';
+  const markers = valid.map((p) => `${p.lng},${p.lat}`).join('|');
+  // Un seul point : on centre dessus ; sinon cadrage auto sur les marqueurs.
+  if (valid.length === 1) {
+    const p = valid[0];
+    return (
+      `https://api.maptiler.com/maps/streets-v2/static/${p.lng},${p.lat},9/${width}x${height}@2x.png` +
+      `?key=${MAPTILER_KEY}&markers=${markers}`
+    );
+  }
   return (
-    `https://api.maptiler.com/maps/streets-v2/static/${center}/${width}x${height}@2x.png` +
-    `?key=${MAPTILER_KEY}&markers=${markers}${path}`
+    `https://api.maptiler.com/maps/streets-v2/static/auto/${width}x${height}@2x.png` +
+    `?key=${MAPTILER_KEY}&markers=${markers}`
   );
 }
 
