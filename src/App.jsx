@@ -6,6 +6,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import AdminRoute from './components/AdminRoute';
 import HomePage from './pages/HomePage';
 import NewItineraryPage from './pages/NewItineraryPage';
+import ImportItineraryPage from './pages/ImportItineraryPage';
 import MyTripsPage from './pages/MyTripsPage';
 import MyListsPage from './pages/MyListsPage';
 import TemplatesPage from './pages/TemplatesPage';
@@ -41,6 +42,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <NewItineraryPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/importer"
+            element={
+              <ProtectedRoute>
+                <ImportItineraryPage />
               </ProtectedRoute>
             }
           />
