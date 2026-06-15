@@ -282,6 +282,24 @@ export default function BrochurePdfDoc({ itinerary, photos = {} }) {
                 ))}
               </View>
 
+              {Array.isArray(d.trips) && d.trips.filter((t) => t && (t.from || t.to)).map((t, k) => (
+                <View key={k} style={st.stayRow}>
+                  <View style={st.tripIcon}><Icon type="transport" color={WHITE} /></View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={st.stayK}>Trajet</Text>
+                    <Text style={st.stayV}>{t.from} → {t.to}</Text>
+                    {(() => {
+                      const meta = [
+                        t.distance_km ? `${t.distance_km} km` : null,
+                        t.duration || null,
+                        t.estimated_cost_eur ? eur(t.estimated_cost_eur) : null,
+                      ].filter(Boolean).join('   ·   ');
+                      return meta ? <Text style={st.tripMeta}>{meta}</Text> : null;
+                    })()}
+                  </View>
+                </View>
+              ))}
+
               {d.accommodation?.name && (
                 <View style={st.stayRow}>
                   <View style={st.stayIcon}><Icon type="hebergement" color={WHITE} /></View>
@@ -450,6 +468,8 @@ function makeStyles(theme) {
 
     stayRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8, marginBottom: 14 },
     stayIcon: { width: 28, height: 28, borderRadius: 14, backgroundColor: P.primary, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+    tripIcon: { width: 28, height: 28, borderRadius: 14, backgroundColor: P.accent, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+    tripMeta: { fontFamily: B, fontWeight: 700, fontSize: 9.5, color: P.primary, marginTop: 1 },
     stayK: { fontFamily: B, fontWeight: 700, fontSize: 7.5, letterSpacing: 1.5, textTransform: 'uppercase', color: P.primary },
     stayV: { fontFamily: D, fontWeight: 500, fontSize: 11.5, color: P.ink },
 
