@@ -34,6 +34,19 @@ export default function CreateChatPage() {
   const [photoIdx, setPhotoIdx] = useState(0);
   const scrollRef = useRef(null);
 
+  // --- Mode vocal (gratuit, via le navigateur) ---
+  const [listening, setListening] = useState(false);
+  const [speak, setSpeak] = useState(() => {
+    try { return localStorage.getItem('travelo:speak') === '1'; } catch { return false; }
+  });
+  const recRef = useRef(null);
+  const SpeechRec =
+    typeof window !== 'undefined'
+      ? window.SpeechRecognition || window.webkitSpeechRecognition
+      : null;
+  const micSupported = !!SpeechRec;
+  const ttsSupported = typeof window !== 'undefined' && 'speechSynthesis' in window;
+
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, sending]);
@@ -44,6 +57,56 @@ export default function CreateChatPage() {
     const id = setInterval(() => setPhotoIdx((i) => (i + 1) % photos.length), 5000);
     return () => clearInterval(id);
   }, [finalizing, photos]);
+
+  // Coupe la voix en quittant la page
+  useEffect(() => {
+    return () => {
+      if (ttsSupported) window.speechSynthesis.cancel();
+      if (recRef.current) { try { recRef.current.stop(); } catch (_) { /* ignore */ } }
+    };
+  }, [ttsSupported]);
+
+  // Lit un texte à voix haute (si le haut-parleur est activé)
+  function speakText(text) {
+    if (!speak || !ttsSupported || !text) return;
+    try {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'fr-FR';
+      window.speechSynthesis.speak(u);
+    } catch (_) { /* ignore */ }
+  }
+
+  function toggleSpeak() {
+    const v = !speak;
+    setSpeak(v);
+    try { localStorage.setItem('travelo:speak', v ? '1' : '0'); } catch (_) { /* ignore */ }
+    if (!v && ttsSupported) window.speechSynthesis.cancel();
+  }
+
+  // Micro : dicte dans le champ de message
+  function toggleMic() {
+    if (!micSupported) return;
+    if (listening) {
+      try { recRef.current?.stop(); } catch (_) { /* ignore */ }
+      setListening(false);
+      return;
+    }
+    const r = new SpeechRec();
+    r.lang = 'fr-FR';
+    r.interimResults = true;
+    r.continuous = false;
+    r.onresult = (e) => {
+      let t = '';
+      for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
+      setInput(t);
+    };
+    r.onend = () => setListening(false);
+    r.onerror = () => setListening(false);
+    recRef.current = r;
+    setInput('');
+    try { r.start(); setListening(true); } catch (_) { setListening(false); }
+  }
 
   async function send() {
     const text = input.trim();
@@ -60,6 +123,7 @@ export default function CreateChatPage() {
         'Le conseiller met trop de temps à répondre. Réessayez dans un instant.'
       );
       setMessages([...next, { role: 'assistant', content: reply || '…' }]);
+      speakText(reply);
     } catch (e) {
       setError(e.message || "Erreur de connexion à l'assistant.");
       setMessages(next); // on garde le message envoyé
@@ -126,9 +190,22 @@ export default function CreateChatPage() {
     <div className="mx-auto flex h-[calc(100vh-150px)] max-w-2xl flex-col">
       <div className="mb-2 flex items-center justify-between gap-3">
         <h1 className="text-xl font-bold text-slate-900">✨ Créer mon voyage</h1>
-        <button onClick={createTrip} disabled={!canCreate} className="btn-primary disabled:opacity-50">
-          ✅ Créer le voyage
-        </button>
+        <div className="flex items-center gap-2">
+          {ttsSupported && (
+            <button
+              onClick={toggleSpeak}
+              title={speak ? 'Couper la voix' : 'Lire les réponses à voix haute'}
+              className={`rounded-lg border px-3 py-2 text-sm ${
+                speak ? 'border-brand-300 bg-brand-50 text-brand-700' : 'border-slate-300 text-slate-600'
+              }`}
+            >
+              {speak ? '🔊 Voix' : '🔇 Voix'}
+            </button>
+          )}
+          <button onClick={createTrip} disabled={!canCreate} className="btn-primary disabled:opacity-50">
+            ✅ Créer le voyage
+          </button>
+        </div>
       </div>
 
       <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto rounded-xl border border-slate-200 bg-white p-4">
@@ -169,6 +246,18 @@ export default function CreateChatPage() {
           placeholder="Écrivez votre message…  (Entrée pour envoyer)"
           className="flex-1 resize-none rounded-xl border border-slate-300 p-3 text-sm focus:border-brand-500 focus:outline-none"
         />
+        {micSupported && (
+          <button
+            onClick={toggleMic}
+            disabled={finalizing}
+            title={listening ? 'Arrêter le micro' : 'Parler'}
+            className={`rounded-xl border px-3 py-3 text-lg ${
+              listening ? 'animate-pulse border-red-300 bg-red-50' : 'border-slate-300'
+            }`}
+          >
+            🎤
+          </button>
+        )}
         <button onClick={send} disabled={sending || finalizing || !input.trim()} className="btn-primary disabled:opacity-50">
           Envoyer
         </button>
