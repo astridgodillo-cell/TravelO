@@ -1,14 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { travelChat, parseBrief, generateItinerary } from '../lib/ai';
+import { fetchPhotosFor } from '../lib/photos';
 import { saveItinerary } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 
 const GREETING =
   "Bonjour ! Je suis votre conseiller voyage. Dites-moi en quelques mots le voyage dont vous rêvez (destination, période, avec qui…) et on le construit ensemble. 🌍";
 
+const imgUrl = (p) =>
+  p?.src?.large || p?.src?.medium || p?.src?.small || p?.url || '';
+
+// Promesse qui échoue après `ms` (pour ne jamais rester bloqué indéfiniment).
+const withTimeout = (promise, ms, msg) =>
+  Promise.race([
+    promise,
+    new Promise((_, rej) => setTimeout(() => rej(new Error(msg)), ms)),
+  ]);
+
 // Création d'un voyage par CONVERSATION avec l'IA (remplace le formulaire).
-// Route : /creer
 export default function CreateChatPage() {
   const navigate = useNavigate();
   const { user, isApproved } = useAuth();
@@ -18,11 +28,22 @@ export default function CreateChatPage() {
   const [finalizing, setFinalizing] = useState(false);
   const [status, setStatus] = useState('');
   const [error, setError] = useState(null);
+
+  // Photos qui défilent pendant la création
+  const [photos, setPhotos] = useState([]);
+  const [photoIdx, setPhotoIdx] = useState(0);
   const scrollRef = useRef(null);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, sending]);
+
+  // Rotation des photos pendant la création
+  useEffect(() => {
+    if (!finalizing || photos.length < 2) return;
+    const id = setInterval(() => setPhotoIdx((i) => (i + 1) % photos.length), 2600);
+    return () => clearInterval(id);
+  }, [finalizing, photos]);
 
   async function send() {
     const text = input.trim();
@@ -33,11 +54,15 @@ export default function CreateChatPage() {
     setInput('');
     setSending(true);
     try {
-      const reply = await travelChat(next);
+      const reply = await withTimeout(
+        travelChat(next),
+        90000,
+        'Le conseiller met trop de temps à répondre. Réessayez dans un instant.'
+      );
       setMessages([...next, { role: 'assistant', content: reply || '…' }]);
     } catch (e) {
-      setError(e.message || 'Erreur de connexion à l\'assistant.');
-      setMessages(messages); // revert
+      setError(e.message || "Erreur de connexion à l'assistant.");
+      setMessages(next); // on garde le message envoyé
     } finally {
       setSending(false);
     }
@@ -55,16 +80,28 @@ export default function CreateChatPage() {
     if (!isApproved) return navigate('/compte-en-attente');
     setError(null);
     setFinalizing(true);
+    setPhotoIdx(0);
     try {
       const transcript = messages
         .map((m) => `${m.role === 'assistant' ? 'Conseiller' : 'Voyageur'} : ${m.content}`)
         .join('\n');
+
       setStatus('Analyse de votre voyage…');
       const prefs = await parseBrief(transcript);
-      setStatus('Création de l\'itinéraire…');
+
+      // Photos de la destination repérée, pour les faire défiler pendant l'attente
+      try {
+        const pics = await fetchPhotosFor(prefs.destinations || '', 8, 'auto', 'destination');
+        setPhotos((pics || []).map(imgUrl).filter(Boolean));
+      } catch (_) { /* pas grave si pas de photos */ }
+
+      setStatus('Création de votre itinéraire sur mesure…');
       const itinerary = await generateItinerary(prefs, (p) => {
-        if (p?.phase === 'expanding' && p.total) setStatus(`Rédaction des journées… ${p.current}/${p.total}`);
+        if (p?.phase === 'expanding' && p.total) {
+          setStatus(`Rédaction des journées… ${p.current}/${p.total}`);
+        }
       });
+
       const title =
         (prefs?.destinations || 'Voyage').slice(0, 80) +
         ` — ${itinerary?.summary?.duration_days || ''}j`;
@@ -79,27 +116,18 @@ export default function CreateChatPage() {
     }
   }
 
-  // On autorise la création dès qu'il y a eu un vrai échange.
   const canCreate = messages.filter((m) => m.role === 'user').length >= 1 && !sending && !finalizing;
 
   return (
     <div className="mx-auto flex h-[calc(100vh-150px)] max-w-2xl flex-col">
       <div className="mb-2 flex items-center justify-between gap-3">
         <h1 className="text-xl font-bold text-slate-900">✨ Créer mon voyage</h1>
-        <button
-          onClick={createTrip}
-          disabled={!canCreate}
-          className="btn-primary disabled:opacity-50"
-          title={canCreate ? '' : 'Discutez un peu avec le conseiller d\'abord'}
-        >
-          {finalizing ? 'Création…' : '✅ Créer le voyage'}
+        <button onClick={createTrip} disabled={!canCreate} className="btn-primary disabled:opacity-50">
+          ✅ Créer le voyage
         </button>
       </div>
 
-      <div
-        ref={scrollRef}
-        className="flex-1 space-y-3 overflow-y-auto rounded-xl border border-slate-200 bg-white p-4"
-      >
+      <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto rounded-xl border border-slate-200 bg-white p-4">
         {messages.map((m, i) => (
           <div key={i} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
             <div
@@ -116,13 +144,9 @@ export default function CreateChatPage() {
         {sending && (
           <div className="flex justify-start">
             <div className="rounded-2xl bg-slate-100 px-4 py-2 text-sm text-slate-500">
-              <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-slate-400" /> le conseiller écrit…
+              <span className="mr-1 inline-block h-2 w-2 animate-pulse rounded-full bg-slate-400" />
+              le conseiller réfléchit…
             </div>
-          </div>
-        )}
-        {finalizing && status && (
-          <div className="rounded-lg border border-brand-200 bg-brand-50 p-3 text-sm text-brand-800">
-            {status}
           </div>
         )}
       </div>
@@ -145,6 +169,29 @@ export default function CreateChatPage() {
           Envoyer
         </button>
       </div>
+
+      {/* Loader plein écran pendant la création (avec photos qui défilent) */}
+      {finalizing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900">
+          {photos.map((u, i) => (
+            <img
+              key={i}
+              src={u}
+              alt=""
+              className="absolute inset-0 h-full w-full object-cover transition-opacity duration-1000"
+              style={{ opacity: i === photoIdx ? 0.45 : 0 }}
+            />
+          ))}
+          <div className="relative z-10 mx-6 max-w-md rounded-2xl bg-black/40 px-8 py-10 text-center text-white backdrop-blur">
+            <div className="mx-auto mb-5 h-10 w-10 animate-spin rounded-full border-4 border-white/30 border-t-white" />
+            <p className="text-lg font-semibold">Nous créons votre voyage sur mesure…</p>
+            <p className="mt-2 text-sm text-white/80">
+              Cela peut prendre <strong>1 à 2 minutes</strong>. Merci de patienter, ne fermez pas la page.
+            </p>
+            {status && <p className="mt-4 text-sm text-white/90">{status}</p>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
