@@ -40,6 +40,8 @@ export default function CreateChatPage() {
     try { return localStorage.getItem('travelo:speak') === '1'; } catch { return false; }
   });
   const recRef = useRef(null);
+  const listeningRef = useRef(false);
+  const finalRef = useRef('');
   const SpeechRec =
     typeof window !== 'undefined'
       ? window.SpeechRecognition || window.webkitSpeechRecognition
@@ -62,6 +64,7 @@ export default function CreateChatPage() {
   useEffect(() => {
     return () => {
       if (ttsSupported) window.speechSynthesis.cancel();
+      listeningRef.current = false;
       if (recRef.current) { try { recRef.current.stop(); } catch (_) { /* ignore */ } }
     };
   }, [ttsSupported]);
@@ -84,33 +87,61 @@ export default function CreateChatPage() {
     if (!v && ttsSupported) window.speechSynthesis.cancel();
   }
 
-  // Micro : dicte dans le champ de message
+  // Micro : dicte dans le champ de message, en CONTINU (tolère les pauses).
+  // Ne s'arrête que quand on reclique sur le micro.
   function toggleMic() {
     if (!micSupported) return;
     if (listening) {
+      listeningRef.current = false;
       try { recRef.current?.stop(); } catch (_) { /* ignore */ }
       setListening(false);
       return;
     }
+    // On repart du texte déjà présent (dictée ajoutée à la suite).
+    finalRef.current = input ? input.trim() + ' ' : '';
     const r = new SpeechRec();
     r.lang = 'fr-FR';
     r.interimResults = true;
-    r.continuous = false;
+    r.continuous = true;
     r.onresult = (e) => {
-      let t = '';
-      for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
-      setInput(t);
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const res = e.results[i];
+        if (res.isFinal) finalRef.current += res[0].transcript + ' ';
+        else interim += res[0].transcript;
+      }
+      setInput((finalRef.current + interim).trimStart());
     };
-    r.onend = () => setListening(false);
-    r.onerror = () => setListening(false);
+    // Chrome coupe parfois tout seul après un silence : on relance tant que
+    // l'utilisateur n'a pas cliqué pour arrêter.
+    r.onend = () => {
+      if (listeningRef.current) {
+        try { r.start(); } catch (_) { /* déjà relancé */ }
+      } else {
+        setListening(false);
+      }
+    };
+    r.onerror = (ev) => {
+      if (ev.error !== 'no-speech' && ev.error !== 'aborted') {
+        listeningRef.current = false;
+        setListening(false);
+      }
+    };
     recRef.current = r;
-    setInput('');
-    try { r.start(); setListening(true); } catch (_) { setListening(false); }
+    listeningRef.current = true;
+    setListening(true);
+    try { r.start(); } catch (_) { listeningRef.current = false; setListening(false); }
   }
 
   async function send() {
     const text = input.trim();
     if (!text || sending) return;
+    // Coupe le micro à l'envoi
+    if (listeningRef.current) {
+      listeningRef.current = false;
+      try { recRef.current?.stop(); } catch (_) { /* ignore */ }
+      setListening(false);
+    }
     setError(null);
     const next = [...messages, { role: 'user', content: text }];
     setMessages(next);
