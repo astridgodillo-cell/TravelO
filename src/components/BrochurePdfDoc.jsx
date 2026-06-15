@@ -56,7 +56,7 @@ const THEMES = {
   },
   nordique: {
     key: 'nordique',
-    palette: { ink: '#1E2A30', primary: '#2F4858', accent: '#5E8CA7', paper: '#F4F6F7', text: '#46535B', line: '#DCE3E6', panel: '#EAF0F3' },
+    palette: { ink: '#1B2A3A', primary: '#27496B', accent: '#3F73A6', paper: '#EEF3F9', text: '#45525E', line: '#D6E0EA', panel: '#E1EAF3' },
     fonts: { display: 'Spectral', body: 'Lato' },
   },
 };
@@ -144,7 +144,7 @@ export function resolveTheme(itinerary) {
   if (key && THEMES[key]) return THEMES[key];
   const hay = norm(`${itinerary?.summary?.destinations || ''} ${itinerary?.summary?.country || ''}`);
   const ASIE = ['japon', 'japan', 'asie', 'chine', 'china', 'thailande', 'vietnam', 'coree', 'korea', 'bali', 'indonesie', 'inde', 'cambodge', 'laos'];
-  const NORD = ['norvege', 'suede', 'islande', 'finlande', 'danemark', 'scandinavie', 'laponie', 'groenland', 'feroe'];
+  const NORD = ['norvege', 'suede', 'islande', 'finlande', 'danemark', 'scandinavie', 'laponie', 'groenland', 'feroe', 'ecosse', 'scotland', 'irlande', 'ireland', 'angleterre', 'england', 'royaume-uni', 'royaume uni', 'uk', 'pays de galles', 'galles', 'wales', 'canada', 'alaska', 'patagonie'];
   if (ASIE.some((k) => hay.includes(k))) return THEMES.asie;
   if (NORD.some((k) => hay.includes(k))) return THEMES.nordique;
   return THEMES.mediterranee;
@@ -244,16 +244,9 @@ export default function BrochurePdfDoc({ itinerary, photos = {} }) {
   );
 
   // Bandeau décoratif en haut de page + filigrane léger (motif du pays).
-  const TopBand = () => (
-    <View style={{ marginBottom: 12 }}>
-      <PatternBand themeKey={theme.key} color={P.accent} width={495} height={16} opacity={0.7} />
-    </View>
-  );
-  const Watermark = () => (
-    <View style={{ position: 'absolute', top: 300, left: 150, opacity: 0.05 }}>
-      <ThemeMotif themeKey={theme.key} color={P.primary} size={260} opacity={1} />
-    </View>
-  );
+  // Décorations retirées : on garde seulement la couleur de fond par pays.
+  const TopBand = () => null;
+  const Watermark = () => null;
 
   return (
     <Document title={`${s.destinations || 'Voyage'} — TravelO`} author="TravelO">
@@ -268,9 +261,6 @@ export default function BrochurePdfDoc({ itinerary, photos = {} }) {
             <Text style={st.coverBrand}>TravelO</Text>
             <View style={st.coverBrandLine} />
             <Text style={st.coverTagline}>Voyages sur mesure</Text>
-            <View style={{ marginTop: 14 }}>
-              <ThemeMotif themeKey={theme.key} color={WHITE} size={46} opacity={0.85} />
-            </View>
           </View>
           <View>
             <Eyebrow>Votre itinéraire sur mesure</Eyebrow>
@@ -284,9 +274,6 @@ export default function BrochurePdfDoc({ itinerary, photos = {} }) {
                   <Text style={st.coverMetaTxt}>{m}</Text>
                 </View>
               ))}
-            </View>
-            <View style={{ marginTop: 16 }}>
-              <PatternBand themeKey={theme.key} color={WHITE} width={300} height={14} opacity={0.7} />
             </View>
           </View>
         </View>
