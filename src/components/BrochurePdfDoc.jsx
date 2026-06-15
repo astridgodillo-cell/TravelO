@@ -256,7 +256,7 @@ export default function BrochurePdfDoc({ itinerary, photos = {} }) {
           .filter(Boolean);
         const gallery = ph.length > 1 ? ph.slice(1) : ph;
         const captions = [d.morning?.title, d.afternoon?.title, d.noon?.title, d.evening?.title, d.culinary_specialties?.[0]?.name]
-          .map((x) => clip(x, 42))
+          .map((x) => clip(x, 32))
           .filter(Boolean);
         return (
           <React.Fragment key={i}>
@@ -336,8 +336,8 @@ export default function BrochurePdfDoc({ itinerary, photos = {} }) {
           {gallery.length > 0 && (
             <Page size="A4" style={st.page}>
               <Eyebrow>Jour {String(i + 1).padStart(2, '0')} · {d.location}</Eyebrow>
-              <Text style={st.h1}>{d.location} en images</Text>
-              {d.day_title ? <Text style={st.lead}>{d.day_title}</Text> : null}
+              <Text style={st.galleryTitle}>{clip(d.location, 40)} en images</Text>
+              {d.day_title ? <Text style={st.galleryLead}>{clip(d.day_title, 90)}</Text> : null}
               <View style={st.galleryGrid}>
                 {gallery.slice(0, 5).map((u, k) =>
                   k === 0 ? (
@@ -489,12 +489,14 @@ function makeStyles(theme) {
     photoStrip: { flexDirection: 'row', gap: 8, marginBottom: 12 },
     photoStripImg: { flex: 1, height: 74, objectFit: 'cover', borderRadius: 2 },
 
-    galleryGrid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 },
-    galleryBig: { width: '100%', marginBottom: 8 },
-    galleryBigImg: { width: '100%', height: 230, objectFit: 'cover' },
+    galleryTitle: { fontFamily: D, fontWeight: 600, fontSize: 22, color: P.ink, marginTop: 4, marginBottom: 6 },
+    galleryLead: { fontFamily: B, fontWeight: 300, fontStyle: 'italic', fontSize: 10, lineHeight: 1.4, color: P.text, marginBottom: 8 },
+    galleryGrid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 2 },
+    galleryBig: { width: '100%', marginBottom: 6 },
+    galleryBigImg: { width: '100%', height: 180, objectFit: 'cover' },
     gallerySmall: { width: '50%', padding: 4 },
-    gallerySmallImg: { width: '100%', height: 140, objectFit: 'cover' },
-    galleryCap: { fontFamily: B, fontWeight: 700, fontSize: 8.5, letterSpacing: 0.5, textTransform: 'uppercase', color: P.primary, marginTop: 4 },
+    gallerySmallImg: { width: '100%', height: 108, objectFit: 'cover' },
+    galleryCap: { fontFamily: B, fontWeight: 700, fontSize: 8, letterSpacing: 0.4, textTransform: 'uppercase', color: P.primary, marginTop: 3 },
 
     timeline: { position: 'relative' },
     timelineRail: { position: 'absolute', left: 53, top: 6, bottom: 6, width: 1.2, backgroundColor: P.line },
