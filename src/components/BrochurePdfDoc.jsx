@@ -355,104 +355,25 @@ export default function BrochurePdfDoc({ itinerary, photos = {} }) {
           activities.reduce((s, a) => s + (a.text?.length || 0) + (a.title?.length || 0), 0) +
           (d.culinary_specialties?.[0]?.description?.length || 0) +
           dTrips.length * 45;
-        const lvl = textLen > 1500 ? 3 : textLen > 1150 ? 2 : textLen > 800 ? 1 : 0;
-        const FZ = [9, 8.3, 7.6, 7][lvl]; // police descriptions
-        const LH = [1.4, 1.35, 1.3, 1.25][lvl];
-        const TFZ = [10.5, 10, 9.5, 9][lvl]; // titres des moments
-        const heroH = [150, 138, 126, 116][lvl];
-        const rowMb = [8, 6.5, 5, 4][lvl];
+        // La page programme n'a plus de photo → plus de place : police plus
+        // grande par défaut, on ne réduit que pour les journées très chargées.
+        const lvl = textLen > 2100 ? 3 : textLen > 1650 ? 2 : textLen > 1200 ? 1 : 0;
+        const FZ = [9.8, 9.2, 8.6, 8][lvl]; // police descriptions
+        const LH = [1.45, 1.4, 1.35, 1.3][lvl];
+        const TFZ = [11, 10.5, 10, 9.5][lvl]; // titres des moments
+        const rowMb = [10, 8, 6.5, 5][lvl];
         return (
           <React.Fragment key={i}>
-          <Page size="A4" style={st.dayPage}>
+          {/* PAGE 1 (gauche) : titre + photos */}
+          <Page size="A4" style={st.page}>
             <Watermark />
-            <View style={[st.dayHero, { height: heroH }]}>
-              {ph[0] && <Image src={ph[0]} style={st.dayHeroImg} />}
-              <FadeOverlay height={Math.round(heroH * 0.75)} color={P.ink} />
-              <View style={st.dayHeroTxt}>
-                <Eyebrow color={WHITE}>Jour {String(i + 1).padStart(2, '0')} · {d.location}</Eyebrow>
-              </View>
-            </View>
-            <View style={st.dayBody}>
-              <Text style={st.dayTitle}>{d.day_title || d.location}</Text>
-              {d.weather?.description ? <Text style={st.daySummary}>{clip(d.weather.description, 120)}</Text> : null}
-
-              <View style={st.timeline}>
-                <View style={st.timelineRail} />
-                {activities.map((a, k) => (
-                  <View key={k} style={[st.tlRow, { marginBottom: rowMb }]} wrap={false}>
-                    <Text style={st.tlTime}>{a.time}</Text>
-                    <View style={st.tlChip}><Icon type={a.type} color={P.primary} /></View>
-                    <View style={st.tlContent}>
-                      <Text style={[st.tlTitle, { fontSize: TFZ }]}>{a.title}</Text>
-                      {a.text ? <Text style={[st.tlText, { fontSize: FZ, lineHeight: LH }]}>{a.text}</Text> : null}
-                    </View>
-                  </View>
-                ))}
-              </View>
-
-              {(() => {
-                const trips = Array.isArray(d.trips) ? d.trips.filter((t) => t && (t.from || t.to)) : [];
-                if (!trips.length) return null;
-                return (
-                  <View style={st.tripsBox}>
-                    <Text style={st.stayK}>Trajets</Text>
-                    {trips.map((t, k) => {
-                      const meta = [
-                        t.distance_km ? `${t.distance_km} km` : null,
-                        t.duration || null,
-                        t.estimated_cost_eur ? eur(t.estimated_cost_eur) : null,
-                      ].filter(Boolean).join(' · ');
-                      return (
-                        <View key={k} style={st.tripLine}>
-                          <View style={st.tripDot} />
-                          <Text style={st.tripTxt}>
-                            <Text style={st.tripTxtStrong}>{t.from} → {t.to}</Text>
-                            {meta ? `   ${meta}` : ''}
-                          </Text>
-                        </View>
-                      );
-                    })}
-                  </View>
-                );
-              })()}
-
-              {d.accommodation?.name && (
-                <View style={st.stayRow}>
-                  <View style={st.stayIcon}><Icon type="hebergement" color={WHITE} /></View>
-                  <View>
-                    <Text style={st.stayK}>Nuit</Text>
-                    <Text style={st.stayV}>
-                      {d.accommodation.name}
-                      {d.accommodation.price_eur ? ` · ${eur(d.accommodation.price_eur)}` : ''}
-                    </Text>
-                  </View>
-                </View>
-              )}
-
-              {d.culinary_specialties?.[0]?.name && (
-                <View style={st.tipBox}>
-                  <Text style={st.tipLabel}>À goûter</Text>
-                  <Text style={st.tipTxt}>
-                    {clip(
-                      `${d.culinary_specialties[0].name}${d.culinary_specialties[0].description ? ` — ${d.culinary_specialties[0].description}` : ''}`,
-                      150
-                    )}
-                  </Text>
-                </View>
-              )}
-            </View>
-            <Footer />
-          </Page>
-
-          {/* Galerie photos de la journée */}
-          {gallery.length > 0 && (
-            <Page size="A4" style={st.page}>
-              <Watermark />
-              <TopBand />
-              <Eyebrow>Jour {String(i + 1).padStart(2, '0')} · {d.location}</Eyebrow>
-              <Text style={st.galleryTitle}>{clip(d.location, 40)} en images</Text>
-              {d.day_title ? <Text style={st.galleryLead}>{clip(d.day_title, 90)}</Text> : null}
-              <View style={st.galleryGrid}>
+            <Eyebrow>Jour {String(i + 1).padStart(2, '0')} · {d.location}</Eyebrow>
+            <Text style={st.dayTitle}>{d.day_title || d.location}</Text>
+            {d.weather?.description ? (
+              <Text style={st.daySummary}>{clip(d.weather.description, 160)}</Text>
+            ) : null}
+            {gallery.length > 0 && (
+              <View style={[st.galleryGrid, { marginTop: 10 }]}>
                 {gallery.slice(0, 5).map((u, k) =>
                   k === 0 ? (
                     <View key={k} style={st.galleryBig}>
@@ -467,9 +388,75 @@ export default function BrochurePdfDoc({ itinerary, photos = {} }) {
                   )
                 )}
               </View>
-              <Footer />
-            </Page>
-          )}
+            )}
+            <Footer />
+          </Page>
+
+          {/* PAGE 2 (droite) : programme complet, sans photo */}
+          <Page size="A4" style={st.page}>
+            <Watermark />
+            <Eyebrow>Jour {String(i + 1).padStart(2, '0')} · {d.location}</Eyebrow>
+            <Text style={st.dayTitle}>{d.day_title || d.location}</Text>
+
+            <View style={[st.timeline, { marginTop: 12 }]}>
+              <View style={st.timelineRail} />
+              {activities.map((a, k) => (
+                <View key={k} style={[st.tlRow, { marginBottom: rowMb }]} wrap={false}>
+                  <Text style={st.tlTime}>{a.time}</Text>
+                  <View style={st.tlChip}><Icon type={a.type} color={P.primary} /></View>
+                  <View style={st.tlContent}>
+                    <Text style={[st.tlTitle, { fontSize: TFZ }]}>{a.title}</Text>
+                    {a.text ? <Text style={[st.tlText, { fontSize: FZ, lineHeight: LH }]}>{a.text}</Text> : null}
+                  </View>
+                </View>
+              ))}
+            </View>
+
+            {dTrips.length > 0 && (
+              <View style={st.tripsBox}>
+                <Text style={st.stayK}>Trajets</Text>
+                {dTrips.map((t, k) => {
+                  const meta = [
+                    t.distance_km ? `${t.distance_km} km` : null,
+                    t.duration || null,
+                    t.estimated_cost_eur ? eur(t.estimated_cost_eur) : null,
+                  ].filter(Boolean).join(' · ');
+                  return (
+                    <View key={k} style={st.tripLine}>
+                      <View style={st.tripDot} />
+                      <Text style={st.tripTxt}>
+                        <Text style={st.tripTxtStrong}>{t.from} → {t.to}</Text>
+                        {meta ? `   ${meta}` : ''}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+
+            {d.accommodation?.name && (
+              <View style={st.stayRow}>
+                <View style={st.stayIcon}><Icon type="hebergement" color={WHITE} /></View>
+                <View>
+                  <Text style={st.stayK}>Nuit</Text>
+                  <Text style={st.stayV}>
+                    {d.accommodation.name}
+                    {d.accommodation.price_eur ? ` · ${eur(d.accommodation.price_eur)}` : ''}
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {d.culinary_specialties?.[0]?.name && (
+              <View style={st.tipBox}>
+                <Text style={st.tipLabel}>À goûter</Text>
+                <Text style={st.tipTxt}>
+                  {`${d.culinary_specialties[0].name}${d.culinary_specialties[0].description ? ` — ${d.culinary_specialties[0].description}` : ''}`}
+                </Text>
+              </View>
+            )}
+            <Footer />
+          </Page>
           </React.Fragment>
         );
       })}
