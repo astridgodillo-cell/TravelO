@@ -69,14 +69,35 @@ export default function CreateChatPage() {
     };
   }, [ttsSupported]);
 
+  // Choisit la meilleure voix française dispo (Google FR = plus naturelle).
+  function pickFrenchVoice() {
+    if (!ttsSupported) return null;
+    const vs = window.speechSynthesis.getVoices() || [];
+    const fr = vs.filter((v) => /fr(-|_)?/i.test(v.lang));
+    return (
+      fr.find((v) => /google/i.test(v.name)) ||
+      fr.find((v) => v.localService === false) ||
+      fr[0] ||
+      null
+    );
+  }
+
+  function utter(text) {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'fr-FR';
+    const v = pickFrenchVoice();
+    if (v) u.voice = v;
+    u.rate = 1.0;
+    u.pitch = 1.0;
+    return u;
+  }
+
   // Lit un texte à voix haute (si le haut-parleur est activé)
   function speakText(text) {
     if (!speak || !ttsSupported || !text) return;
     try {
       window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = 'fr-FR';
-      window.speechSynthesis.speak(u);
+      window.speechSynthesis.speak(utter(text));
     } catch (_) { /* ignore */ }
   }
 
@@ -85,9 +106,7 @@ export default function CreateChatPage() {
     if (!ttsSupported || !text) return;
     try {
       window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = 'fr-FR';
-      window.speechSynthesis.speak(u);
+      window.speechSynthesis.speak(utter(text));
     } catch (_) { /* ignore */ }
   }
 
