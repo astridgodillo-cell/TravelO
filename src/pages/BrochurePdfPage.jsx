@@ -49,12 +49,34 @@ export default function BrochurePdfPage() {
         const cover = imgUrl(coverList?.[0]);
         const overview = imgUrl(coverList?.[1]);
 
+        const PER_DAY = 6;
+        // Regroupe les jours par requête photo : si plusieurs jours partagent
+        // la même ville, on récupère un grand lot et on répartit des photos
+        // DIFFÉRENTES sur chaque jour (pas de doublons d'une page à l'autre).
+        const queryToDays = new Map();
+        days.forEach((d, i) => {
+          const q = dayPhotoQuery(d);
+          if (!queryToDays.has(q)) queryToDays.set(q, []);
+          queryToDays.get(q).push(i);
+        });
+
         const dayMap = {};
-        for (let i = 0; i < days.length; i++) {
+        let done = 0;
+        for (const [q, idxs] of queryToDays) {
           if (!active) return;
-          const list = await fetchPhotosFor(dayPhotoQuery(days[i]), 6, 'auto', 'destination');
-          dayMap[i] = (list || []).map(imgUrl).filter(Boolean);
-          setStatus(`Recherche des photos… ${Math.round(((i + 1) / days.length) * 100)}%`);
+          const need = idxs.length * PER_DAY;
+          const pool = (await fetchPhotosFor(q, Math.min(30, need + 4), 'auto', 'destination')) || [];
+          // URLs uniques
+          const urls = [...new Set(pool.map(imgUrl).filter(Boolean))];
+          idxs.forEach((di, k) => {
+            const out = [];
+            for (let j = 0; j < PER_DAY && urls.length; j++) {
+              out.push(urls[(k * PER_DAY + j) % urls.length]); // décalage par jour
+            }
+            dayMap[di] = out;
+            done += 1;
+            setStatus(`Recherche des photos… ${Math.round((done / days.length) * 100)}%`);
+          });
         }
         if (!active) return;
 
