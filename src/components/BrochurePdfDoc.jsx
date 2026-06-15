@@ -13,7 +13,7 @@
 import React from 'react';
 import {
   Document, Page, View, Text, Image, StyleSheet, Font,
-  Svg, Path, Circle, Rect, Line, Defs, LinearGradient, Stop,
+  Svg, Path, Circle, Rect, Line, Polygon, Defs, LinearGradient, Stop,
 } from '@react-pdf/renderer';
 
 const WHITE = '#FFFFFF';
@@ -45,18 +45,67 @@ Font.registerHyphenationCallback((w) => [w]);
 /* ----------------------------- THÈMES ----------------------------- */
 const THEMES = {
   mediterranee: {
+    key: 'mediterranee',
     palette: { ink: '#1C2B2D', primary: '#0F4C45', accent: '#C8A04B', paper: '#FAF6EF', text: '#4A4640', line: '#E4DCCD', panel: '#F3ECDD' },
     fonts: { display: 'Spectral', body: 'Lato' },
   },
   asie: {
+    key: 'asie',
     palette: { ink: '#1E2233', primary: '#27408B', accent: '#D7482F', paper: '#F7F1E6', text: '#4A4A52', line: '#E5DCCB', panel: '#F2E9DA' },
     fonts: { display: 'Spectral', body: 'Lato' },
   },
   nordique: {
+    key: 'nordique',
     palette: { ink: '#1E2A30', primary: '#2F4858', accent: '#5E8CA7', paper: '#F4F6F7', text: '#46535B', line: '#DCE3E6', panel: '#EAF0F3' },
     fonts: { display: 'Spectral', body: 'Lato' },
   },
 };
+
+// Motif décoratif vectoriel selon la destination (torii/sakura pour l'Asie,
+// soleil/oliveraie pour la Méditerranée, montagnes/flocons pour le Nord).
+function ThemeMotif({ themeKey, color = '#fff', size = 44, opacity = 0.9 }) {
+  if (themeKey === 'asie') {
+    return (
+      <Svg width={size} height={size} viewBox="0 0 48 48" style={{ opacity }}>
+        {/* Torii */}
+        <Rect x="7" y="13" width="34" height="4" fill={color} />
+        <Rect x="11" y="20" width="26" height="3" fill={color} />
+        <Rect x="14" y="17" width="4" height="24" fill={color} />
+        <Rect x="30" y="17" width="4" height="24" fill={color} />
+        {/* Pétales de cerisier */}
+        <Circle cx="6" cy="7" r="2.2" fill={color} />
+        <Circle cx="24" cy="5" r="2.2" fill={color} />
+        <Circle cx="42" cy="9" r="2.2" fill={color} />
+      </Svg>
+    );
+  }
+  if (themeKey === 'nordique') {
+    return (
+      <Svg width={size} height={size} viewBox="0 0 48 48" style={{ opacity }}>
+        <Polygon points="2,42 15,18 28,42" fill={color} />
+        <Polygon points="20,42 33,12 46,42" fill={color} />
+        <Line x1="40" y1="5" x2="40" y2="15" stroke={color} strokeWidth="1.6" />
+        <Line x1="35" y1="10" x2="45" y2="10" stroke={color} strokeWidth="1.6" />
+        <Line x1="36.5" y1="6.5" x2="43.5" y2="13.5" stroke={color} strokeWidth="1.6" />
+        <Line x1="43.5" y1="6.5" x2="36.5" y2="13.5" stroke={color} strokeWidth="1.6" />
+      </Svg>
+    );
+  }
+  // Méditerranée : soleil
+  return (
+    <Svg width={size} height={size} viewBox="0 0 48 48" style={{ opacity }}>
+      <Circle cx="24" cy="24" r="8" fill={color} />
+      <Line x1="24" y1="4" x2="24" y2="11" stroke={color} strokeWidth="2" />
+      <Line x1="24" y1="37" x2="24" y2="44" stroke={color} strokeWidth="2" />
+      <Line x1="4" y1="24" x2="11" y2="24" stroke={color} strokeWidth="2" />
+      <Line x1="37" y1="24" x2="44" y2="24" stroke={color} strokeWidth="2" />
+      <Line x1="10" y1="10" x2="15" y2="15" stroke={color} strokeWidth="2" />
+      <Line x1="33" y1="33" x2="38" y2="38" stroke={color} strokeWidth="2" />
+      <Line x1="38" y1="10" x2="33" y2="15" stroke={color} strokeWidth="2" />
+      <Line x1="15" y1="33" x2="10" y2="38" stroke={color} strokeWidth="2" />
+    </Svg>
+  );
+}
 const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 export function resolveTheme(itinerary) {
   const key = itinerary?.themeKey || itinerary?.summary?.themeKey;
@@ -175,6 +224,9 @@ export default function BrochurePdfDoc({ itinerary, photos = {} }) {
             <Text style={st.coverBrand}>TravelO</Text>
             <View style={st.coverBrandLine} />
             <Text style={st.coverTagline}>Voyages sur mesure</Text>
+            <View style={{ marginTop: 14 }}>
+              <ThemeMotif themeKey={theme.key} color={WHITE} size={46} opacity={0.85} />
+            </View>
           </View>
           <View>
             <Eyebrow>Votre itinéraire sur mesure</Eyebrow>
@@ -251,7 +303,7 @@ export default function BrochurePdfDoc({ itinerary, photos = {} }) {
           .map(([k, label, type]) => {
             const m = d[k];
             if (!m || (!m.title && !m.description)) return null;
-            return { time: label, type, title: clip(m.title || label, 70), text: clip(m.description || '', 210) };
+            return { time: label, type, title: clip(m.title || label, 64), text: clip(m.description || '', 165) };
           })
           .filter(Boolean);
         const gallery = ph.length > 1 ? ph.slice(1) : ph;
@@ -286,23 +338,31 @@ export default function BrochurePdfDoc({ itinerary, photos = {} }) {
                 ))}
               </View>
 
-              {Array.isArray(d.trips) && d.trips.filter((t) => t && (t.from || t.to)).map((t, k) => (
-                <View key={k} style={st.stayRow}>
-                  <View style={st.tripIcon}><Icon type="transport" color={WHITE} /></View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={st.stayK}>Trajet</Text>
-                    <Text style={st.stayV}>{t.from} → {t.to}</Text>
-                    {(() => {
+              {(() => {
+                const trips = Array.isArray(d.trips) ? d.trips.filter((t) => t && (t.from || t.to)) : [];
+                if (!trips.length) return null;
+                return (
+                  <View style={st.tripsBox}>
+                    <Text style={st.stayK}>Trajets</Text>
+                    {trips.map((t, k) => {
                       const meta = [
                         t.distance_km ? `${t.distance_km} km` : null,
                         t.duration || null,
                         t.estimated_cost_eur ? eur(t.estimated_cost_eur) : null,
-                      ].filter(Boolean).join('   ·   ');
-                      return meta ? <Text style={st.tripMeta}>{meta}</Text> : null;
-                    })()}
+                      ].filter(Boolean).join(' · ');
+                      return (
+                        <View key={k} style={st.tripLine}>
+                          <View style={st.tripDot} />
+                          <Text style={st.tripTxt}>
+                            <Text style={st.tripTxtStrong}>{t.from} → {t.to}</Text>
+                            {meta ? `   ${meta}` : ''}
+                          </Text>
+                        </View>
+                      );
+                    })}
                   </View>
-                </View>
-              ))}
+                );
+              })()}
 
               {d.accommodation?.name && (
                 <View style={st.stayRow}>
@@ -480,7 +540,7 @@ function makeStyles(theme) {
     metaCardV: { fontFamily: D, fontWeight: 500, fontSize: 11, color: P.ink },
 
     dayPage: { backgroundColor: P.paper, fontFamily: B, color: P.text, paddingBottom: 60 },
-    dayHero: { position: 'relative', height: 165 },
+    dayHero: { position: 'relative', height: 150 },
     dayHeroImg: { width: '100%', height: '100%', objectFit: 'cover' },
     dayHeroTxt: { position: 'absolute', bottom: 16, left: 50 },
     dayBody: { paddingHorizontal: 50, paddingTop: 14 },
@@ -500,7 +560,7 @@ function makeStyles(theme) {
 
     timeline: { position: 'relative' },
     timelineRail: { position: 'absolute', left: 53, top: 6, bottom: 6, width: 1.2, backgroundColor: P.line },
-    tlRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 },
+    tlRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 8 },
     tlTime: { width: 50, fontFamily: B, fontWeight: 700, fontSize: 8.5, color: P.primary, textAlign: 'right', marginTop: 5, textTransform: 'uppercase' },
     tlChip: { width: 24, height: 24, borderRadius: 12, backgroundColor: WHITE, borderWidth: 1.2, borderColor: P.accent, alignItems: 'center', justifyContent: 'center', marginLeft: 7, marginRight: 14 },
     tlContent: { flex: 1, paddingTop: 1 },
@@ -509,8 +569,11 @@ function makeStyles(theme) {
 
     stayRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6, marginBottom: 10 },
     stayIcon: { width: 28, height: 28, borderRadius: 14, backgroundColor: P.primary, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-    tripIcon: { width: 28, height: 28, borderRadius: 14, backgroundColor: P.accent, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-    tripMeta: { fontFamily: B, fontWeight: 700, fontSize: 9.5, color: P.primary, marginTop: 1 },
+    tripsBox: { marginTop: 6, marginBottom: 10 },
+    tripLine: { flexDirection: 'row', alignItems: 'center', marginTop: 3 },
+    tripDot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: P.accent, marginRight: 7 },
+    tripTxt: { flex: 1, fontFamily: B, fontWeight: 400, fontSize: 9, color: P.text },
+    tripTxtStrong: { fontFamily: B, fontWeight: 700, color: P.ink },
     stayK: { fontFamily: B, fontWeight: 700, fontSize: 7.5, letterSpacing: 1.5, textTransform: 'uppercase', color: P.primary },
     stayV: { fontFamily: D, fontWeight: 500, fontSize: 11.5, color: P.ink },
 
