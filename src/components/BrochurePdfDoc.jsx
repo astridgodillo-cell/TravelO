@@ -124,6 +124,13 @@ const eur = (n) => {
   return `${Math.round(Number(n)).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} €`;
 };
 
+// Raccourcit un texte trop long (pour qu'une journée tienne sur une page).
+const clip = (s, n) => {
+  if (!s) return '';
+  const t = String(s).trim();
+  return t.length > n ? `${t.slice(0, n - 1).trim()}…` : t;
+};
+
 /* ============================== DOCUMENT =========================== */
 export default function BrochurePdfDoc({ itinerary, photos = {} }) {
   const s = itinerary?.summary || {};
@@ -244,7 +251,7 @@ export default function BrochurePdfDoc({ itinerary, photos = {} }) {
           .map(([k, label, type]) => {
             const m = d[k];
             if (!m || (!m.title && !m.description)) return null;
-            return { time: label, type, title: m.title || label, text: m.description || '' };
+            return { time: label, type, title: clip(m.title || label, 70), text: clip(m.description || '', 210) };
           })
           .filter(Boolean);
         return (
@@ -258,7 +265,7 @@ export default function BrochurePdfDoc({ itinerary, photos = {} }) {
             </View>
             <View style={st.dayBody}>
               <Text style={st.dayTitle}>{d.day_title || d.location}</Text>
-              {d.weather?.description ? <Text style={st.daySummary}>{d.weather.description}</Text> : null}
+              {d.weather?.description ? <Text style={st.daySummary}>{clip(d.weather.description, 120)}</Text> : null}
 
               {ph.length > 1 && (
                 <View style={st.photoStrip}>
@@ -317,8 +324,10 @@ export default function BrochurePdfDoc({ itinerary, photos = {} }) {
                 <View style={st.tipBox}>
                   <Text style={st.tipLabel}>À goûter</Text>
                   <Text style={st.tipTxt}>
-                    {d.culinary_specialties[0].name}
-                    {d.culinary_specialties[0].description ? ` — ${d.culinary_specialties[0].description}` : ''}
+                    {clip(
+                      `${d.culinary_specialties[0].name}${d.culinary_specialties[0].description ? ` — ${d.culinary_specialties[0].description}` : ''}`,
+                      150
+                    )}
                   </Text>
                 </View>
               )}
@@ -448,32 +457,32 @@ function makeStyles(theme) {
     metaCardV: { fontFamily: D, fontWeight: 500, fontSize: 11, color: P.ink },
 
     dayPage: { backgroundColor: P.paper, fontFamily: B, color: P.text, paddingBottom: 60 },
-    dayHero: { position: 'relative', height: 210 },
+    dayHero: { position: 'relative', height: 165 },
     dayHeroImg: { width: '100%', height: '100%', objectFit: 'cover' },
     dayHeroTxt: { position: 'absolute', bottom: 16, left: 50 },
-    dayBody: { paddingHorizontal: 50, paddingTop: 20 },
-    dayTitle: { fontFamily: D, fontWeight: 600, fontSize: 24, color: P.ink, lineHeight: 1.1 },
-    daySummary: { fontFamily: B, fontWeight: 300, fontStyle: 'italic', fontSize: 10.5, lineHeight: 1.5, color: P.text, marginTop: 6, marginBottom: 14 },
-    photoStrip: { flexDirection: 'row', gap: 8, marginBottom: 16 },
-    photoStripImg: { flex: 1, height: 90, objectFit: 'cover', borderRadius: 2 },
+    dayBody: { paddingHorizontal: 50, paddingTop: 14 },
+    dayTitle: { fontFamily: D, fontWeight: 600, fontSize: 21, color: P.ink, lineHeight: 1.1 },
+    daySummary: { fontFamily: B, fontWeight: 300, fontStyle: 'italic', fontSize: 10, lineHeight: 1.45, color: P.text, marginTop: 5, marginBottom: 10 },
+    photoStrip: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+    photoStripImg: { flex: 1, height: 74, objectFit: 'cover', borderRadius: 2 },
 
     timeline: { position: 'relative' },
     timelineRail: { position: 'absolute', left: 53, top: 6, bottom: 6, width: 1.2, backgroundColor: P.line },
-    tlRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 14 },
+    tlRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 },
     tlTime: { width: 50, fontFamily: B, fontWeight: 700, fontSize: 8.5, color: P.primary, textAlign: 'right', marginTop: 5, textTransform: 'uppercase' },
     tlChip: { width: 24, height: 24, borderRadius: 12, backgroundColor: WHITE, borderWidth: 1.2, borderColor: P.accent, alignItems: 'center', justifyContent: 'center', marginLeft: 7, marginRight: 14 },
     tlContent: { flex: 1, paddingTop: 1 },
     tlTitle: { fontFamily: B, fontWeight: 700, fontSize: 10.5, color: P.ink, marginBottom: 2 },
-    tlText: { fontFamily: B, fontWeight: 300, fontSize: 9.5, lineHeight: 1.5, color: P.text },
+    tlText: { fontFamily: B, fontWeight: 300, fontSize: 9, lineHeight: 1.4, color: P.text },
 
-    stayRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8, marginBottom: 14 },
+    stayRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6, marginBottom: 10 },
     stayIcon: { width: 28, height: 28, borderRadius: 14, backgroundColor: P.primary, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
     tripIcon: { width: 28, height: 28, borderRadius: 14, backgroundColor: P.accent, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
     tripMeta: { fontFamily: B, fontWeight: 700, fontSize: 9.5, color: P.primary, marginTop: 1 },
     stayK: { fontFamily: B, fontWeight: 700, fontSize: 7.5, letterSpacing: 1.5, textTransform: 'uppercase', color: P.primary },
     stayV: { fontFamily: D, fontWeight: 500, fontSize: 11.5, color: P.ink },
 
-    tipBox: { backgroundColor: P.panel, borderLeftWidth: 3, borderLeftColor: P.accent, paddingVertical: 12, paddingHorizontal: 16 },
+    tipBox: { backgroundColor: P.panel, borderLeftWidth: 3, borderLeftColor: P.accent, paddingVertical: 10, paddingHorizontal: 14 },
     tipLabel: { fontFamily: B, fontWeight: 700, fontSize: 8, letterSpacing: 1.5, textTransform: 'uppercase', color: P.accent, marginBottom: 4 },
     tipTxt: { fontFamily: B, fontWeight: 400, fontStyle: 'italic', fontSize: 10, lineHeight: 1.5, color: P.ink },
 

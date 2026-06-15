@@ -9,6 +9,18 @@ import BrochurePdfDoc, { resolveTheme } from '../components/BrochurePdfDoc';
 const imgUrl = (p) =>
   p?.src?.large || p?.src?.medium || p?.src?.small || p?.url || '';
 
+// Mot-clé photo le plus pertinent pour la journée :
+//  - le photo_query du jour s'il existe (fourni par le générateur),
+//  - sinon la VILLE (entre parenthèses pour "Legoland (Günzburg)" → Günzburg,
+//    sinon la 1re partie avant un tiret/virgule).
+function dayPhotoQuery(d) {
+  if (d?.photo_query) return d.photo_query;
+  const loc = String(d?.location || '');
+  const paren = loc.match(/\(([^)]+)\)/);
+  if (paren) return paren[1].trim();
+  return loc.split(/[–—,/]| - /)[0].trim() || loc;
+}
+
 // Page de génération de la brochure PDF « agence » (style tour-opérateur).
 // Route : /itineraire/:id/brochure-pdf
 export default function BrochurePdfPage() {
@@ -40,7 +52,7 @@ export default function BrochurePdfPage() {
         const dayMap = {};
         for (let i = 0; i < days.length; i++) {
           if (!active) return;
-          const list = await fetchPhotosFor(days[i].location, 3, 'auto', 'destination');
+          const list = await fetchPhotosFor(dayPhotoQuery(days[i]), 3, 'auto', 'destination');
           dayMap[i] = (list || []).map(imgUrl).filter(Boolean);
           setStatus(`Recherche des photos… ${Math.round(((i + 1) / days.length) * 100)}%`);
         }
