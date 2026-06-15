@@ -4039,9 +4039,13 @@ RÈGLES : réalisme et faisabilité (pas trop d'étapes, rythme tenable, environ
       const transcript = messages
         .map((m) => `${m.role === 'assistant' ? 'CONSEILLER' : 'VOYAGEUR'} : ${String(m.content || '').trim()}`)
         .join('\n\n');
-      const prompt = `${TRAVEL_CHAT_SYSTEM}\n\n=== CONVERSATION JUSQU'ICI ===\n${transcript}\n\nÉcris UNIQUEMENT la prochaine réponse du CONSEILLER (sans préfixe, sans guillemets).`;
+      // Le moteur force une sortie JSON (response_format json) : on demande
+      // donc la réponse dans un objet JSON {"reply": "..."} puis on l'extrait.
+      const prompt = `${TRAVEL_CHAT_SYSTEM}\n\n=== CONVERSATION JUSQU'ICI ===\n${transcript}\n\nRéponds en JSON STRICT, sans rien d'autre, sous la forme : {"reply": "<la prochaine réponse du conseiller, en français, chaleureuse et concise>"}`;
       const { text, usage, modelUsed } = await callMain(prompt, 1200);
-      return jsonResponse({ reply: (text || '').trim(), usage, model: modelUsed });
+      const parsed = await parseOrRepair(text, callMainSafe);
+      const reply = (parsed?.reply || text || '').toString().trim();
+      return jsonResponse({ reply, usage, model: modelUsed });
     }
 
     if (mode === 'parse-brief') {
