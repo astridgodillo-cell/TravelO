@@ -4,6 +4,7 @@ import { pdf } from '@react-pdf/renderer';
 import { getItinerary } from '../lib/supabase';
 import { fetchPhotosFor } from '../lib/photos';
 import { renderRouteMapImage } from '../lib/staticMapImage';
+import { recomputeBudgetFromDays } from '../lib/itineraryEdits';
 import BrochurePdfDoc, { resolveTheme } from '../components/BrochurePdfDoc';
 
 const imgUrl = (p) =>
@@ -93,8 +94,11 @@ export default function BrochurePdfPage() {
         if (!active) return;
 
         setStatus('Création du PDF…');
+        // Budget recalculé comme dans la page du voyage (inclut la location de
+        // voiture, etc.) → même total partout.
+        const itForPdf = { ...it, budget_summary: recomputeBudgetFromDays(it) };
         const blob = await pdf(
-          <BrochurePdfDoc itinerary={it} photos={{ cover, overview, days: dayMap, routeMap }} />
+          <BrochurePdfDoc itinerary={itForPdf} photos={{ cover, overview, days: dayMap, routeMap }} />
         ).toBlob();
         if (!active) return;
 

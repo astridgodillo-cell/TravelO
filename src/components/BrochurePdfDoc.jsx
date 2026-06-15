@@ -473,12 +473,11 @@ export default function BrochurePdfDoc({ itinerary, photos = {} }) {
             <Text style={st.h3}>Budget prévisionnel</Text>
             {[
               ['Transports', budget.trips_eur],
-              ['Carburant', budget.fuel_eur],
-              ['Péages', budget.tolls_eur],
-              ['Ferries', budget.ferries_eur],
+              ['Location de voiture', budget.car_rental_eur],
               ['Hébergement', budget.accommodation_eur],
               ['Repas', budget.meals_eur],
               ['Activités / excursions', budget.activities_eur],
+              ['Services', budget.service_stops_eur],
             ]
               .filter(([, v]) => v != null && Number(v) !== 0)
               .map(([k, v], i) => (
