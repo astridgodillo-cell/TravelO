@@ -13,7 +13,7 @@
 import React from 'react';
 import {
   Document, Page, View, Text, Image, StyleSheet, Font,
-  Svg, Path, Circle, Rect, Line, Polygon, Defs, LinearGradient, Stop,
+  Svg, Path, Circle, Rect, Line, Polygon, Polyline, Defs, LinearGradient, Stop,
 } from '@react-pdf/renderer';
 
 const WHITE = '#FFFFFF';
@@ -60,6 +60,38 @@ const THEMES = {
     fonts: { display: 'Spectral', body: 'Lato' },
   },
 };
+
+// Bandeau décoratif horizontal (motif répété) selon la destination :
+// seigaiha (vagues) pour l'Asie, méandre grec pour la Méditerranée,
+// montagnes pour le Nord.
+function PatternBand({ themeKey, color, width = 495, height = 16, opacity = 1 }) {
+  const els = [];
+  if (themeKey === 'asie') {
+    const u = 16;
+    for (let x = 0; x <= width; x += u) {
+      els.push(<Path key={`a${x}`} d={`M ${x} ${height} A ${u / 2} ${u / 2} 0 0 1 ${x + u} ${height}`} stroke={color} strokeWidth="1.1" fill="none" />);
+      els.push(<Path key={`b${x}`} d={`M ${x + 3} ${height} A ${u / 2 - 3} ${u / 2 - 3} 0 0 1 ${x + u - 3} ${height}`} stroke={color} strokeWidth="0.9" fill="none" />);
+    }
+  } else if (themeKey === 'nordique') {
+    const u = 18;
+    for (let x = 0; x <= width; x += u) {
+      els.push(<Polygon key={`t${x}`} points={`${x},${height} ${x + u / 2},2 ${x + u},${height}`} fill="none" stroke={color} strokeWidth="1.1" />);
+    }
+  } else {
+    // Méditerranée : méandre grec simplifié (ligne en créneaux)
+    const u = 22;
+    const pts = [];
+    for (let x = 0; x <= width; x += u) {
+      pts.push(`${x},${height - 1}`, `${x},3`, `${(x + u * 0.6).toFixed(1)},3`, `${(x + u * 0.6).toFixed(1)},${height - 1}`);
+    }
+    els.push(<Polyline key="m" points={pts.join(' ')} fill="none" stroke={color} strokeWidth="1.1" />);
+  }
+  return (
+    <Svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{ opacity }}>
+      {els}
+    </Svg>
+  );
+}
 
 // Motif décoratif vectoriel selon la destination (torii/sakura pour l'Asie,
 // soleil/oliveraie pour la Méditerranée, montagnes/flocons pour le Nord).
@@ -211,6 +243,18 @@ export default function BrochurePdfDoc({ itinerary, photos = {} }) {
     </View>
   );
 
+  // Bandeau décoratif en haut de page + filigrane léger (motif du pays).
+  const TopBand = () => (
+    <View style={{ marginBottom: 12 }}>
+      <PatternBand themeKey={theme.key} color={P.accent} width={495} height={16} opacity={0.7} />
+    </View>
+  );
+  const Watermark = () => (
+    <View style={{ position: 'absolute', top: 300, left: 150, opacity: 0.05 }}>
+      <ThemeMotif themeKey={theme.key} color={P.primary} size={260} opacity={1} />
+    </View>
+  );
+
   return (
     <Document title={`${s.destinations || 'Voyage'} — TravelO`} author="TravelO">
       {/* 1. COUVERTURE */}
@@ -241,12 +285,17 @@ export default function BrochurePdfDoc({ itinerary, photos = {} }) {
                 </View>
               ))}
             </View>
+            <View style={{ marginTop: 16 }}>
+              <PatternBand themeKey={theme.key} color={WHITE} width={300} height={14} opacity={0.7} />
+            </View>
           </View>
         </View>
       </Page>
 
       {/* 2. EN UN COUP D'ŒIL */}
       <Page size="A4" style={st.page}>
+        <Watermark />
+        <TopBand />
         <Eyebrow>Présentation</Eyebrow>
         <Text style={st.h1}>En un coup d'œil</Text>
         {s.headline ? <Text style={st.lead}>{s.headline}</Text> : null}
@@ -280,6 +329,8 @@ export default function BrochurePdfDoc({ itinerary, photos = {} }) {
       {/* 2bis. VOTRE ITINÉRAIRE (carte du parcours) */}
       {photos.routeMap && (
         <Page size="A4" style={st.page}>
+          <Watermark />
+          <TopBand />
           <Eyebrow>Itinéraire</Eyebrow>
           <Text style={st.h1}>Votre parcours</Text>
           <Text style={st.lead}>Le tracé complet de votre voyage, étape par étape.</Text>
@@ -313,6 +364,7 @@ export default function BrochurePdfDoc({ itinerary, photos = {} }) {
         return (
           <React.Fragment key={i}>
           <Page size="A4" style={st.dayPage}>
+            <Watermark />
             <View style={st.dayHero}>
               {ph[0] && <Image src={ph[0]} style={st.dayHeroImg} />}
               <FadeOverlay height={180} color={P.ink} />
@@ -395,6 +447,8 @@ export default function BrochurePdfDoc({ itinerary, photos = {} }) {
           {/* Galerie photos de la journée */}
           {gallery.length > 0 && (
             <Page size="A4" style={st.page}>
+              <Watermark />
+              <TopBand />
               <Eyebrow>Jour {String(i + 1).padStart(2, '0')} · {d.location}</Eyebrow>
               <Text style={st.galleryTitle}>{clip(d.location, 40)} en images</Text>
               {d.day_title ? <Text style={st.galleryLead}>{clip(d.day_title, 90)}</Text> : null}
@@ -422,6 +476,8 @@ export default function BrochurePdfDoc({ itinerary, photos = {} }) {
 
       {/* 4. INFOS PRATIQUES */}
       <Page size="A4" style={st.page}>
+        <Watermark />
+        <TopBand />
         <Eyebrow>Pour finir</Eyebrow>
         <Text style={st.h1}>Informations pratiques</Text>
 
