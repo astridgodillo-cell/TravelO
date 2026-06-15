@@ -254,8 +254,13 @@ export default function BrochurePdfDoc({ itinerary, photos = {} }) {
             return { time: label, type, title: clip(m.title || label, 70), text: clip(m.description || '', 210) };
           })
           .filter(Boolean);
+        const gallery = ph.length > 1 ? ph.slice(1) : ph;
+        const captions = [d.morning?.title, d.afternoon?.title, d.noon?.title, d.evening?.title, d.culinary_specialties?.[0]?.name]
+          .map((x) => clip(x, 42))
+          .filter(Boolean);
         return (
-          <Page key={i} size="A4" style={st.dayPage}>
+          <React.Fragment key={i}>
+          <Page size="A4" style={st.dayPage}>
             <View style={st.dayHero}>
               {ph[0] && <Image src={ph[0]} style={st.dayHeroImg} />}
               <FadeOverlay height={180} color={P.ink} />
@@ -266,14 +271,6 @@ export default function BrochurePdfDoc({ itinerary, photos = {} }) {
             <View style={st.dayBody}>
               <Text style={st.dayTitle}>{d.day_title || d.location}</Text>
               {d.weather?.description ? <Text style={st.daySummary}>{clip(d.weather.description, 120)}</Text> : null}
-
-              {ph.length > 1 && (
-                <View style={st.photoStrip}>
-                  {ph.slice(1, 3).map((u, k) => (
-                    <Image key={k} src={u} style={st.photoStripImg} />
-                  ))}
-                </View>
-              )}
 
               <View style={st.timeline}>
                 <View style={st.timelineRail} />
@@ -334,6 +331,32 @@ export default function BrochurePdfDoc({ itinerary, photos = {} }) {
             </View>
             <Footer />
           </Page>
+
+          {/* Galerie photos de la journée */}
+          {gallery.length > 0 && (
+            <Page size="A4" style={st.page}>
+              <Eyebrow>Jour {String(i + 1).padStart(2, '0')} · {d.location}</Eyebrow>
+              <Text style={st.h1}>{d.location} en images</Text>
+              {d.day_title ? <Text style={st.lead}>{d.day_title}</Text> : null}
+              <View style={st.galleryGrid}>
+                {gallery.slice(0, 5).map((u, k) =>
+                  k === 0 ? (
+                    <View key={k} style={st.galleryBig}>
+                      <Image src={u} style={st.galleryBigImg} />
+                      {captions[0] ? <Text style={st.galleryCap}>{captions[0]}</Text> : null}
+                    </View>
+                  ) : (
+                    <View key={k} style={st.gallerySmall}>
+                      <Image src={u} style={st.gallerySmallImg} />
+                      {captions[k] ? <Text style={st.galleryCap}>{captions[k]}</Text> : null}
+                    </View>
+                  )
+                )}
+              </View>
+              <Footer />
+            </Page>
+          )}
+          </React.Fragment>
         );
       })}
 
@@ -465,6 +488,13 @@ function makeStyles(theme) {
     daySummary: { fontFamily: B, fontWeight: 300, fontStyle: 'italic', fontSize: 10, lineHeight: 1.45, color: P.text, marginTop: 5, marginBottom: 10 },
     photoStrip: { flexDirection: 'row', gap: 8, marginBottom: 12 },
     photoStripImg: { flex: 1, height: 74, objectFit: 'cover', borderRadius: 2 },
+
+    galleryGrid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 },
+    galleryBig: { width: '100%', marginBottom: 8 },
+    galleryBigImg: { width: '100%', height: 230, objectFit: 'cover' },
+    gallerySmall: { width: '50%', padding: 4 },
+    gallerySmallImg: { width: '100%', height: 140, objectFit: 'cover' },
+    galleryCap: { fontFamily: B, fontWeight: 700, fontSize: 8.5, letterSpacing: 0.5, textTransform: 'uppercase', color: P.primary, marginTop: 4 },
 
     timeline: { position: 'relative' },
     timelineRail: { position: 'absolute', left: 53, top: 6, bottom: 6, width: 1.2, backgroundColor: P.line },

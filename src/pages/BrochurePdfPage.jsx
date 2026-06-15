@@ -52,7 +52,7 @@ export default function BrochurePdfPage() {
         const dayMap = {};
         for (let i = 0; i < days.length; i++) {
           if (!active) return;
-          const list = await fetchPhotosFor(dayPhotoQuery(days[i]), 3, 'auto', 'destination');
+          const list = await fetchPhotosFor(dayPhotoQuery(days[i]), 6, 'auto', 'destination');
           dayMap[i] = (list || []).map(imgUrl).filter(Boolean);
           setStatus(`Recherche des photos… ${Math.round(((i + 1) / days.length) * 100)}%`);
         }
