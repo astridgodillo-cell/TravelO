@@ -80,6 +80,17 @@ export default function CreateChatPage() {
     } catch (_) { /* ignore */ }
   }
 
+  // Lit un texte à la demande (clic sur « Écouter »), même si l'auto-lecture est coupée.
+  function speakNow(text) {
+    if (!ttsSupported || !text) return;
+    try {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'fr-FR';
+      window.speechSynthesis.speak(u);
+    } catch (_) { /* ignore */ }
+  }
+
   function toggleSpeak() {
     const v = !speak;
     setSpeak(v);
@@ -241,7 +252,7 @@ export default function CreateChatPage() {
 
       <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto rounded-xl border border-slate-200 bg-white p-4">
         {messages.map((m, i) => (
-          <div key={i} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
+          <div key={i} className={m.role === 'user' ? 'flex flex-col items-end' : 'flex flex-col items-start'}>
             <div
               className={
                 m.role === 'user'
@@ -251,6 +262,14 @@ export default function CreateChatPage() {
             >
               {m.content}
             </div>
+            {m.role === 'assistant' && ttsSupported && (
+              <button
+                onClick={() => speakNow(m.content)}
+                className="mt-1 text-xs text-slate-400 hover:text-brand-700"
+              >
+                🔊 Écouter
+              </button>
+            )}
           </div>
         ))}
         {sending && (
