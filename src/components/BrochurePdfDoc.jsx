@@ -251,9 +251,9 @@ export default function BrochurePdfDoc({ itinerary, photos = {} }) {
           <Page key={i} size="A4" style={st.dayPage}>
             <View style={st.dayHero}>
               {ph[0] && <Image src={ph[0]} style={st.dayHeroImg} />}
-              <FadeOverlay height={150} color={P.ink} />
+              <FadeOverlay height={180} color={P.ink} />
               <View style={st.dayHeroTxt}>
-                <Eyebrow>Jour {String(i + 1).padStart(2, '0')} · {d.location}</Eyebrow>
+                <Eyebrow color={WHITE}>Jour {String(i + 1).padStart(2, '0')} · {d.location}</Eyebrow>
               </View>
             </View>
             <View style={st.dayBody}>
