@@ -47,7 +47,7 @@ export default function PublicItineraryPage() {
         </div>
         <div className="mt-1">
           Vous consultez un voyage <strong>partagé publiquement</strong>.{' '}
-          <Link to="/nouveau" className="underline">
+          <Link to="/creer" className="underline">
             Créez le vôtre
           </Link>
           .

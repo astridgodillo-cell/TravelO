@@ -177,7 +177,7 @@ function Hero({ user, isApproved, loading }) {
     );
   } else {
     primaryCta = (
-      <Link to="/nouveau" className="btn-hero">
+      <Link to="/creer" className="btn-hero">
         Créer mon itinéraire
       </Link>
     );
@@ -500,7 +500,7 @@ function CarRental() {
 function FinalCTA({ user, isApproved }) {
   const cta =
     user && isApproved ? (
-      <Link to="/nouveau" className="btn-hero">
+      <Link to="/creer" className="btn-hero">
         Créer mon itinéraire
       </Link>
     ) : !user ? (

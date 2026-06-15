@@ -194,6 +194,13 @@ export async function parseBrief(text) {
   return data.preferences;
 }
 
+// Conversation avec le conseiller voyage (chat). `messages` = [{role, content}].
+// Renvoie la prochaine réponse de l'assistant.
+export async function travelChat(messages) {
+  const data = await invoke({ mode: 'travel-chat', messages });
+  return data?.reply || '';
+}
+
 export async function generateItinerary(preferences, onProgress) {
   const days = computeDurationDays(preferences.startDate, preferences.endDate);
   let meta = emptyMeta();

@@ -4021,6 +4021,29 @@ Si tu ne reconnais PAS un hôtel dans l'image (capture floue, page d'erreur, pho
       }
     }
 
+    if (mode === 'travel-chat') {
+      const messages = Array.isArray(body.messages) ? body.messages : [];
+      if (!messages.length) {
+        return jsonResponse({ error: 'Message vide.' }, 400);
+      }
+      const TRAVEL_CHAT_SYSTEM = `Tu es l'expert voyage de TravelO, un conseiller de voyage francophone, chaleureux et passionné. Tu discutes avec le voyageur pour concevoir SON voyage sur mesure, comme un vrai agent de voyage.
+
+DÉROULÉ :
+- Pose tes questions UNE À LA FOIS, naturellement, pour cerner l'essentiel : destination(s) et point de départ, dates ou durée, nombre de voyageurs (adultes/enfants), type de voyage (road trip, avion + voiture, train, croisière…), centres d'intérêt, niveau de budget, contraintes éventuelles.
+- Dès que tu as l'essentiel, PROPOSE un itinéraire jour par jour en texte clair et appétissant (style magazine de voyage), puis demande ce qu'il faut ajuster.
+- Affine au fil de la discussion jusqu'à ce que le voyageur soit satisfait.
+- Reste concis, chaleureux, en français, sans jargon. Une seule question à la fois.
+- Tu ne produis PAS de JSON ici : tu discutes. La mise en forme finale se fera quand le voyageur cliquera sur « Créer le voyage ».
+
+RÈGLES : réalisme et faisabilité (pas trop d'étapes, rythme tenable, environ 6 h de route maximum par jour), cohérence géographique (pas de zigzag), prix en euros réalistes (estimations à vérifier). Messages courts.`;
+      const transcript = messages
+        .map((m) => `${m.role === 'assistant' ? 'CONSEILLER' : 'VOYAGEUR'} : ${String(m.content || '').trim()}`)
+        .join('\n\n');
+      const prompt = `${TRAVEL_CHAT_SYSTEM}\n\n=== CONVERSATION JUSQU'ICI ===\n${transcript}\n\nÉcris UNIQUEMENT la prochaine réponse du CONSEILLER (sans préfixe, sans guillemets).`;
+      const { text, usage, modelUsed } = await callMain(prompt, 1200);
+      return jsonResponse({ reply: (text || '').trim(), usage, model: modelUsed });
+    }
+
     if (mode === 'parse-brief') {
       const brief = typeof body.text === 'string' ? body.text.trim() : '';
       const today = body.today || '';
