@@ -341,20 +341,33 @@ export default function BrochurePdfDoc({ itinerary, photos = {} }) {
           .map(([k, label, type]) => {
             const m = d[k];
             if (!m || (!m.title && !m.description)) return null;
-            return { time: label, type, title: clip(m.title || label, 64), text: clip(m.description || '', 165) };
+            // Texte COMPLET (plus de troncature) — la taille s'adapte plus bas.
+            return { time: label, type, title: clip(m.title || label, 90), text: (m.description || '').trim() };
           })
           .filter(Boolean);
         const gallery = ph.length > 1 ? ph.slice(1) : ph;
         const captions = [d.morning?.title, d.afternoon?.title, d.noon?.title, d.evening?.title, d.culinary_specialties?.[0]?.name]
           .map((x) => clip(x, 32))
           .filter(Boolean);
+        // Densité du jour → tailles adaptatives pour que TOUT le texte tienne sur 1 page.
+        const dTrips = Array.isArray(d.trips) ? d.trips.filter((t) => t && (t.from || t.to)) : [];
+        const textLen =
+          activities.reduce((s, a) => s + (a.text?.length || 0) + (a.title?.length || 0), 0) +
+          (d.culinary_specialties?.[0]?.description?.length || 0) +
+          dTrips.length * 45;
+        const lvl = textLen > 1500 ? 3 : textLen > 1150 ? 2 : textLen > 800 ? 1 : 0;
+        const FZ = [9, 8.3, 7.6, 7][lvl]; // police descriptions
+        const LH = [1.4, 1.35, 1.3, 1.25][lvl];
+        const TFZ = [10.5, 10, 9.5, 9][lvl]; // titres des moments
+        const heroH = [150, 138, 126, 116][lvl];
+        const rowMb = [8, 6.5, 5, 4][lvl];
         return (
           <React.Fragment key={i}>
           <Page size="A4" style={st.dayPage}>
             <Watermark />
-            <View style={st.dayHero}>
+            <View style={[st.dayHero, { height: heroH }]}>
               {ph[0] && <Image src={ph[0]} style={st.dayHeroImg} />}
-              <FadeOverlay height={180} color={P.ink} />
+              <FadeOverlay height={Math.round(heroH * 0.75)} color={P.ink} />
               <View style={st.dayHeroTxt}>
                 <Eyebrow color={WHITE}>Jour {String(i + 1).padStart(2, '0')} · {d.location}</Eyebrow>
               </View>
@@ -366,12 +379,12 @@ export default function BrochurePdfDoc({ itinerary, photos = {} }) {
               <View style={st.timeline}>
                 <View style={st.timelineRail} />
                 {activities.map((a, k) => (
-                  <View key={k} style={st.tlRow} wrap={false}>
+                  <View key={k} style={[st.tlRow, { marginBottom: rowMb }]} wrap={false}>
                     <Text style={st.tlTime}>{a.time}</Text>
                     <View style={st.tlChip}><Icon type={a.type} color={P.primary} /></View>
                     <View style={st.tlContent}>
-                      <Text style={st.tlTitle}>{a.title}</Text>
-                      {a.text ? <Text style={st.tlText}>{a.text}</Text> : null}
+                      <Text style={[st.tlTitle, { fontSize: TFZ }]}>{a.title}</Text>
+                      {a.text ? <Text style={[st.tlText, { fontSize: FZ, lineHeight: LH }]}>{a.text}</Text> : null}
                     </View>
                   </View>
                 ))}
