@@ -41,7 +41,7 @@ export default function CreateChatPage() {
   // Rotation des photos pendant la création
   useEffect(() => {
     if (!finalizing || photos.length < 2) return;
-    const id = setInterval(() => setPhotoIdx((i) => (i + 1) % photos.length), 2600);
+    const id = setInterval(() => setPhotoIdx((i) => (i + 1) % photos.length), 5000);
     return () => clearInterval(id);
   }, [finalizing, photos]);
 
@@ -110,7 +110,11 @@ export default function CreateChatPage() {
       if (dbError) throw new Error(dbError.message);
       navigate(`/itineraire/${data.id}`, { state: { justCreated: true } });
     } catch (e) {
-      setError(e.message || 'Erreur lors de la création.');
+      const raw = e.message || '';
+      const friendly = /idle_timeout|150s|timeout/i.test(raw)
+        ? 'La création a pris trop de temps. Réessayez : ça passe presque toujours au 2e essai.'
+        : raw || 'Erreur lors de la création.';
+      setError(friendly);
       setFinalizing(false);
       setStatus('');
     }
