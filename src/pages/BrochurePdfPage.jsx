@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { pdf } from '@react-pdf/renderer';
-import { getItinerary, updateItinerary } from '../lib/supabase';
+import {
+  getItinerary,
+  updateItinerary,
+  uploadBrochureImage,
+  externalizeImageUrl,
+} from '../lib/supabase';
 import { fetchPhotosFor } from '../lib/photos';
 import { renderRouteMapImage } from '../lib/staticMapImage';
 import { recomputeBudgetFromDays } from '../lib/itineraryEdits';
@@ -55,7 +60,7 @@ function fileToDataUrl(file) {
 // Une vignette photo qu'on peut remplacer : au clic, un panneau s'ouvre avec
 // d'autres photos proposées (à cliquer), une barre de recherche pour charger
 // d'autres photos (en tapant un mot), et un bouton pour importer la sienne.
-function PhotoSlot({ value, pool = [], onPick, label, className = 'h-24', defaultQuery = '' }) {
+function PhotoSlot({ value, pool = [], onPick, label, className = 'h-24', defaultQuery = '', onUploadError }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
@@ -63,13 +68,26 @@ function PhotoSlot({ value, pool = [], onPick, label, className = 'h-24', defaul
   const [searched, setSearched] = useState(false);
   const fileRef = useRef(null);
 
+  const [uploading, setUploading] = useState(false);
   async function handleFile(e) {
     const file = e.target.files?.[0];
     if (!file) return;
-    const url = await fileToDataUrl(file);
-    onPick(url);
-    setOpen(false);
-    e.target.value = '';
+    setUploading(true);
+    try {
+      // Envoi vers le stockage → on ne garde qu'un lien léger (pas de base64).
+      const url = await uploadBrochureImage(file);
+      onPick(url);
+      setOpen(false);
+    } catch (err) {
+      // Repli : si le stockage n'est pas prêt, on affiche quand même la photo.
+      const url = await fileToDataUrl(file);
+      onPick(url);
+      setOpen(false);
+      onUploadError?.(err);
+    } finally {
+      setUploading(false);
+      e.target.value = '';
+    }
   }
 
   async function runSearch() {
@@ -176,9 +194,10 @@ function PhotoSlot({ value, pool = [], onPick, label, className = 'h-24', defaul
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
-              className="mt-2 w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100"
+              disabled={uploading}
+              className="mt-2 w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
             >
-              📤 Importer ma propre photo
+              {uploading ? 'Envoi…' : '📤 Importer ma propre photo'}
             </button>
             <input
               ref={fileRef}
@@ -222,7 +241,16 @@ function BulkPhotoPicker({ index, location, defaultQuery = '', initial = [], poo
   async function handleFiles(e) {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
-    const urls = await Promise.all(files.map(fileToDataUrl));
+    // Envoi vers le stockage (lien léger). Repli base64 si le stockage échoue.
+    const urls = await Promise.all(
+      files.map(async (f) => {
+        try {
+          return await uploadBrochureImage(f);
+        } catch {
+          return fileToDataUrl(f);
+        }
+      })
+    );
     setUploaded((prev) => [...urls, ...prev]);
     setSelected((prev) => {
       const next = [...prev];
@@ -457,6 +485,11 @@ export default function BrochurePdfPage() {
     };
   }, [id]);
 
+  function handlePhotoUploadError() {
+    setError(
+      "L'espace de stockage des photos n'est pas encore activé : la photo importée s'affiche, mais l'enregistrement risque d'échouer tant qu'il n'est pas en place."
+    );
+  }
   function pickCover(v) {
     setCover(v);
     setDirty(true);
@@ -511,9 +544,27 @@ export default function BrochurePdfPage() {
     setSaving(true);
     setError(null);
     try {
+      // Filet de sécurité : on remplace toute image « lourde » (base64) restante
+      // par un lien stocké, sinon l'enregistrement est trop volumineux (timeout).
+      const safeCover = await externalizeImageUrl(cover);
+      const safeOverview = await externalizeImageUrl(overview);
+      const safeDays = {};
+      for (const [k, arr] of Object.entries(dayPhotos)) {
+        safeDays[k] = await Promise.all((arr || []).map(externalizeImageUrl));
+      }
+      // Met à jour l'affichage avec les liens stockés.
+      setCover(safeCover);
+      setOverview(safeOverview);
+      setDayPhotos(safeDays);
+
       const next = {
         ...itinerary,
-        brochure_photos: { cover, overview, days: dayPhotos, captions: dayCaptions },
+        brochure_photos: {
+          cover: safeCover,
+          overview: safeOverview,
+          days: safeDays,
+          captions: dayCaptions,
+        },
       };
       const { error: e } = await updateItinerary(id, { itinerary: next });
       if (e) throw e;
@@ -521,7 +572,10 @@ export default function BrochurePdfPage() {
       setDirty(false);
       setSavedOnce(true);
     } catch (e) {
-      setError(e.message || "Échec de l'enregistrement.");
+      setError(
+        (e.message || "Échec de l'enregistrement.") +
+          " — Si le problème persiste, l'espace de stockage des photos n'est peut-être pas encore activé."
+      );
     } finally {
       setSaving(false);
     }
@@ -643,6 +697,7 @@ export default function BrochurePdfPage() {
                 label="Couverture"
                 className="h-40"
                 defaultQuery={itinerary.summary?.destinations || ''}
+                onUploadError={handlePhotoUploadError}
               />
               <PhotoSlot
                 value={overview}
@@ -651,6 +706,7 @@ export default function BrochurePdfPage() {
                 label="Présentation"
                 className="h-40"
                 defaultQuery={itinerary.summary?.destinations || ''}
+                onUploadError={handlePhotoUploadError}
               />
             </div>
           </div>
@@ -682,6 +738,7 @@ export default function BrochurePdfPage() {
                         pool={dayPools[i] || []}
                         onPick={(v, cap) => setDayPhoto(i, slot, v, cap)}
                         defaultQuery={dayPhotoQuery(d)}
+                        onUploadError={handlePhotoUploadError}
                       />
                       <input
                         value={(dayCaptions[i] || [])[slot] || ''}

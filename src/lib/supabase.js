@@ -297,6 +297,37 @@ export async function setPackingListChecks(id, checkedItems) {
     .eq('id', id);
 }
 
+// ----- STOCKAGE DES PHOTOS DE BROCHURE (images importées) -----
+
+const BROCHURE_BUCKET = 'brochure-photos';
+
+// Envoie une image (File ou Blob) dans le stockage Supabase et renvoie son
+// lien public. Évite de stocker l'image « en dur » (base64) dans le voyage,
+// ce qui rendait l'enregistrement trop lourd (timeout).
+export async function uploadBrochureImage(fileOrBlob) {
+  const user = await getCurrentUser();
+  const type = fileOrBlob?.type || 'image/jpeg';
+  const ext = (type.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+  const rand =
+    (crypto.randomUUID && crypto.randomUUID()) ||
+    `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const path = `${user?.id || 'anon'}/${rand}.${ext}`;
+  const { error } = await supabase.storage
+    .from(BROCHURE_BUCKET)
+    .upload(path, fileOrBlob, { contentType: type, upsert: false });
+  if (error) throw error;
+  const { data } = supabase.storage.from(BROCHURE_BUCKET).getPublicUrl(path);
+  return data.publicUrl;
+}
+
+// Convertit une URL « data: » (base64) en lien stocké. Renvoie l'URL telle
+// quelle si ce n'est pas une data URL.
+export async function externalizeImageUrl(url) {
+  if (typeof url !== 'string' || !url.startsWith('data:')) return url;
+  const blob = await (await fetch(url)).blob();
+  return uploadBrochureImage(blob);
+}
+
 // ----- PARTAGE DE LISTES (entre utilisateurs, en temps réel) -----
 
 // Invite un utilisateur (par email) à partager une liste. Crée une invitation
