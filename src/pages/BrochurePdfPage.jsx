@@ -25,6 +25,22 @@ function dayPhotoQuery(d) {
 // Nombre de photos affichées par jour dans la brochure (1 grande + 4 petites).
 const PER_DAY = 5;
 
+// Première lettre en majuscule (pour transformer un mot cherché en légende).
+const capitalize = (s) =>
+  s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+
+// Légendes par défaut d'une journée (titres du programme), une par photo.
+function defaultCaptions(d) {
+  const raw = [
+    d?.morning?.title,
+    d?.afternoon?.title,
+    d?.noon?.title,
+    d?.evening?.title,
+    d?.culinary_specialties?.[0]?.name,
+  ];
+  return raw.map((x) => (x ? String(x) : '')).slice(0, PER_DAY);
+}
+
 // Lit un fichier image choisi par l'utilisateur et le transforme en URL
 // directement utilisable dans le PDF (donnée intégrée, pas de lien externe).
 function fileToDataUrl(file) {
@@ -144,7 +160,9 @@ function PhotoSlot({ value, pool = [], onPick, label, className = 'h-24', defaul
                   key={k}
                   type="button"
                   onClick={() => {
-                    onPick(u);
+                    // Si la photo vient d'une recherche, on transmet le mot
+                    // cherché comme suggestion de légende.
+                    onPick(u, searched ? (query || defaultQuery).trim() : undefined);
                     setOpen(false);
                   }}
                   className={`relative h-16 overflow-hidden rounded-md border ${
@@ -332,6 +350,7 @@ export default function BrochurePdfPage() {
   const [cover, setCover] = useState(null);
   const [overview, setOverview] = useState(null);
   const [dayPhotos, setDayPhotos] = useState({}); // { [i]: [url x5] }
+  const [dayCaptions, setDayCaptions] = useState({}); // { [i]: [legende x5] }
 
   // Mur de photos d'une journée (sélection multiple) : index du jour ouvert.
   const [bulkDay, setBulkDay] = useState(null);
@@ -410,6 +429,10 @@ export default function BrochurePdfPage() {
         // photos auto pour les emplacements éventuellement manquants).
         const saved = it.brochure_photos || null;
         const mergedDays = { ...initialDays, ...(saved?.days || {}) };
+        // Légendes par défaut (titres du programme) + celles enregistrées.
+        const initialCaptions = {};
+        days.forEach((d, i) => { initialCaptions[i] = defaultCaptions(d); });
+        const mergedCaptions = { ...initialCaptions, ...(saved?.captions || {}) };
 
         setItinerary(it);
         setRouteMap(rMap);
@@ -418,6 +441,7 @@ export default function BrochurePdfPage() {
         setCover(saved?.cover || coverUrls[0] || null);
         setOverview(saved?.overview || coverUrls[1] || coverUrls[0] || null);
         setDayPhotos(mergedDays);
+        setDayCaptions(mergedCaptions);
         setSavedOnce(!!saved);
         setFileName(`brochure-${(it.summary?.destinations || 'voyage').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.pdf`);
         setStatus(null);
@@ -441,8 +465,26 @@ export default function BrochurePdfPage() {
     setOverview(v);
     setDirty(true);
   }
-  function setDayPhoto(i, slot, value) {
+  function setDayPhoto(i, slot, value, captionSuggestion) {
     setDayPhotos((prev) => {
+      const arr = [...(prev[i] || [])];
+      arr[slot] = value;
+      return { ...prev, [i]: arr };
+    });
+    // Quand la photo vient d'une recherche, on cale la légende sur le mot
+    // cherché (il décrit la photo). L'utilisateur peut ensuite la modifier.
+    if (captionSuggestion) {
+      setDayCaptions((prev) => {
+        const arr = [...(prev[i] || [])];
+        arr[slot] = capitalize(captionSuggestion);
+        return { ...prev, [i]: arr };
+      });
+    }
+    setDirty(true);
+  }
+
+  function setDayCaption(i, slot, value) {
+    setDayCaptions((prev) => {
       const arr = [...(prev[i] || [])];
       arr[slot] = value;
       return { ...prev, [i]: arr };
@@ -469,7 +511,10 @@ export default function BrochurePdfPage() {
     setSaving(true);
     setError(null);
     try {
-      const next = { ...itinerary, brochure_photos: { cover, overview, days: dayPhotos } };
+      const next = {
+        ...itinerary,
+        brochure_photos: { cover, overview, days: dayPhotos, captions: dayCaptions },
+      };
       const { error: e } = await updateItinerary(id, { itinerary: next });
       if (e) throw e;
       setItinerary(next);
@@ -491,7 +536,7 @@ export default function BrochurePdfPage() {
       const blob = await pdf(
         <BrochurePdfDoc
           itinerary={itForPdf}
-          photos={{ cover, overview, days: dayPhotos, routeMap }}
+          photos={{ cover, overview, days: dayPhotos, captions: dayCaptions, routeMap }}
         />
       ).toBlob();
       if (url) URL.revokeObjectURL(url);
@@ -570,10 +615,13 @@ export default function BrochurePdfPage() {
         <div className="space-y-6">
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
             Cliquez sur une photo pour la remplacer : choisissez une autre photo
-            proposée, ou importez la vôtre. Vous pouvez vous arrêter quand vous
-            voulez : cliquez sur « 💾 Enregistrer mes photos » en haut, et vous
-            retrouverez votre travail tel quel la prochaine fois. Quand tout vous
-            convient, cliquez sur « Générer le PDF ».
+            proposée, ou importez la vôtre. Sous chaque photo de journée, vous
+            pouvez écrire la légende qui apparaîtra dans la brochure (elle se
+            remplit automatiquement avec le mot que vous cherchez). Vous pouvez
+            vous arrêter quand vous voulez : cliquez sur « 💾 Enregistrer mes
+            photos » en haut, et vous retrouverez votre travail tel quel la
+            prochaine fois. Quand tout vous convient, cliquez sur « Générer le
+            PDF ».
           </div>
           {savedOnce && !dirty && (
             <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
@@ -628,13 +676,20 @@ export default function BrochurePdfPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
                   {Array.from({ length: PER_DAY }).map((_, slot) => (
-                    <PhotoSlot
-                      key={slot}
-                      value={(dayPhotos[i] || [])[slot]}
-                      pool={dayPools[i] || []}
-                      onPick={(v) => setDayPhoto(i, slot, v)}
-                      defaultQuery={dayPhotoQuery(d)}
-                    />
+                    <div key={slot}>
+                      <PhotoSlot
+                        value={(dayPhotos[i] || [])[slot]}
+                        pool={dayPools[i] || []}
+                        onPick={(v, cap) => setDayPhoto(i, slot, v, cap)}
+                        defaultQuery={dayPhotoQuery(d)}
+                      />
+                      <input
+                        value={(dayCaptions[i] || [])[slot] || ''}
+                        onChange={(e) => setDayCaption(i, slot, e.target.value)}
+                        placeholder="Légende sous la photo"
+                        className="mt-1 w-full rounded-md border border-slate-200 px-2 py-1 text-[11px] text-slate-700"
+                      />
+                    </div>
                   ))}
                 </div>
               </div>

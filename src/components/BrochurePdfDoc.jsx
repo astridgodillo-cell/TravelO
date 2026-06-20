@@ -348,9 +348,15 @@ export default function BrochurePdfDoc({ itinerary, photos = {} }) {
           })
           .filter(Boolean);
         const gallery = ph;
-        const captions = [d.morning?.title, d.afternoon?.title, d.noon?.title, d.evening?.title, d.culinary_specialties?.[0]?.name]
-          .map((x) => clip(x, 32))
-          .filter(Boolean);
+        // Légendes : si l'utilisateur en a saisi (photos.captions), on les
+        // utilise POSITION par POSITION (alignées sur chaque photo). Sinon, on
+        // retombe sur les titres du programme de la journée.
+        const provided = photos.captions && photos.captions[i];
+        const captions = provided
+          ? provided.map((x) => clip(x, 40))
+          : [d.morning?.title, d.afternoon?.title, d.noon?.title, d.evening?.title, d.culinary_specialties?.[0]?.name]
+              .map((x) => clip(x, 32))
+              .filter(Boolean);
         // Densité du jour → tailles adaptatives pour que TOUT le texte tienne sur 1 page.
         const dTrips = Array.isArray(d.trips) ? d.trips.filter((t) => t && (t.from || t.to)) : [];
         const textLen =
