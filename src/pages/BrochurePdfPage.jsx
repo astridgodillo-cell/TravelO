@@ -37,9 +37,14 @@ function fileToDataUrl(file) {
 }
 
 // Une vignette photo qu'on peut remplacer : au clic, un panneau s'ouvre avec
-// d'autres photos proposées (à cliquer) et un bouton pour importer la sienne.
-function PhotoSlot({ value, pool = [], onPick, label, className = 'h-24' }) {
+// d'autres photos proposées (à cliquer), une barre de recherche pour charger
+// d'autres photos (en tapant un mot), et un bouton pour importer la sienne.
+function PhotoSlot({ value, pool = [], onPick, label, className = 'h-24', defaultQuery = '' }) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [searched, setSearched] = useState(false);
   const fileRef = useRef(null);
 
   async function handleFile(e) {
@@ -51,8 +56,23 @@ function PhotoSlot({ value, pool = [], onPick, label, className = 'h-24' }) {
     e.target.value = '';
   }
 
-  // Photos proposées (sans doublon, et en mettant la photo actuelle en tête).
-  const options = [...new Set([value, ...pool].filter(Boolean))];
+  async function runSearch() {
+    const q = (query || defaultQuery).trim();
+    if (!q) return;
+    setSearching(true);
+    setSearched(true);
+    try {
+      const photos = await fetchPhotosFor(q, 30, 'unsplash', 'destination');
+      setResults([...new Set((photos || []).map(imgUrl).filter(Boolean))]);
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  // Photos affichées : les résultats de recherche s'ils existent, sinon les
+  // photos proposées au départ. La photo actuelle est toujours en tête.
+  const base = searched ? results : pool;
+  const options = [...new Set([value, ...base].filter(Boolean))];
 
   return (
     <div className="relative">
@@ -83,11 +103,42 @@ function PhotoSlot({ value, pool = [], onPick, label, className = 'h-24' }) {
             className="fixed inset-0 z-30"
             onClick={() => setOpen(false)}
           />
-          <div className="absolute left-0 top-full z-40 mt-1 w-64 rounded-xl border border-slate-200 bg-white p-3 shadow-xl">
-            <p className="mb-2 text-xs font-semibold text-slate-600">
-              Choisir une autre photo
+          <div className="absolute left-0 top-full z-40 mt-1 w-72 rounded-xl border border-slate-200 bg-white p-3 shadow-xl">
+            {/* Recherche par mot-clé */}
+            <div className="mb-2 flex gap-1">
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    runSearch();
+                  }
+                }}
+                placeholder={defaultQuery ? `Ex : ${defaultQuery}` : 'Ex : Vienne, coucher de soleil…'}
+                className="min-w-0 flex-1 rounded-lg border border-slate-300 px-2 py-1.5 text-xs"
+              />
+              <button
+                type="button"
+                onClick={runSearch}
+                disabled={searching}
+                className="shrink-0 rounded-lg bg-brand-600 px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+              >
+                {searching ? '…' : '🔍'}
+              </button>
+            </div>
+
+            <p className="mb-1.5 text-[11px] text-slate-500">
+              {searching
+                ? 'Recherche en cours…'
+                : searched
+                  ? results.length
+                    ? `${results.length} photo(s) trouvée(s) — cliquez pour choisir`
+                    : 'Aucune photo trouvée. Essayez un autre mot.'
+                  : 'Cliquez une photo, ou tapez un mot pour en chercher d’autres.'}
             </p>
-            <div className="grid max-h-44 grid-cols-3 gap-1 overflow-y-auto">
+
+            <div className="grid max-h-56 grid-cols-3 gap-1 overflow-y-auto">
               {options.map((u, k) => (
                 <button
                   key={k}
@@ -329,6 +380,7 @@ export default function BrochurePdfPage() {
                 onPick={setCover}
                 label="Couverture"
                 className="h-40"
+                defaultQuery={itinerary.summary?.destinations || ''}
               />
               <PhotoSlot
                 value={overview}
@@ -336,6 +388,7 @@ export default function BrochurePdfPage() {
                 onPick={setOverview}
                 label="Présentation"
                 className="h-40"
+                defaultQuery={itinerary.summary?.destinations || ''}
               />
             </div>
           </div>
@@ -357,6 +410,7 @@ export default function BrochurePdfPage() {
                       value={(dayPhotos[i] || [])[slot]}
                       pool={dayPools[i] || []}
                       onPick={(v) => setDayPhoto(i, slot, v)}
+                      defaultQuery={dayPhotoQuery(d)}
                     />
                   ))}
                 </div>
