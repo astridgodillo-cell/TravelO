@@ -264,8 +264,10 @@ export default function BrochurePdfDoc({ itinerary, photos = {} }) {
           </View>
           <View>
             <Eyebrow>Votre itinéraire sur mesure</Eyebrow>
-            <Text style={st.coverTitle}>{s.destinations || 'Votre voyage'}</Text>
-            {s.headline ? <Text style={st.coverSub}>{s.headline}</Text> : null}
+            <Text style={st.coverTitle}>{s.title || s.destinations || 'Votre voyage'}</Text>
+            {(s.subtitle || s.headline) ? (
+              <Text style={st.coverSub}>{s.subtitle || s.headline}</Text>
+            ) : null}
             <View style={st.coverRule} />
             <View style={st.coverMeta}>
               {[meta.duration, meta.travelers, meta.season].filter(Boolean).map((m, i) => (

@@ -289,10 +289,12 @@ export default function Brochure({ itinerary }) {
                 Carnet de voyage
               </p>
               <h1 className="font-serif text-4xl font-bold leading-tight drop-shadow">
-                {summary.destinations || 'Votre voyage'}
+                {summary.title || summary.destinations || 'Votre voyage'}
               </h1>
-              {summary.headline && (
-                <p className="mt-3 max-w-xl text-lg text-white/90">{summary.headline}</p>
+              {(summary.subtitle || summary.headline) && (
+                <p className="mt-3 max-w-xl text-lg text-white/90">
+                  {summary.subtitle || summary.headline}
+                </p>
               )}
               <div className="mt-5 flex flex-wrap gap-x-6 gap-y-1 text-sm text-white/85">
                 {summary.start_date && (
