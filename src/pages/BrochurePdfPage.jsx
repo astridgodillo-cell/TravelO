@@ -176,6 +176,143 @@ function PhotoSlot({ value, pool = [], onPick, label, className = 'h-24', defaul
   );
 }
 
+// Grand « mur de photos » d'une journée : on cherche par mot-clé et on coche
+// PLUSIEURS photos d'un coup (jusqu'à 5). Les photos cochées, dans l'ordre,
+// remplacent celles de la journée.
+function BulkPhotoPicker({ index, location, defaultQuery = '', initial = [], pool = [], onApply, onClose }) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [searched, setSearched] = useState(false);
+  const [uploaded, setUploaded] = useState([]);
+  const [selected, setSelected] = useState(() => initial.filter(Boolean).slice(0, PER_DAY));
+  const fileRef = useRef(null);
+
+  async function runSearch() {
+    const q = (query || defaultQuery).trim();
+    if (!q) return;
+    setSearching(true);
+    setSearched(true);
+    try {
+      const photos = await fetchPhotosFor(q, 30, 'unsplash', 'destination');
+      setResults([...new Set((photos || []).map(imgUrl).filter(Boolean))]);
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  async function handleFiles(e) {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    const urls = await Promise.all(files.map(fileToDataUrl));
+    setUploaded((prev) => [...urls, ...prev]);
+    setSelected((prev) => {
+      const next = [...prev];
+      for (const u of urls) if (next.length < PER_DAY && !next.includes(u)) next.push(u);
+      return next;
+    });
+    e.target.value = '';
+  }
+
+  function toggle(u) {
+    setSelected((prev) => {
+      if (prev.includes(u)) return prev.filter((x) => x !== u);
+      if (prev.length >= PER_DAY) return prev; // déjà 5 cochées
+      return [...prev, u];
+    });
+  }
+
+  const base = searched ? results : pool;
+  const grid = [...new Set([...uploaded, ...selected, ...base].filter(Boolean))];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4">
+      <div className="my-8 w-full max-w-3xl rounded-2xl bg-white p-5 shadow-2xl">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h3 className="font-semibold text-slate-800">
+            Jour {index + 1} — {location} · choisir plusieurs photos
+          </h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700" aria-label="Fermer">
+            ✕
+          </button>
+        </div>
+
+        <div className="mb-3 flex gap-2">
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                runSearch();
+              }
+            }}
+            placeholder={defaultQuery ? `Ex : ${defaultQuery}` : 'Ex : Vienne, vieille ville…'}
+            className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          />
+          <button
+            onClick={runSearch}
+            disabled={searching}
+            className="shrink-0 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+          >
+            {searching ? 'Recherche…' : '🔍 Chercher'}
+          </button>
+          <button
+            onClick={() => fileRef.current?.click()}
+            className="shrink-0 rounded-lg border border-slate-300 bg-slate-50 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+          >
+            📤 Importer
+          </button>
+          <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={handleFiles} />
+        </div>
+
+        <p className="mb-2 text-xs text-slate-500">
+          {searching
+            ? 'Recherche en cours…'
+            : `${selected.length}/${PER_DAY} photo(s) cochée(s). Cliquez une photo pour la cocher ou la décocher.`}
+        </p>
+
+        <div className="grid max-h-[55vh] grid-cols-3 gap-2 overflow-y-auto sm:grid-cols-4">
+          {grid.map((u, k) => {
+            const pos = selected.indexOf(u);
+            const on = pos >= 0;
+            return (
+              <button
+                key={k}
+                type="button"
+                onClick={() => toggle(u)}
+                className={`relative h-28 overflow-hidden rounded-lg border-2 ${
+                  on ? 'border-brand-500' : 'border-transparent'
+                }`}
+              >
+                <img src={u} alt="" className="h-full w-full object-cover" />
+                {on && (
+                  <span className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-brand-600 text-xs font-bold text-white shadow">
+                    {pos + 1}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="mt-4 flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-700">
+            Annuler
+          </button>
+          <button
+            onClick={() => onApply(selected)}
+            disabled={selected.length === 0}
+            className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+          >
+            Utiliser ces {selected.length} photo(s)
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Page de génération de la brochure PDF « agence » (style tour-opérateur).
 // Route : /itineraire/:id/brochure-pdf
 // Étapes : 1) recherche des photos  2) choix/remplacement des photos
@@ -195,6 +332,9 @@ export default function BrochurePdfPage() {
   const [cover, setCover] = useState(null);
   const [overview, setOverview] = useState(null);
   const [dayPhotos, setDayPhotos] = useState({}); // { [i]: [url x5] }
+
+  // Mur de photos d'une journée (sélection multiple) : index du jour ouvert.
+  const [bulkDay, setBulkDay] = useState(null);
 
   // Génération PDF.
   const [generating, setGenerating] = useState(false);
@@ -287,6 +427,17 @@ export default function BrochurePdfPage() {
       arr[slot] = value;
       return { ...prev, [i]: arr };
     });
+  }
+
+  // Applique une sélection multiple : les photos cochées (dans l'ordre)
+  // remplacent les emplacements de la journée ; les autres restent inchangés.
+  function applyBulk(i, urls) {
+    setDayPhotos((prev) => {
+      const arr = [...(prev[i] || [])];
+      for (let k = 0; k < PER_DAY; k++) if (urls[k]) arr[k] = urls[k];
+      return { ...prev, [i]: arr };
+    });
+    setBulkDay(null);
   }
 
   async function generate() {
@@ -400,9 +551,18 @@ export default function BrochurePdfPage() {
             </h3>
             {days.map((d, i) => (
               <div key={i} className="rounded-xl border border-slate-200 bg-white p-4">
-                <p className="mb-3 font-semibold text-slate-800">
-                  Jour {i + 1} — {d.location}
-                </p>
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-semibold text-slate-800">
+                    Jour {i + 1} — {d.location}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setBulkDay(i)}
+                    className="rounded-lg border border-brand-300 bg-brand-50 px-3 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-100"
+                  >
+                    🖼️ Choisir plusieurs photos d'un coup
+                  </button>
+                </div>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
                   {Array.from({ length: PER_DAY }).map((_, slot) => (
                     <PhotoSlot
@@ -418,6 +578,19 @@ export default function BrochurePdfPage() {
             ))}
           </div>
         </div>
+      )}
+
+      {/* Mur de photos d'une journée (sélection multiple) */}
+      {bulkDay != null && days[bulkDay] && (
+        <BulkPhotoPicker
+          index={bulkDay}
+          location={days[bulkDay].location}
+          defaultQuery={dayPhotoQuery(days[bulkDay])}
+          initial={dayPhotos[bulkDay] || []}
+          pool={dayPools[bulkDay] || []}
+          onApply={(urls) => applyBulk(bulkDay, urls)}
+          onClose={() => setBulkDay(null)}
+        />
       )}
 
       {/* Aperçu du PDF généré */}
