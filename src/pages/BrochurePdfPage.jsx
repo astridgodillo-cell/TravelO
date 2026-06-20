@@ -22,8 +22,8 @@ function dayPhotoQuery(d) {
   return loc.split(/[–—,/]| - /)[0].trim() || loc;
 }
 
-// Nombre de photos affichées par jour dans la brochure (1 grande + 4 petites).
-const PER_DAY = 5;
+// Nombre de photos affichées par jour dans la brochure (1 grande + 6 petites).
+const PER_DAY = 7;
 
 // Première lettre en majuscule (pour transformer un mot cherché en légende).
 const capitalize = (s) =>
@@ -674,7 +674,7 @@ export default function BrochurePdfPage() {
                     🖼️ Choisir plusieurs photos d'un coup
                   </button>
                 </div>
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                   {Array.from({ length: PER_DAY }).map((_, slot) => (
                     <div key={slot}>
                       <PhotoSlot

@@ -382,7 +382,7 @@ export default function BrochurePdfDoc({ itinerary, photos = {} }) {
             ) : null}
             {gallery.length > 0 && (
               <View style={[st.galleryGrid, { marginTop: 10 }]}>
-                {gallery.slice(0, 5).map((u, k) =>
+                {gallery.slice(0, 7).map((u, k) =>
                   k === 0 ? (
                     <View key={k} style={st.galleryBig}>
                       <Image src={u} style={st.galleryBigImg} />
