@@ -269,6 +269,15 @@ export default function MyListsPage() {
     setPendingFocus(insertAt);
     setAddingArticle(false);
   }
+  // Insère un nouvel article vide juste sous l'article d'index idx (même
+  // catégorie) et place le curseur dedans, pour ajouter sans descendre en bas.
+  function addItemAfter(idx) {
+    const arr = [...(editing?.items || [])];
+    const insertAt = idx + 1;
+    arr.splice(insertAt, 0, '');
+    setEditing((e) => ({ ...e, items: arr }));
+    setPendingFocus(insertAt);
+  }
   function addCategory() {
     const insertAt = editing.items.length;
     setEditing((e) => ({ ...e, items: [...e.items, makeCat('')] }));
@@ -458,6 +467,15 @@ export default function MyListsPage() {
                       value={item}
                       onChange={(e) => updateItem(i, e.target.value)}
                     />
+                    <button
+                      type="button"
+                      onClick={() => addItemAfter(i)}
+                      className="text-brand-500 hover:text-brand-700 text-lg leading-none px-1"
+                      aria-label="Ajouter un article en dessous"
+                      title="Ajouter un article en dessous"
+                    >
+                      +
+                    </button>
                     <button
                       type="button"
                       onClick={() => removeItem(i)}
