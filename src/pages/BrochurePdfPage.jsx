@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { pdf } from '@react-pdf/renderer';
-import { getItinerary } from '../lib/supabase';
+import { getItinerary, updateItinerary } from '../lib/supabase';
 import { fetchPhotosFor } from '../lib/photos';
 import { renderRouteMapImage } from '../lib/staticMapImage';
 import { recomputeBudgetFromDays } from '../lib/itineraryEdits';
@@ -336,6 +336,11 @@ export default function BrochurePdfPage() {
   // Mur de photos d'une journée (sélection multiple) : index du jour ouvert.
   const [bulkDay, setBulkDay] = useState(null);
 
+  // Enregistrement de la sélection (pour reprendre plus tard).
+  const [dirty, setDirty] = useState(false); // des changements non enregistrés
+  const [saving, setSaving] = useState(false);
+  const [savedOnce, setSavedOnce] = useState(false);
+
   // Génération PDF.
   const [generating, setGenerating] = useState(false);
   const [url, setUrl] = useState(null);
@@ -400,13 +405,20 @@ export default function BrochurePdfPage() {
         } catch (_) { rMap = null; }
         if (!active) return;
 
+        // Reprise d'un travail enregistré : si une sélection a déjà été
+        // sauvegardée sur ce voyage, on la recharge (et on complète avec les
+        // photos auto pour les emplacements éventuellement manquants).
+        const saved = it.brochure_photos || null;
+        const mergedDays = { ...initialDays, ...(saved?.days || {}) };
+
         setItinerary(it);
         setRouteMap(rMap);
         setCoverPool(coverUrls);
         setDayPools(poolsByDay);
-        setCover(coverUrls[0] || null);
-        setOverview(coverUrls[1] || coverUrls[0] || null);
-        setDayPhotos(initialDays);
+        setCover(saved?.cover || coverUrls[0] || null);
+        setOverview(saved?.overview || coverUrls[1] || coverUrls[0] || null);
+        setDayPhotos(mergedDays);
+        setSavedOnce(!!saved);
         setFileName(`brochure-${(it.summary?.destinations || 'voyage').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.pdf`);
         setStatus(null);
       } catch (e) {
@@ -421,12 +433,21 @@ export default function BrochurePdfPage() {
     };
   }, [id]);
 
+  function pickCover(v) {
+    setCover(v);
+    setDirty(true);
+  }
+  function pickOverview(v) {
+    setOverview(v);
+    setDirty(true);
+  }
   function setDayPhoto(i, slot, value) {
     setDayPhotos((prev) => {
       const arr = [...(prev[i] || [])];
       arr[slot] = value;
       return { ...prev, [i]: arr };
     });
+    setDirty(true);
   }
 
   // Applique une sélection multiple : les photos cochées (dans l'ordre)
@@ -437,7 +458,28 @@ export default function BrochurePdfPage() {
       for (let k = 0; k < PER_DAY; k++) if (urls[k]) arr[k] = urls[k];
       return { ...prev, [i]: arr };
     });
+    setDirty(true);
     setBulkDay(null);
+  }
+
+  // Enregistre la sélection dans le voyage (clé brochure_photos) pour pouvoir
+  // la reprendre plus tard, même après avoir fermé la page.
+  async function saveWork() {
+    if (!itinerary) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const next = { ...itinerary, brochure_photos: { cover, overview, days: dayPhotos } };
+      const { error: e } = await updateItinerary(id, { itinerary: next });
+      if (e) throw e;
+      setItinerary(next);
+      setDirty(false);
+      setSavedOnce(true);
+    } catch (e) {
+      setError(e.message || "Échec de l'enregistrement.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function generate() {
@@ -469,7 +511,20 @@ export default function BrochurePdfPage() {
         <Link to={`/itineraire/${id}`} className="text-sm text-brand-700 underline">
           ← Retour au voyage
         </Link>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {itinerary && (
+            <button
+              onClick={saveWork}
+              disabled={saving || (!dirty && savedOnce)}
+              className="rounded-lg border border-emerald-600 px-4 py-2 text-sm font-semibold text-emerald-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {saving
+                ? 'Enregistrement…'
+                : dirty || !savedOnce
+                  ? '💾 Enregistrer mes photos'
+                  : '✓ Enregistré'}
+            </button>
+          )}
           {itinerary && (
             <button
               onClick={generate}
@@ -515,9 +570,17 @@ export default function BrochurePdfPage() {
         <div className="space-y-6">
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
             Cliquez sur une photo pour la remplacer : choisissez une autre photo
-            proposée, ou importez la vôtre. Quand tout vous convient, cliquez sur
-            « Générer le PDF » en haut.
+            proposée, ou importez la vôtre. Vous pouvez vous arrêter quand vous
+            voulez : cliquez sur « 💾 Enregistrer mes photos » en haut, et vous
+            retrouverez votre travail tel quel la prochaine fois. Quand tout vous
+            convient, cliquez sur « Générer le PDF ».
           </div>
+          {savedOnce && !dirty && (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
+              ✓ Votre sélection de photos est enregistrée. Vous pouvez fermer la
+              page et la reprendre plus tard.
+            </div>
+          )}
 
           {/* Couverture + aperçu */}
           <div>
@@ -528,7 +591,7 @@ export default function BrochurePdfPage() {
               <PhotoSlot
                 value={cover}
                 pool={coverPool}
-                onPick={setCover}
+                onPick={pickCover}
                 label="Couverture"
                 className="h-40"
                 defaultQuery={itinerary.summary?.destinations || ''}
@@ -536,7 +599,7 @@ export default function BrochurePdfPage() {
               <PhotoSlot
                 value={overview}
                 pool={coverPool}
-                onPick={setOverview}
+                onPick={pickOverview}
                 label="Présentation"
                 className="h-40"
                 defaultQuery={itinerary.summary?.destinations || ''}
