@@ -4021,6 +4021,87 @@ Si tu ne reconnais PAS un hôtel dans l'image (capture floue, page d'erreur, pho
       }
     }
 
+    if (mode === 'travel-chat') {
+      const messages = Array.isArray(body.messages) ? body.messages : [];
+      if (!messages.length) {
+        return jsonResponse({ error: 'Message vide.' }, 400);
+      }
+      const TRAVEL_CHAT_SYSTEM = `Tu es l'expert voyage de TravelO, un conseiller de voyage francophone, chaleureux et passionné. Tu discutes avec le voyageur pour concevoir SON voyage sur mesure, comme un vrai agent de voyage.
+
+DÉROULÉ :
+- Pose tes questions UNE À LA FOIS, naturellement, pour cerner l'essentiel : destination(s) et point de départ, dates ou durée, nombre de voyageurs (adultes/enfants), type de voyage (road trip, avion + voiture, train, croisière…), centres d'intérêt, niveau de budget, contraintes éventuelles.
+- Dès que tu as l'essentiel, PROPOSE un itinéraire jour par jour en texte clair et appétissant (style magazine de voyage), puis demande ce qu'il faut ajuster.
+- Affine au fil de la discussion jusqu'à ce que le voyageur soit satisfait.
+- Reste concis, chaleureux, en français, sans jargon. Une seule question à la fois.
+- Tu ne produis PAS de JSON ici : tu discutes. La mise en forme finale se fera quand le voyageur cliquera sur « Créer le voyage ».
+
+RÈGLES : réalisme et faisabilité (pas trop d'étapes, rythme tenable, environ 6 h de route maximum par jour), cohérence géographique (pas de zigzag), prix en euros réalistes (estimations à vérifier). Messages courts.`;
+      const transcript = messages
+        .map((m) => `${m.role === 'assistant' ? 'CONSEILLER' : 'VOYAGEUR'} : ${String(m.content || '').trim()}`)
+        .join('\n\n');
+      // Le moteur force une sortie JSON (response_format json) : on demande
+      // donc la réponse dans un objet JSON {"reply": "..."} puis on l'extrait.
+      const prompt = `${TRAVEL_CHAT_SYSTEM}\n\n=== CONVERSATION JUSQU'ICI ===\n${transcript}\n\nRéponds en JSON STRICT, sans rien d'autre, sous la forme : {"reply": "<la prochaine réponse du conseiller, en français, chaleureuse et concise>"}`;
+      const { text, usage, modelUsed } = await callMain(prompt, 1200);
+      const parsed = await parseOrRepair(text, callMainSafe);
+      const reply = (parsed?.reply || text || '').toString().trim();
+      return jsonResponse({ reply, usage, model: modelUsed });
+    }
+
+    if (mode === 'parse-brief') {
+      const brief = typeof body.text === 'string' ? body.text.trim() : '';
+      const today = body.today || '';
+      if (brief.length < 5) {
+        return jsonResponse({ error: 'Décris ton voyage en quelques mots.' }, 400);
+      }
+      const prompt = `Tu extrais des préférences de voyage STRUCTURÉES à partir d'une description libre, pour l'application TravelO.
+Date du jour : ${today || 'inconnue'}.
+
+Description de l'utilisateur :
+"""
+${brief}
+"""
+
+Renvoie UNIQUEMENT un JSON valide (aucun texte autour, pas de markdown) avec ces champs :
+{
+  "destinations": "string (pays / régions / villes principales)",
+  "startDate": "YYYY-MM-DD",
+  "endDate": "YYYY-MM-DD",
+  "adults": 2,
+  "childrenAges": [],
+  "tripType": "un de: itinerant, roadtrip-voiture, roadtrip-van, avion-voiture, avion-citybreak, avion-itinerant, train-international, circuit-train, velo, trek, croisiere, sejour-fixe",
+  "budget": "un de: economique, moyen, confort, haut de gamme",
+  "interests": ["nature","culture","gastronomie","plage","sport","randonnée","modernité","hors des sentiers battus"],
+  "specificActivities": [],
+  "mustInclude": [],
+  "toAvoid": [],
+  "departureLocation": "",
+  "returnLocation": "",
+  "hasDrivingLicense": true,
+  "offDays": 0
+}
+
+Règles :
+- startDate et endDate sont OBLIGATOIRES. Si l'utilisateur donne une durée (ex. "10 jours") ou une période (ex. "en juillet") sans dates précises, choisis des dates concrètes et cohérentes, situées dans le FUTUR par rapport à la date du jour.
+- adults = 2 par défaut ; childrenAges = [] si aucun enfant mentionné.
+- tripType : déduis-le du contexte (van/camping-car → roadtrip-van ; vol + visite d'une ville → avion-citybreak ; vol + voiture sur place → avion-voiture ; sinon → itinerant).
+- budget = "moyen" par défaut.
+- interests : ne garde que ceux réellement pertinents.
+- mustInclude : seulement les lieux explicitement imposés, sinon [].`;
+      const { text, usage, modelUsed } = await callMain(prompt, 1500);
+      const parsed = await parseOrRepair(text, callMainSafe);
+      if (!parsed || !parsed.startDate || !parsed.endDate || !parsed.destinations) {
+        return jsonResponse(
+          {
+            error:
+              "Description trop floue : précise au moins la destination et la durée ou les dates.",
+          },
+          422
+        );
+      }
+      return jsonResponse({ preferences: parsed, usage, model: modelUsed });
+    }
+
     if (mode === 'suggest-cities') {
       const {
         destination,

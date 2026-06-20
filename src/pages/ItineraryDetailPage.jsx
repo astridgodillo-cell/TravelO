@@ -361,12 +361,26 @@ export default function ItineraryDetailPage() {
             {trip.title}
           </h1>
         </div>
-        <button
-          onClick={() => window.print()}
-          className="btn-secondary w-full sm:w-auto shrink-0"
-        >
-          Exporter en PDF
-        </button>
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:shrink-0">
+          <Link
+            to={`/itineraire/${id}/brochure-pdf`}
+            className="btn-primary w-full text-center sm:w-auto shrink-0"
+          >
+            ✨ Brochure PDF
+          </Link>
+          <Link
+            to={`/itineraire/${id}/brochure`}
+            className="btn-secondary w-full text-center sm:w-auto shrink-0"
+          >
+            📖 Aperçu web
+          </Link>
+          <button
+            onClick={() => window.print()}
+            className="btn-secondary w-full sm:w-auto shrink-0"
+          >
+            Exporter en PDF
+          </button>
+        </div>
       </div>
 
       {regenerating && (

@@ -147,10 +147,14 @@ export default function MyTripsPage() {
         description="Retrouvez, modifiez, partagez ou supprimez les voyages que vous avez générés."
         banner="https://images.unsplash.com/photo-1488646953014-85cb44e25828?auto=format&fit=crop&w=2000&q=80"
         action={
-          <Link to="/nouveau" className="btn-primary inline-flex items-center gap-1.5">
-            <Icon name="plus" className="h-4 w-4" />
-            Nouvel itinéraire
-          </Link>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Link to="/creer" className="btn-primary inline-flex items-center justify-center gap-1.5">
+              ✨ Créer mon voyage
+            </Link>
+            <Link to="/importer" className="btn-secondary inline-flex items-center justify-center gap-1.5">
+              📥 Importer
+            </Link>
+          </div>
         }
       />
 
@@ -174,7 +178,7 @@ export default function MyTripsPage() {
         <div className="card text-center text-slate-500">
           Vous n'avez pas encore d'itinéraire sauvegardé.
           <div className="mt-4">
-            <Link to="/nouveau" className="btn-primary">
+            <Link to="/creer" className="btn-primary">
               Créer mon premier voyage
             </Link>
           </div>

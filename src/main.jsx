@@ -8,6 +8,18 @@ import ErrorBoundary from './components/ErrorBoundary';
 
 // Avant impression, on ouvre tous les <details> (moments du planning, etc.)
 // pour qu'ils s'imprime entièrement déroulés. Après impression, on rétablit.
+// Filet de sécurité : si un module chargé à la demande échoue (souvent après
+// une mise à jour : l'ancien fichier n'existe plus), on recharge la page une
+// fois pour récupérer la nouvelle version. (Garde-fou anti-boucle via sessionStorage.)
+if (typeof window !== 'undefined') {
+  window.addEventListener('vite:preloadError', () => {
+    if (!sessionStorage.getItem('travelo:reloadedOnce')) {
+      sessionStorage.setItem('travelo:reloadedOnce', '1');
+      window.location.reload();
+    }
+  });
+}
+
 if (typeof window !== 'undefined') {
   const restore = new WeakMap();
   window.addEventListener('beforeprint', () => {

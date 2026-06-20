@@ -56,7 +56,7 @@ export default function Navbar() {
           Accueil
         </NavLink>
         {user && (
-          <NavLink to="/nouveau" className={cls}>
+          <NavLink to="/creer" className={cls}>
             Nouvel itinéraire
           </NavLink>
         )}

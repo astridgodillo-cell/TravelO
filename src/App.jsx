@@ -6,11 +6,15 @@ import ProtectedRoute from './components/ProtectedRoute';
 import AdminRoute from './components/AdminRoute';
 import HomePage from './pages/HomePage';
 import NewItineraryPage from './pages/NewItineraryPage';
+import ImportItineraryPage from './pages/ImportItineraryPage';
+import CreateWithAiPage from './pages/CreateWithAiPage';
+import CreateChatPage from './pages/CreateChatPage';
 import MyTripsPage from './pages/MyTripsPage';
 import MyListsPage from './pages/MyListsPage';
 import TemplatesPage from './pages/TemplatesPage';
 import TemplateDetailPage from './pages/TemplateDetailPage';
 import ItineraryDetailPage from './pages/ItineraryDetailPage';
+import BrochurePage from './pages/BrochurePage';
 import PublicItineraryPage from './pages/PublicItineraryPage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
@@ -18,6 +22,7 @@ import PendingAccountPage from './pages/PendingAccountPage';
 import AdminPage from './pages/AdminPage';
 import ProfilePage from './pages/ProfilePage';
 import OnboardingPage from './pages/OnboardingPage';
+import BrochurePdfPage from './pages/BrochurePdfPage';
 
 export default function App() {
   const { pathname } = useLocation();
@@ -40,6 +45,30 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <NewItineraryPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/importer"
+            element={
+              <ProtectedRoute>
+                <ImportItineraryPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/creer-ia"
+            element={
+              <ProtectedRoute>
+                <CreateWithAiPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/creer"
+            element={
+              <ProtectedRoute>
+                <CreateChatPage />
               </ProtectedRoute>
             }
           />
@@ -84,6 +113,22 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <ItineraryDetailPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/itineraire/:id/brochure"
+            element={
+              <ProtectedRoute>
+                <BrochurePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/itineraire/:id/brochure-pdf"
+            element={
+              <ProtectedRoute>
+                <BrochurePdfPage />
               </ProtectedRoute>
             }
           />

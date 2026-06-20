@@ -4,7 +4,8 @@ const FN_NAME = 'generate-itinerary';
 
 // Au-delà de ce nombre de jours, on bascule en mode plan+expand
 // pour rester sous le wall-clock limit des Edge Functions (150s plan gratuit).
-const SHORT_TRIP_MAX_DAYS = 8;
+// Abaissé à 4 : au-delà, un seul appel DeepSeek dépasse souvent les 150 s.
+const SHORT_TRIP_MAX_DAYS = 4;
 // Concurrence faible pour éviter de saturer le quota Anthropic
 // (output tokens per minute). 2 = bon compromis vitesse/sécurité.
 const EXPAND_CONCURRENCY = 2;
@@ -182,6 +183,23 @@ async function invoke(body) {
   }
   if (data?.error) throw new Error(data.error);
   return data;
+}
+
+// Convertit une description libre du voyage (texte) en préférences
+// structurées via le moteur (mode parse-brief). Le résultat est ensuite
+// passé à generateItinerary, qui réutilise toute la chaîne de génération.
+export async function parseBrief(text) {
+  const today = new Date().toISOString().slice(0, 10);
+  const data = await invoke({ mode: 'parse-brief', text, today });
+  if (!data?.preferences) throw new Error('Préférences non extraites.');
+  return data.preferences;
+}
+
+// Conversation avec le conseiller voyage (chat). `messages` = [{role, content}].
+// Renvoie la prochaine réponse de l'assistant.
+export async function travelChat(messages) {
+  const data = await invoke({ mode: 'travel-chat', messages });
+  return data?.reply || '';
 }
 
 export async function generateItinerary(preferences, onProgress) {

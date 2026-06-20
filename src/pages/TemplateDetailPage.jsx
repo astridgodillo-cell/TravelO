@@ -52,7 +52,7 @@ export default function TemplateDetailPage() {
           </div>
         </div>
         <Link
-          to="/nouveau"
+          to="/creer"
           className="btn-primary w-full sm:w-auto shrink-0 text-center"
         >
           Créer mon itinéraire
