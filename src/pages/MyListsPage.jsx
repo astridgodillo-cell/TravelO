@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import {
   supabase,
   listPackingLists,
@@ -61,6 +61,14 @@ function parseBulk(text) {
 
 // Nombre d'articles réels (hors titres de catégories).
 const countArticles = (items) => items.filter((i) => !isCat(i) && i.trim()).length;
+
+// Index du titre de catégorie qui précède la position i (-1 si l'article est
+// avant toute catégorie). Sert à ajouter un article directement à la bonne
+// catégorie sans descendre tout en bas de la liste.
+const precedingCatIdx = (arr, i) => {
+  for (let j = i; j >= 0; j--) if (isCat(arr[j])) return j;
+  return -1;
+};
 
 export default function MyListsPage() {
   const { user } = useAuth();
@@ -367,10 +375,28 @@ export default function MyListsPage() {
               changer de catégorie.
             </p>
             <ul className="space-y-2">
-              {editing.items.map((item, i) =>
-                isCat(item) ? (
+              {editing.items.map((item, i) => {
+                // Affiche le bouton « + Ajouter un article » à la fin de chaque
+                // groupe : juste sous un titre de catégorie vide, ou après le
+                // dernier article d'une catégorie (avant le titre suivant).
+                const showAdd =
+                  i === editing.items.length - 1 || isCat(editing.items[i + 1]);
+                const catIdx = isCat(item) ? i : precedingCatIdx(editing.items, i);
+                const addBtn = showAdd ? (
+                  <li className="pl-8">
+                    <button
+                      type="button"
+                      onClick={() => addItemToCategory(catIdx)}
+                      className="text-sm font-medium text-brand-600 hover:text-brand-700"
+                    >
+                      + Ajouter un article
+                    </button>
+                  </li>
+                ) : null;
+                return (
+                  <Fragment key={i}>
+                    {isCat(item) ? (
                   <li
-                    key={i}
                     onDragOver={(e) => {
                       if (dragIndex != null) {
                         e.preventDefault();
@@ -402,7 +428,6 @@ export default function MyListsPage() {
                   </li>
                 ) : (
                   <li
-                    key={i}
                     onDragOver={(e) => {
                       if (dragIndex != null) {
                         e.preventDefault();
@@ -442,8 +467,11 @@ export default function MyListsPage() {
                       ×
                     </button>
                   </li>
-                )
-              )}
+                    )}
+                    {addBtn}
+                  </Fragment>
+                );
+              })}
             </ul>
 
             {addingArticle && (
