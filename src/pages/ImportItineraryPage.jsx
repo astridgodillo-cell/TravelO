@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { saveItinerary } from '../lib/supabase';
+import { applyPoeticTitle } from '../lib/ai';
 
 // Extrait un objet JSON d'un texte collé : enlève les éventuels ``` ```,
 // et ne garde que du premier "{" au dernier "}".
@@ -40,11 +41,13 @@ export default function ImportItineraryPage() {
       }
 
       const summary = itinerary.summary || {};
-      const title =
+      const fallbackTitle =
         parsed.title ||
         summary.headline ||
         summary.destinations ||
         'Voyage importé';
+      // Titre toujours réinventé (court et poétique), même à l'import.
+      const title = await applyPoeticTitle(itinerary, fallbackTitle);
 
       const preferences = {
         imported: true,

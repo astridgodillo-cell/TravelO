@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, Link, useLocation } from 'react-router-dom';
 import confetti from 'canvas-confetti';
 import { getItinerary, updateItinerary } from '../lib/supabase';
@@ -8,6 +8,7 @@ import {
   regenerateActivity,
   removeActivity,
   suggestMomentAlternatives,
+  generateTripTitle,
 } from '../lib/ai';
 import {
   replaceMoment,
@@ -47,6 +48,8 @@ export default function ItineraryDetailPage() {
   const [loading, setLoading] = useState(true);
   const [regenerating, setRegenerating] = useState(false);
   const [error, setError] = useState(null);
+  const [titleBusy, setTitleBusy] = useState(false);
+  const autoTitleTriedRef = useRef(false);
   // État de la modale "Proposer d'autres options" sur un moment
   const [momentSuggestState, setMomentSuggestState] = useState(null);
   // { open: bool, context: {dayIndex, momentKey, label, m, dayLocation},
@@ -78,6 +81,46 @@ export default function ItineraryDetailPage() {
     // On efface le drapeau pour ne pas refaire les confettis au rafraîchissement.
     window.history.replaceState({}, '');
   }, [trip, location.state]);
+
+  // Réinvente le titre (court + poétique) et le sous-titre (parcours détaillé),
+  // puis enregistre. Sert au bouton manuel ET à l'auto-génération si absent.
+  async function regenerateTitle() {
+    if (!trip?.itinerary) return;
+    setTitleBusy(true);
+    try {
+      const { title, subtitle } = await generateTripTitle(trip.itinerary);
+      if (!title) return;
+      const updatedItinerary = {
+        ...trip.itinerary,
+        summary: {
+          ...(trip.itinerary.summary || {}),
+          title,
+          subtitle: subtitle || trip.itinerary.summary?.headline || '',
+        },
+      };
+      const { data, error: dbErr } = await updateItinerary(trip.id, {
+        itinerary: updatedItinerary,
+        title,
+      });
+      if (dbErr) throw dbErr;
+      setTrip(data);
+    } catch (e) {
+      setError(e.message || 'Échec de la création du titre.');
+    } finally {
+      setTitleBusy(false);
+    }
+  }
+
+  // Auto : tout voyage sans titre poétique (ancienne génération, import…) en
+  // reçoit un automatiquement à l'ouverture, une seule fois.
+  useEffect(() => {
+    if (!trip || trip._shared) return;
+    if (trip.itinerary?.summary?.title) return;
+    if (autoTitleTriedRef.current) return;
+    autoTitleTriedRef.current = true;
+    regenerateTitle();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trip]);
 
   async function handleRegenerateDay(dayIndex, instructions) {
     if (!trip) return;
@@ -358,8 +401,29 @@ export default function ItineraryDetailPage() {
             Itinéraire
           </div>
           <h1 className="mt-1 text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 break-words">
-            {trip.title}
+            {trip.itinerary?.summary?.title || trip.title}
           </h1>
+          {(() => {
+            const sub =
+              trip.itinerary?.summary?.subtitle ||
+              trip.itinerary?.summary?.headline ||
+              '';
+            const titleShown = trip.itinerary?.summary?.title || trip.title;
+            return sub && sub !== titleShown ? (
+              <p className="mt-1 max-w-2xl text-sm sm:text-base text-slate-500 break-words">
+                {sub}
+              </p>
+            ) : null;
+          })()}
+          {!trip._shared && (
+            <button
+              onClick={regenerateTitle}
+              disabled={titleBusy}
+              className="mt-2 inline-flex items-center gap-1 text-xs text-brand-700 hover:underline disabled:opacity-50"
+            >
+              {titleBusy ? 'Création du titre…' : '✨ Réinventer le titre'}
+            </button>
+          )}
         </div>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:shrink-0">
           <Link

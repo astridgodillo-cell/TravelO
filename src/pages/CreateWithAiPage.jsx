@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { parseBrief, generateItinerary } from '../lib/ai';
+import { parseBrief, generateItinerary, applyPoeticTitle } from '../lib/ai';
 import { saveItinerary } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 
@@ -31,9 +31,11 @@ export default function CreateWithAiPage() {
         }
       });
 
-      const title =
+      const fallbackTitle =
         (prefs?.destinations || 'Voyage').slice(0, 80) +
         ` — ${itinerary?.summary?.duration_days || ''}j`;
+      setStatus('Création du titre…');
+      const title = await applyPoeticTitle(itinerary, fallbackTitle);
 
       setStatus('Enregistrement…');
       const { data, error: dbError } = await saveItinerary({

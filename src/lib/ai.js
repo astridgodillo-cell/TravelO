@@ -202,6 +202,36 @@ export async function travelChat(messages) {
   return data?.reply || '';
 }
 
+// Réinvente un titre de voyage : court et poétique, + un sous-titre descriptif
+// qui résume le parcours. Best-effort : renvoie des chaînes vides si échec.
+export async function generateTripTitle(itinerary) {
+  try {
+    const data = await invoke({ mode: 'generate-trip-title', itinerary });
+    return {
+      title: (data?.title || '').trim(),
+      subtitle: (data?.subtitle || '').trim(),
+    };
+  } catch (e) {
+    console.warn('[trip-title] échec', e);
+    return { title: '', subtitle: '' };
+  }
+}
+
+// Applique un titre poétique à un itinéraire (mute summary.title / summary.subtitle)
+// et renvoie le titre à enregistrer en base. Si la génération échoue, on garde
+// le titre de repli fourni.
+export async function applyPoeticTitle(itinerary, fallbackTitle) {
+  if (!itinerary) return fallbackTitle;
+  const { title, subtitle } = await generateTripTitle(itinerary);
+  if (!itinerary.summary) itinerary.summary = {};
+  if (title) {
+    itinerary.summary.title = title;
+    itinerary.summary.subtitle = subtitle || itinerary.summary.headline || '';
+    return title;
+  }
+  return fallbackTitle;
+}
+
 export async function generateItinerary(preferences, onProgress) {
   const days = computeDurationDays(preferences.startDate, preferences.endDate);
   let meta = emptyMeta();

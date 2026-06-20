@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { travelChat, parseBrief, generateItinerary } from '../lib/ai';
+import { travelChat, parseBrief, generateItinerary, applyPoeticTitle } from '../lib/ai';
 import { fetchPhotosFor } from '../lib/photos';
 import { saveItinerary } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
@@ -227,9 +227,11 @@ export default function CreateChatPage() {
         }
       });
 
-      const title =
+      const fallbackTitle =
         (prefs?.destinations || 'Voyage').slice(0, 80) +
         ` — ${itinerary?.summary?.duration_days || ''}j`;
+      setStatus('Création du titre…');
+      const title = await applyPoeticTitle(itinerary, fallbackTitle);
       setStatus('Enregistrement…');
       const { data, error: dbError } = await saveItinerary({ title, preferences: prefs, itinerary });
       if (dbError) throw new Error(dbError.message);

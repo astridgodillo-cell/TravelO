@@ -6,7 +6,7 @@ import GeneratingLoader from '../components/GeneratingLoader';
 import PrefillBanner from '../components/PrefillBanner';
 import PageHeader from '../components/PageHeader';
 import Icon from '../components/Icon';
-import { generateItinerary } from '../lib/ai';
+import { generateItinerary, applyPoeticTitle } from '../lib/ai';
 import { saveItinerary } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -95,9 +95,12 @@ export default function NewItineraryPage() {
       // Auto-save : tous les itinéraires générés sont automatiquement
       // sauvegardés dans "Mes voyages". L'utilisateur peut ensuite les
       // modifier ou les supprimer.
-      const title =
+      const fallbackTitle =
         (prefs?.destinations || 'Voyage').slice(0, 80) +
         ` — ${itinerary?.summary?.duration_days || ''}j`;
+      // Le titre est toujours réinventé : court et poétique, quelle que soit
+      // la façon dont le voyage a été créé.
+      const title = await applyPoeticTitle(itinerary, fallbackTitle);
 
       const { data, error: dbError } = await saveItinerary({
         title,

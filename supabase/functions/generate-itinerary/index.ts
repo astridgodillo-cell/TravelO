@@ -4476,6 +4476,46 @@ Règles :
       return jsonResponse({ day, usage, model: modelUsed });
     }
 
+    if (mode === 'generate-trip-title') {
+      const it = body?.itinerary || {};
+      const s = it.summary || {};
+      const days = Array.isArray(it.days) ? it.days : [];
+      const steps = [...new Set(days.map((d: any) => d?.location).filter(Boolean))];
+      const interests = Array.isArray(s.interests) ? s.interests.join(', ') : '';
+      const prompt = `Tu es un rédacteur d'agence de voyage haut de gamme.
+À partir des informations ci-dessous, invente :
+
+1. "title" : un TITRE de voyage COURT et POÉTIQUE (3 à 6 mots, une seule ligne).
+   - Évocateur, sensoriel, qui donne immédiatement envie de partir.
+   - Il doit SUGGÉRER l'esprit et le fil rouge de TOUT le parcours (pas seulement la première ou la dernière étape).
+   - INTERDIT : une simple liste/énumération de villes ou de pays, les flèches "→", les deux-points.
+   ✅ "Des Alpes à la lagune des Doges"
+   ✅ "Échappée alpine vers l'Adriatique"
+   ✅ "Lumières du Nord, douceurs vénitiennes"
+   ❌ "Italie du Nord, Bavière, Autriche → Venise"
+   ❌ "Voyage à Milan, Munich, Salzbourg et Vienne"
+
+2. "subtitle" : UNE phrase (12 à 22 mots) qui résume concrètement le parcours et les étapes-clés, façon accroche de brochure.
+
+INFORMATIONS DU VOYAGE :
+- Destinations : ${s.destinations || '(non précisé)'}
+- Type de voyage : ${s.trip_type || '(non précisé)'}
+- Centres d'intérêt : ${interests || '(non précisé)'}
+- Accroche existante : ${s.headline || '(aucune)'}
+- Étapes dans l'ordre : ${steps.join(' · ') || '(non précisé)'}
+
+Réponds UNIQUEMENT avec ce JSON, sans rien autour :
+{"title": "...", "subtitle": "..."}`;
+      const { text, usage, modelUsed } = await callExpansion(prompt, 600);
+      const parsed = await parseOrRepair(text, callExpansionSafe);
+      return jsonResponse({
+        title: (parsed?.title || '').toString().trim(),
+        subtitle: (parsed?.subtitle || '').toString().trim(),
+        usage,
+        model: modelUsed,
+      });
+    }
+
     if (mode === 'fetch-photos') {
       const { query, per_page, source, kind } = body;
       if (!query || typeof query !== 'string') {
