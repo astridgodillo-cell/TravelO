@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { pdf } from '@react-pdf/renderer';
 import { getItinerary } from '../lib/supabase';
@@ -22,18 +22,136 @@ function dayPhotoQuery(d) {
   return loc.split(/[–—,/]| - /)[0].trim() || loc;
 }
 
+// Nombre de photos affichées par jour dans la brochure (1 grande + 4 petites).
+const PER_DAY = 5;
+
+// Lit un fichier image choisi par l'utilisateur et le transforme en URL
+// directement utilisable dans le PDF (donnée intégrée, pas de lien externe).
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// Une vignette photo qu'on peut remplacer : au clic, un panneau s'ouvre avec
+// d'autres photos proposées (à cliquer) et un bouton pour importer la sienne.
+function PhotoSlot({ value, pool = [], onPick, label, className = 'h-24' }) {
+  const [open, setOpen] = useState(false);
+  const fileRef = useRef(null);
+
+  async function handleFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const url = await fileToDataUrl(file);
+    onPick(url);
+    setOpen(false);
+    e.target.value = '';
+  }
+
+  // Photos proposées (sans doublon, et en mettant la photo actuelle en tête).
+  const options = [...new Set([value, ...pool].filter(Boolean))];
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className={`group relative block w-full overflow-hidden rounded-lg border border-slate-200 bg-slate-100 ${className}`}
+        title="Cliquer pour changer la photo"
+      >
+        {value ? (
+          <img src={value} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <span className="flex h-full w-full items-center justify-center text-xs text-slate-400">
+            Aucune photo
+          </span>
+        )}
+        <span className="absolute inset-x-0 bottom-0 bg-black/55 py-1 text-center text-[11px] font-medium text-white opacity-0 transition-opacity group-hover:opacity-100">
+          Changer
+        </span>
+      </button>
+      {label && (
+        <p className="mt-1 truncate text-center text-[11px] text-slate-500">{label}</p>
+      )}
+
+      {open && (
+        <>
+          <div
+            className="fixed inset-0 z-30"
+            onClick={() => setOpen(false)}
+          />
+          <div className="absolute left-0 top-full z-40 mt-1 w-64 rounded-xl border border-slate-200 bg-white p-3 shadow-xl">
+            <p className="mb-2 text-xs font-semibold text-slate-600">
+              Choisir une autre photo
+            </p>
+            <div className="grid max-h-44 grid-cols-3 gap-1 overflow-y-auto">
+              {options.map((u, k) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => {
+                    onPick(u);
+                    setOpen(false);
+                  }}
+                  className={`relative h-16 overflow-hidden rounded-md border ${
+                    u === value ? 'border-brand-500 ring-2 ring-brand-300' : 'border-slate-200'
+                  }`}
+                >
+                  <img src={u} alt="" className="h-full w-full object-cover" />
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              className="mt-2 w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100"
+            >
+              📤 Importer ma propre photo
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleFile}
+            />
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // Page de génération de la brochure PDF « agence » (style tour-opérateur).
 // Route : /itineraire/:id/brochure-pdf
+// Étapes : 1) recherche des photos  2) choix/remplacement des photos
+//          3) génération du PDF.
 export default function BrochurePdfPage() {
   const { id } = useParams();
   const [status, setStatus] = useState('Chargement du voyage…');
+  const [error, setError] = useState(null);
+
+  // Données préparées une fois pour toutes après le chargement.
+  const [itinerary, setItinerary] = useState(null);
+  const [routeMap, setRouteMap] = useState(null);
+  const [coverPool, setCoverPool] = useState([]); // photos candidates couverture/aperçu
+  const [dayPools, setDayPools] = useState({}); // { [i]: [url,...] } candidates par jour
+
+  // Sélection courante (modifiable par l'utilisateur).
+  const [cover, setCover] = useState(null);
+  const [overview, setOverview] = useState(null);
+  const [dayPhotos, setDayPhotos] = useState({}); // { [i]: [url x5] }
+
+  // Génération PDF.
+  const [generating, setGenerating] = useState(false);
   const [url, setUrl] = useState(null);
   const [fileName, setFileName] = useState('brochure.pdf');
-  const [error, setError] = useState(null);
 
   useEffect(() => {
     let active = true;
-    let objUrl = null;
     (async () => {
       try {
         const { data: trip, error: e1 } = await getItinerary(id);
@@ -43,14 +161,11 @@ export default function BrochurePdfPage() {
         const days = Array.isArray(it.days) ? it.days : [];
 
         setStatus('Recherche des photos…');
-        // Photos via Pexels/Unsplash (source 'auto') : fiables pour le PDF.
         const coverList = await fetchPhotosFor(
-          it.summary?.destinations || days[0]?.location, 4, 'auto', 'destination'
+          it.summary?.destinations || days[0]?.location, 8, 'auto', 'destination'
         );
-        const cover = imgUrl(coverList?.[0]);
-        const overview = imgUrl(coverList?.[1]);
+        const coverUrls = [...new Set((coverList || []).map(imgUrl).filter(Boolean))];
 
-        const PER_DAY = 6;
         // Regroupe les jours par requête photo : si plusieurs jours partagent
         // la même ville, on récupère un grand lot et on répartit des photos
         // DIFFÉRENTES sur chaque jour (pas de doublons d'une page à l'autre).
@@ -61,20 +176,21 @@ export default function BrochurePdfPage() {
           queryToDays.get(q).push(i);
         });
 
-        const dayMap = {};
+        const initialDays = {};
+        const poolsByDay = {};
         let done = 0;
         for (const [q, idxs] of queryToDays) {
           if (!active) return;
           const need = idxs.length * PER_DAY;
-          const pool = (await fetchPhotosFor(q, Math.min(30, need + 4), 'auto', 'destination')) || [];
-          // URLs uniques
+          const pool = (await fetchPhotosFor(q, Math.min(30, need + 6), 'auto', 'destination')) || [];
           const urls = [...new Set(pool.map(imgUrl).filter(Boolean))];
           idxs.forEach((di, k) => {
             const out = [];
             for (let j = 0; j < PER_DAY && urls.length; j++) {
               out.push(urls[(k * PER_DAY + j) % urls.length]); // décalage par jour
             }
-            dayMap[di] = out;
+            initialDays[di] = out;
+            poolsByDay[di] = urls;
             done += 1;
             setStatus(`Recherche des photos… ${Math.round((done / days.length) * 100)}%`);
           });
@@ -87,23 +203,19 @@ export default function BrochurePdfPage() {
         const points = days
           .map((d) => d.coordinates)
           .filter((c) => c && typeof c.lat === 'number' && typeof c.lng === 'number');
-        let routeMap = null;
+        let rMap = null;
         try {
-          routeMap = points.length ? await renderRouteMapImage(points, { accent }) : null;
-        } catch (_) { routeMap = null; }
+          rMap = points.length ? await renderRouteMapImage(points, { accent }) : null;
+        } catch (_) { rMap = null; }
         if (!active) return;
 
-        setStatus('Création du PDF…');
-        // Budget recalculé comme dans la page du voyage (inclut la location de
-        // voiture, etc.) → même total partout.
-        const itForPdf = { ...it, budget_summary: recomputeBudgetFromDays(it) };
-        const blob = await pdf(
-          <BrochurePdfDoc itinerary={itForPdf} photos={{ cover, overview, days: dayMap, routeMap }} />
-        ).toBlob();
-        if (!active) return;
-
-        objUrl = URL.createObjectURL(blob);
-        setUrl(objUrl);
+        setItinerary(it);
+        setRouteMap(rMap);
+        setCoverPool(coverUrls);
+        setDayPools(poolsByDay);
+        setCover(coverUrls[0] || null);
+        setOverview(coverUrls[1] || coverUrls[0] || null);
+        setDayPhotos(initialDays);
         setFileName(`brochure-${(it.summary?.destinations || 'voyage').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.pdf`);
         setStatus(null);
       } catch (e) {
@@ -115,29 +227,74 @@ export default function BrochurePdfPage() {
     })();
     return () => {
       active = false;
-      if (objUrl) URL.revokeObjectURL(objUrl);
     };
   }, [id]);
 
+  function setDayPhoto(i, slot, value) {
+    setDayPhotos((prev) => {
+      const arr = [...(prev[i] || [])];
+      arr[slot] = value;
+      return { ...prev, [i]: arr };
+    });
+  }
+
+  async function generate() {
+    if (!itinerary) return;
+    setGenerating(true);
+    setError(null);
+    try {
+      const itForPdf = { ...itinerary, budget_summary: recomputeBudgetFromDays(itinerary) };
+      const blob = await pdf(
+        <BrochurePdfDoc
+          itinerary={itForPdf}
+          photos={{ cover, overview, days: dayPhotos, routeMap }}
+        />
+      ).toBlob();
+      if (url) URL.revokeObjectURL(url);
+      setUrl(URL.createObjectURL(blob));
+    } catch (e) {
+      setError(e.message || 'Erreur lors de la génération du PDF.');
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  const days = Array.isArray(itinerary?.days) ? itinerary.days : [];
+
   return (
-    <div className="flex h-[calc(100vh-120px)] flex-col px-4 py-4">
-      <div className="mb-3 flex items-center justify-between gap-3">
+    <div className="flex min-h-[calc(100vh-120px)] flex-col px-4 py-4">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <Link to={`/itineraire/${id}`} className="text-sm text-brand-700 underline">
           ← Retour au voyage
         </Link>
-        {url && (
-          <a
-            href={url}
-            download={fileName}
-            className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow"
-          >
-            ⬇️ Télécharger le PDF
-          </a>
-        )}
+        <div className="flex items-center gap-2">
+          {itinerary && (
+            <button
+              onClick={generate}
+              disabled={generating}
+              className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {generating
+                ? 'Création du PDF…'
+                : url
+                  ? '🔄 Régénérer avec ces photos'
+                  : '📄 Générer le PDF'}
+            </button>
+          )}
+          {url && (
+            <a
+              href={url}
+              download={fileName}
+              className="rounded-lg border border-brand-600 px-4 py-2 text-sm font-semibold text-brand-700 shadow-sm"
+            >
+              ⬇️ Télécharger
+            </a>
+          )}
+        </div>
       </div>
 
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           {error}
         </div>
       )}
@@ -151,12 +308,76 @@ export default function BrochurePdfPage() {
         </div>
       )}
 
+      {/* Étape de choix des photos */}
+      {itinerary && !status && (
+        <div className="space-y-6">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+            Cliquez sur une photo pour la remplacer : choisissez une autre photo
+            proposée, ou importez la vôtre. Quand tout vous convient, cliquez sur
+            « Générer le PDF » en haut.
+          </div>
+
+          {/* Couverture + aperçu */}
+          <div>
+            <h3 className="mb-2 text-sm font-bold uppercase tracking-wide text-slate-500">
+              Couverture & présentation
+            </h3>
+            <div className="grid grid-cols-2 gap-4 sm:max-w-md">
+              <PhotoSlot
+                value={cover}
+                pool={coverPool}
+                onPick={setCover}
+                label="Couverture"
+                className="h-40"
+              />
+              <PhotoSlot
+                value={overview}
+                pool={coverPool}
+                onPick={setOverview}
+                label="Présentation"
+                className="h-40"
+              />
+            </div>
+          </div>
+
+          {/* Photos par jour */}
+          <div className="space-y-5">
+            <h3 className="text-sm font-bold uppercase tracking-wide text-slate-500">
+              Photos de chaque journée
+            </h3>
+            {days.map((d, i) => (
+              <div key={i} className="rounded-xl border border-slate-200 bg-white p-4">
+                <p className="mb-3 font-semibold text-slate-800">
+                  Jour {i + 1} — {d.location}
+                </p>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+                  {Array.from({ length: PER_DAY }).map((_, slot) => (
+                    <PhotoSlot
+                      key={slot}
+                      value={(dayPhotos[i] || [])[slot]}
+                      pool={dayPools[i] || []}
+                      onPick={(v) => setDayPhoto(i, slot, v)}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Aperçu du PDF généré */}
       {url && (
-        <iframe
-          title="Brochure PDF"
-          src={url}
-          className="w-full flex-1 rounded-xl border border-slate-200"
-        />
+        <div className="mt-6">
+          <h3 className="mb-2 text-sm font-bold uppercase tracking-wide text-slate-500">
+            Aperçu du PDF
+          </h3>
+          <iframe
+            title="Brochure PDF"
+            src={url}
+            className="h-[80vh] w-full rounded-xl border border-slate-200"
+          />
+        </div>
       )}
     </div>
   );

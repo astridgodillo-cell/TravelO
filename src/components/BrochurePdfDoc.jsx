@@ -345,7 +345,7 @@ export default function BrochurePdfDoc({ itinerary, photos = {} }) {
             return { time: label, type, title: clip(m.title || label, 90), text: (m.description || '').trim() };
           })
           .filter(Boolean);
-        const gallery = ph.length > 1 ? ph.slice(1) : ph;
+        const gallery = ph;
         const captions = [d.morning?.title, d.afternoon?.title, d.noon?.title, d.evening?.title, d.culinary_specialties?.[0]?.name]
           .map((x) => clip(x, 32))
           .filter(Boolean);
