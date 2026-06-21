@@ -102,6 +102,27 @@ export default function StandaloneAlbumPage() {
     [days[i], days[j]] = [days[j], days[i]];
     patch({ days });
   };
+  // Fusionne le jour i avec le précédent : on regroupe les photos, on garde le
+  // titre du précédent et on conserve titre/texte du jour fusionné dans la
+  // description. La mise en page (pages, décos, disposition libre) est remise à
+  // zéro car le nombre de photos change.
+  const mergeDayUp = (i) => {
+    if (i <= 0) return;
+    const a = album.days[i - 1];
+    const b = album.days[i];
+    const note = [a.note, b.title, b.note].map((s) => (s || '').trim()).filter(Boolean).join('\n');
+    const merged = {
+      ...a,
+      photos: [...(a.photos || []), ...(b.photos || [])],
+      note,
+      split: null,
+      pageDeco: {},
+      freePages: {},
+    };
+    const days = album.days.filter((_, k) => k !== i);
+    days[i - 1] = merged;
+    patch({ days });
+  };
 
   async function addPhotos(i, files) {
     setBusyDay(i);
@@ -340,11 +361,22 @@ export default function StandaloneAlbumPage() {
       <div className="mt-5 space-y-5">
         {album.days.map((d, i) => (
           <div key={i}>
-            <div className="mb-1 flex items-center justify-end gap-2">
+            <div className="mb-1 flex flex-wrap items-center justify-end gap-2">
               <button type="button" onClick={() => moveDay(i, -1)} disabled={i === 0}
                 className="rounded border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-600 disabled:opacity-30" title="Monter">↑</button>
               <button type="button" onClick={() => moveDay(i, 1)} disabled={i === album.days.length - 1}
                 className="rounded border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-600 disabled:opacity-30" title="Descendre">↓</button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm(`Fusionner ce jour avec le Jour ${i} ? Toutes les photos seront regroupées dans le Jour ${i}.`)) mergeDayUp(i);
+                }}
+                disabled={i === 0}
+                className="rounded border border-slate-300 bg-white px-2 py-0.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-30"
+                title="Regrouper les photos de ce jour avec le jour précédent"
+              >
+                ⤵ Fusionner avec le jour précédent
+              </button>
               <button type="button" onClick={() => removeDay(i)}
                 className="rounded border border-red-200 bg-white px-2 py-0.5 text-xs font-medium text-red-600 hover:bg-red-50">Supprimer ce jour</button>
             </div>
