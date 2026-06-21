@@ -218,13 +218,13 @@ export function EffectPicker({ photo, current, onPick, onClose }) {
     );
   };
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4">
-      <div className="my-8 w-full max-w-2xl rounded-2xl bg-white p-5 shadow-2xl">
-        <div className="mb-3 flex items-center justify-between">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-4">
+      <div className="flex max-h-[100dvh] w-full max-w-2xl flex-col rounded-t-2xl bg-white shadow-2xl sm:max-h-[90vh] sm:rounded-2xl">
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
           <h3 className="font-semibold text-slate-800">Effet de la photo</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-700">✕</button>
+          <button onClick={onClose} className="-m-2 p-2 text-2xl leading-none text-slate-400 hover:text-slate-700">✕</button>
         </div>
-        <div className="max-h-[70vh] space-y-4 overflow-y-auto pr-1">
+        <div className="flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-3">
           <div>
             <button
               type="button"
@@ -315,92 +315,96 @@ export function DecoEditor({ title, aspect, background, initialItems, onChange, 
   const selItem = sel != null ? items[sel] : null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-contain bg-black/60 p-3">
-      <div className="my-6 w-full max-w-xl rounded-2xl bg-white p-3 shadow-2xl sm:p-4">
-        <div className="mb-2 flex items-center justify-between">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 sm:items-center sm:p-3">
+      <div className="flex max-h-[100dvh] w-full max-w-xl flex-col rounded-t-2xl bg-white shadow-2xl sm:max-h-[92vh] sm:rounded-2xl">
+        {/* en-tête fixe */}
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
           <h3 className="font-semibold text-slate-800">{title}</h3>
-          <button onClick={onClose} className="-m-1 p-1 text-2xl leading-none text-slate-400 hover:text-slate-700">✕</button>
+          <button onClick={onClose} className="-m-2 p-2 text-2xl leading-none text-slate-400 hover:text-slate-700">✕</button>
         </div>
 
-        {toolbar}
+        {/* corps défilable */}
+        <div className="flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-4">
+          {toolbar}
 
-        <div
-          ref={canvasRef}
-          className="relative mx-auto w-full max-w-md select-none touch-none overflow-hidden rounded-lg border border-slate-200 bg-slate-200"
-          style={{ aspectRatio: String(aspect), containerType: 'size' }}
-          onPointerDown={() => setSel(null)}
-          onPointerMove={pointerMove}
-          onPointerUp={endDrag}
-          onPointerCancel={endDrag}
-        >
-          <div className="pointer-events-none absolute inset-0">{background}</div>
-          {items.map((it, i) => (
-            <div
-              key={i}
-              onPointerDown={(e) => pointerDown(e, i)}
-              className={`absolute cursor-move touch-none ${sel === i ? 'outline outline-2 outline-coral-400' : ''}`}
-              style={{ left: `${it.xf * 100}%`, top: `${it.yf * 100}%`, transform: `translate(-50%,-50%) rotate(${it.rot}deg)` }}
-            >
-              <DecoItemView it={it} />
-            </div>
-          ))}
-        </div>
-
-        {selItem ? (
-          <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-600">Élément sélectionné</span>
-              <button onClick={() => remove(sel)} className="text-xs font-medium text-red-600">Supprimer</button>
-            </div>
-            {selItem.type === 'text' && (
-              <div className="mt-2 flex items-center gap-2">
-                <input value={selItem.value} onChange={(e) => update(sel, { value: e.target.value })}
-                  className="min-w-0 flex-1 rounded border border-slate-300 px-2 py-1 text-sm" />
-                <input type="color" value={selItem.color || '#ffffff'} onChange={(e) => update(sel, { color: e.target.value })}
-                  className="h-8 w-10 rounded border border-slate-300" />
+          <div
+            ref={canvasRef}
+            className="relative mx-auto select-none touch-none overflow-hidden rounded-lg border border-slate-200 bg-slate-200"
+            style={{ aspectRatio: String(aspect), width: `min(100%, calc(44vh * ${aspect}))`, maxWidth: '100%', containerType: 'size' }}
+            onPointerDown={() => setSel(null)}
+            onPointerMove={pointerMove}
+            onPointerUp={endDrag}
+            onPointerCancel={endDrag}
+          >
+            <div className="pointer-events-none absolute inset-0">{background}</div>
+            {items.map((it, i) => (
+              <div
+                key={i}
+                onPointerDown={(e) => pointerDown(e, i)}
+                className={`absolute cursor-move touch-none ${sel === i ? 'outline outline-2 outline-coral-400' : ''}`}
+                style={{ left: `${it.xf * 100}%`, top: `${it.yf * 100}%`, transform: `translate(-50%,-50%) rotate(${it.rot}deg)` }}
+              >
+                <DecoItemView it={it} />
               </div>
-            )}
-            <label className="mt-2 block text-xs text-slate-600">Taille
-              <input type="range" min="0.05" max="0.6" step="0.01" value={selItem.scale}
-                onChange={(e) => update(sel, { scale: parseFloat(e.target.value) })} className="w-full" />
-            </label>
-            <label className="block text-xs text-slate-600">Rotation
-              <input type="range" min="-180" max="180" step="1" value={selItem.rot}
-                onChange={(e) => update(sel, { rot: parseInt(e.target.value, 10) })} className="w-full" />
-            </label>
+            ))}
           </div>
-        ) : (
-          <p className="mt-3 text-center text-xs text-slate-500">Touche un élément pour le déplacer, le redimensionner ou le pivoter.</p>
-        )}
 
-        <div className="mt-3">
-          <div className="mb-2 flex flex-wrap gap-2">
-            <button onClick={addText} className="rounded-md bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-200">➕ Texte</button>
-            <button onClick={() => fileRef.current?.click()} disabled={uploading}
-              className="rounded-md bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-200 disabled:opacity-50">
-              {uploading ? 'Import…' : '🖼️ Importer une image (PNG)'}
-            </button>
-            <input ref={fileRef} type="file" accept="image/*" className="hidden"
-              onChange={(e) => { addImageFile(e.target.files?.[0]); e.target.value = ''; }} />
-          </div>
-          {/* onglets de catégories */}
-          <div className="mb-1 flex flex-wrap gap-1">
-            {STICKER_CATEGORIES.map((c) => (
-              <button key={c.key} onClick={() => setCat(c.key)} title={c.name}
-                className={`rounded-md px-2 py-1 text-base leading-none ${cat === c.key ? 'bg-coral-500' : 'bg-slate-100 hover:bg-slate-200'}`}>
-                {c.label}
+          {selItem ? (
+            <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-slate-600">Élément sélectionné</span>
+                <button onClick={() => remove(sel)} className="text-xs font-medium text-red-600">Supprimer</button>
+              </div>
+              {selItem.type === 'text' && (
+                <div className="mt-2 flex items-center gap-2">
+                  <input value={selItem.value} onChange={(e) => update(sel, { value: e.target.value })}
+                    className="min-w-0 flex-1 rounded border border-slate-300 px-2 py-1 text-sm" />
+                  <input type="color" value={selItem.color || '#ffffff'} onChange={(e) => update(sel, { color: e.target.value })}
+                    className="h-8 w-10 rounded border border-slate-300" />
+                </div>
+              )}
+              <label className="mt-2 block text-xs text-slate-600">Taille
+                <input type="range" min="0.05" max="0.6" step="0.01" value={selItem.scale}
+                  onChange={(e) => update(sel, { scale: parseFloat(e.target.value) })} className="w-full" />
+              </label>
+              <label className="block text-xs text-slate-600">Rotation
+                <input type="range" min="-180" max="180" step="1" value={selItem.rot}
+                  onChange={(e) => update(sel, { rot: parseInt(e.target.value, 10) })} className="w-full" />
+              </label>
+            </div>
+          ) : (
+            <p className="mt-3 text-center text-xs text-slate-500">Touche un élément pour le déplacer, le redimensionner ou le pivoter.</p>
+          )}
+
+          <div className="mt-3">
+            <div className="mb-2 flex flex-wrap gap-2">
+              <button onClick={addText} className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200">➕ Texte</button>
+              <button onClick={() => fileRef.current?.click()} disabled={uploading}
+                className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200 disabled:opacity-50">
+                {uploading ? 'Import…' : '🖼️ Importer une image (PNG)'}
               </button>
-            ))}
-          </div>
-          <div className="grid max-h-44 grid-cols-8 gap-1 overflow-y-auto rounded-lg border border-slate-200 p-2 text-2xl sm:grid-cols-10 sm:text-xl">
-            {activeCat.emojis.map((e, idx) => (
-              <button key={e + idx} onClick={() => addEmoji(e)} className="rounded py-1 hover:bg-slate-100 active:bg-slate-200">{e}</button>
-            ))}
+              <input ref={fileRef} type="file" accept="image/*" className="hidden"
+                onChange={(e) => { addImageFile(e.target.files?.[0]); e.target.value = ''; }} />
+            </div>
+            <div className="mb-1 flex flex-wrap gap-1">
+              {STICKER_CATEGORIES.map((c) => (
+                <button key={c.key} onClick={() => setCat(c.key)} title={c.name}
+                  className={`rounded-md px-2 py-1 text-base leading-none ${cat === c.key ? 'bg-coral-500' : 'bg-slate-100 hover:bg-slate-200'}`}>
+                  {c.label}
+                </button>
+              ))}
+            </div>
+            <div className="grid max-h-44 grid-cols-8 gap-1 overflow-y-auto rounded-lg border border-slate-200 p-2 text-2xl sm:grid-cols-10 sm:text-xl">
+              {activeCat.emojis.map((e, idx) => (
+                <button key={e + idx} onClick={() => addEmoji(e)} className="rounded py-1 hover:bg-slate-100 active:bg-slate-200">{e}</button>
+              ))}
+            </div>
           </div>
         </div>
 
-        <div className="mt-4 flex justify-end">
-          <button onClick={onClose} className="rounded-lg bg-coral-500 px-4 py-2 text-sm font-semibold text-white">Terminé</button>
+        {/* pied fixe */}
+        <div className="flex shrink-0 justify-end border-t border-slate-100 px-4 py-3">
+          <button onClick={onClose} className="rounded-lg bg-coral-500 px-5 py-2 text-sm font-semibold text-white">Terminé</button>
         </div>
       </div>
     </div>
@@ -937,15 +941,16 @@ export function CoverPicker({ days, album, current, onPick, onClose, title = 'Ch
   const samePhoto = (a, b) => a && b && (a.full || a.display) === (b?.full || b?.display);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4">
-      <div className="my-8 w-full max-w-3xl rounded-2xl bg-white p-5 shadow-2xl">
-        <div className="mb-3 flex items-center justify-between gap-3">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-4">
+      <div className="flex max-h-[100dvh] w-full max-w-3xl flex-col rounded-t-2xl bg-white shadow-2xl sm:max-h-[90vh] sm:rounded-2xl">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
           <h3 className="font-semibold text-slate-800">{title}</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-700" aria-label="Fermer">
+          <button onClick={onClose} className="-m-2 p-2 text-2xl leading-none text-slate-400 hover:text-slate-700" aria-label="Fermer">
             ✕
           </button>
         </div>
 
+        <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-3">
         <div className="mb-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3">
           <button
             type="button"
@@ -981,7 +986,7 @@ export function CoverPicker({ days, album, current, onPick, onClose, title = 'Ch
             <p className="mb-2 text-xs font-medium text-slate-500">
               …ou choisis une photo déjà présente dans ton album :
             </p>
-            <div className="max-h-[50vh] space-y-5 overflow-y-auto pr-1">
+            <div className="space-y-5">
             {groups.map((g) => (
               <div key={g.i}>
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-coral-600">
@@ -1014,6 +1019,7 @@ export function CoverPicker({ days, album, current, onPick, onClose, title = 'Ch
             </div>
           </>
         )}
+        </div>
       </div>
     </div>
   );
