@@ -411,6 +411,52 @@ export async function uploadAlbumPhoto(file) {
   return { full, display, w, h };
 }
 
+// Répare une photo d'album déjà enregistrée « à l'ancienne » (couchée parce que
+// son orientation n'avait pas été appliquée). On récupère l'image stockée, on
+// calcule ses dimensions correctement orientées :
+//   - si elles correspondent déjà à ce qui est enregistré → photo déjà bonne,
+//     on la renvoie telle quelle (aucun réenvoi, pas de perte de qualité) ;
+//   - sinon → on la réencode avec l'orientation appliquée et on la renvoie
+//     corrigée (nouveaux liens + bonnes dimensions).
+export async function repairAlbumPhoto(photo) {
+  if (!photo?.full) return photo;
+
+  let blob;
+  try {
+    blob = await (await fetch(photo.full)).blob();
+  } catch {
+    return photo; // image inaccessible (réseau/CORS) → on n'y touche pas
+  }
+
+  let ow = null;
+  let oh = null;
+  try {
+    const bmp = await createImageBitmap(blob, { imageOrientation: 'from-image' });
+    ow = bmp.width;
+    oh = bmp.height;
+    bmp.close?.();
+  } catch {
+    return photo;
+  }
+
+  // Déjà à l'endroit (dimensions enregistrées = dimensions orientées) → on garde.
+  if (ow && oh && photo.w === ow && photo.h === oh) return photo;
+
+  try {
+    const big = await renderOriented(blob, 3500, 0.92);
+    const ds = await renderOriented(blob, 1600, 0.82);
+    const [full, display] = await Promise.all([
+      uploadToBrochureBucket(big.blob || blob, '-full'),
+      uploadToBrochureBucket(ds.blob || big.blob || blob, '-disp'),
+    ]);
+    return { ...photo, full, display, w: big.w ?? ow, h: big.h ?? oh };
+  } catch {
+    // En cas d'échec du réencodage, on corrige au moins les dimensions, ce qui
+    // évite déjà la déformation dans la mise en page mosaïque.
+    return { ...photo, w: ow, h: oh };
+  }
+}
+
 // ----- PARTAGE DE LISTES (entre utilisateurs, en temps réel) -----
 
 // Invite un utilisateur (par email) à partager une liste. Crée une invitation

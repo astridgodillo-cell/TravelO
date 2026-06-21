@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { pdf } from '@react-pdf/renderer';
-import { getItinerary, updateItinerary, uploadAlbumPhoto } from '../lib/supabase';
+import {
+  getItinerary,
+  updateItinerary,
+  uploadAlbumPhoto,
+  repairAlbumPhoto,
+} from '../lib/supabase';
 import AlbumPdfDoc from '../components/AlbumPdfDoc';
 
 const FORMAT_LABELS = {
@@ -283,6 +288,10 @@ export default function AlbumPage() {
   // Choix de la couverture
   const [coverPickerOpen, setCoverPickerOpen] = useState(false);
 
+  // Réparation des photos (orientation)
+  const [repairing, setRepairing] = useState(false);
+  const [repairMsg, setRepairMsg] = useState(null);
+
   useEffect(() => {
     let active = true;
     getItinerary(id).then(({ data, error: e }) => {
@@ -383,6 +392,67 @@ export default function AlbumPage() {
   const photoCount = album
     ? Object.values(album.days).reduce((n, e) => n + (e.photos?.length || 0), 0)
     : 0;
+
+  // Répare toutes les photos déjà ajoutées : remet à l'endroit celles qui sont
+  // couchées, puis enregistre. Les photos déjà correctes ne sont pas touchées.
+  async function repairPhotos() {
+    if (!trip || !album) return;
+    setRepairing(true);
+    setError(null);
+    setRepairMsg('Vérification des photos…');
+    try {
+      const total = photoCount + (album.cover ? 1 : 0);
+      let done = 0;
+      const tick = () => {
+        done += 1;
+        setRepairMsg(`Réparation des photos… ${done}/${total}`);
+      };
+
+      const newDays = {};
+      for (const [i, entry] of Object.entries(album.days)) {
+        const photos = [];
+        for (const p of entry.photos || []) {
+          photos.push(await repairAlbumPhoto(p));
+          tick();
+        }
+        newDays[i] = { ...entry, photos };
+      }
+      let cover = album.cover;
+      if (cover) {
+        cover = await repairAlbumPhoto(cover);
+        tick();
+      }
+
+      const nextAlbum = { ...album, days: newDays, cover };
+      setAlbum(nextAlbum);
+
+      const next = {
+        ...trip.itinerary,
+        travel_album: {
+          title: nextAlbum.title,
+          cover: nextAlbum.cover || null,
+          days: nextAlbum.days,
+          updatedAt: new Date().toISOString(),
+        },
+      };
+      const { data, error: e } = await updateItinerary(id, { itinerary: next });
+      if (e) throw e;
+      setTrip(data);
+      setDirty(false);
+      setSavedOnce(true);
+      setRepairMsg('✓ Photos vérifiées et remises à l’endroit.');
+      // On invalide l'aperçu PDF éventuel pour qu'il soit refait proprement.
+      if (pdfUrl) {
+        URL.revokeObjectURL(pdfUrl);
+        setPdfUrl(null);
+      }
+    } catch (e) {
+      setRepairMsg(null);
+      setError(e.message || 'La réparation a échoué. Réessaie dans un instant.');
+    } finally {
+      setRepairing(false);
+    }
+  }
 
   async function generatePdf() {
     if (!album) return;
@@ -515,6 +585,23 @@ export default function AlbumPage() {
       {error && (
         <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
           {error}
+        </div>
+      )}
+
+      {photoCount > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+          <button
+            type="button"
+            onClick={repairPhotos}
+            disabled={repairing}
+            className="rounded-lg border border-amber-500 bg-white px-3 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-100 disabled:opacity-50"
+          >
+            {repairing ? 'Réparation…' : '🛠️ Réparer l’orientation des photos'}
+          </button>
+          <span className="text-xs text-amber-700">
+            {repairMsg ||
+              'À utiliser si des photos déjà ajoutées apparaissent couchées : elles seront remises à l’endroit.'}
+          </span>
         </div>
       )}
 
