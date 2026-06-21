@@ -236,7 +236,19 @@ function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhoto, busy
   const total = entry.photos.length;
   const splitCounts = computeSplit(total, entry.split);
   const pageCount = splitCounts.length;
-  const splitSum = splitCounts.reduce((a, b) => a + b, 0);
+  // Change le nombre de pages (réparti équitablement, toujours valide).
+  const setPagesCount = (n) =>
+    update({ split: balancedSplit(total, Math.max(1, Math.min(total, n))) });
+  // Fixe le nombre de photos d'une page : les autres pages sont réajustées
+  // pour que le total reste égal au nombre de photos (jamais d'état invalide).
+  const setPageValue = (p, val) => {
+    const pages = splitCounts.length;
+    const v = Math.max(1, Math.min(Number.isFinite(val) ? val : 1, total - (pages - 1)));
+    const rest = balancedSplit(total - v, pages - 1);
+    let ri = 0;
+    const arr = splitCounts.map((_, k) => (k === p ? v : rest[ri++]));
+    update({ split: arr });
+  };
   const setBg = (next) => update({ bg: next });
   const getPageSpec = (p) => bg.pages?.[p] || { type: 'none' };
   const setPageSpec = (p, spec) => {
@@ -336,7 +348,7 @@ function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhoto, busy
               <span className="text-slate-500">Pages :</span>
               <button
                 type="button"
-                onClick={() => update({ split: balancedSplit(total, Math.max(1, pageCount - 1)) })}
+                onClick={() => setPagesCount(pageCount - 1)}
                 disabled={pageCount <= 1}
                 className="h-6 w-6 rounded border border-slate-300 bg-white font-bold text-slate-700 disabled:opacity-40"
               >
@@ -345,7 +357,7 @@ function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhoto, busy
               <span className="w-4 text-center font-semibold text-slate-700">{pageCount}</span>
               <button
                 type="button"
-                onClick={() => update({ split: balancedSplit(total, Math.min(total, pageCount + 1)) })}
+                onClick={() => setPagesCount(pageCount + 1)}
                 disabled={pageCount >= total}
                 className="h-6 w-6 rounded border border-slate-300 bg-white font-bold text-slate-700 disabled:opacity-40"
               >
@@ -363,11 +375,7 @@ function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhoto, busy
                   min={1}
                   max={total}
                   value={c}
-                  onChange={(e) => {
-                    const arr = [...splitCounts];
-                    arr[p] = Math.max(1, parseInt(e.target.value, 10) || 1);
-                    update({ split: arr });
-                  }}
+                  onChange={(e) => setPageValue(p, parseInt(e.target.value, 10))}
                   className="w-14 rounded-md border border-slate-300 px-2 py-1 text-center"
                 />
               </label>
@@ -375,10 +383,8 @@ function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhoto, busy
           </div>
 
           <div className="mt-2 flex items-center justify-between gap-2">
-            <p className={`text-xs ${splitSum === total ? 'text-slate-400' : 'text-amber-600'}`}>
-              {splitSum === total
-                ? 'Réparti sur les pages ci-dessus.'
-                : `Le total doit faire ${total} (actuellement ${splitSum}).`}
+            <p className="text-xs text-slate-400">
+              Modifier une case réajuste les autres pour garder {total} photos.
             </p>
             <button
               type="button"
@@ -821,10 +827,17 @@ export default function AlbumPage() {
         }
       });
       if (points.length) {
+        // La carte épouse l'orientation du format choisi (sinon une carte
+        // paysage tranche dans un album portrait).
+        const mapDims =
+          format === 'a4paysage'
+            ? { width: 1600, height: 1000 }
+            : format === 'a4portrait'
+              ? { width: 1100, height: 1500 }
+              : { width: 1400, height: 1320 };
         try {
           routeMap = await renderRouteMapImage(points, {
-            width: 1600,
-            height: 1000,
+            ...mapDims,
             accent: '#C8643C',
           });
         } catch {
