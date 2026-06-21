@@ -360,7 +360,7 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
   return (
     <Document title={`${album?.title || 'Album'} — TravelO`} author="TravelO">
       {/* COUVERTURE — photo pleine page jusqu'au fond perdu */}
-      <Page size={[pageW, pageH]} style={st.coverPage}>
+      <Page size={[pageW, pageH]} style={st.coverPage} wrap={false}>
         {cover && (
           <View style={st.coverImgWrap}>
             <Image src={imgFull(cover)} style={st.coverImg} />
@@ -388,7 +388,7 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
         const stopsMm = nStops ? Math.ceil(nStops / 2) * 7 + 6 : 0;
         const mapH = pageH - mm(PAD_MM) * 2 - mm(20) - mm(stopsMm) - mm(6);
         return (
-          <Page size={[pageW, pageH]} style={st.page}>
+          <Page size={[pageW, pageH]} style={st.page} wrap={false}>
             <View style={st.header}>
               <Text style={st.dayKicker}>Itinéraire</Text>
               <Text style={st.dayTitle}>La carte du voyage</Text>
@@ -432,7 +432,7 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
             pageH - mm(PAD_MM) * 2 - mm(headerMm)
           );
           return (
-            <Page key={`${e.i}-${p}`} size={[pageW, pageH]} style={st.page}>
+            <Page key={`${e.i}-${p}`} size={[pageW, pageH]} style={st.page} wrap={false}>
               <PageBackground spec={spec} pageW={pageW} pageH={pageH} st={st} />
               <View style={onPlate ? st.headerPlate : st.header}>
                 <Text style={st.dayKicker}>
@@ -455,7 +455,7 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
       })}
 
       {/* PAGE DE FIN — quatrième de couverture (personnalisable) */}
-      <Page size={[pageW, pageH]} style={st.endPage}>
+      <Page size={[pageW, pageH]} style={st.endPage} wrap={false}>
         {endPhoto && imgFull(endPhoto) && (
           <>
             <View style={st.endImgWrap}>
