@@ -264,6 +264,32 @@ function DecoItemView({ it }) {
   );
 }
 
+// Rendu d'un objet du canevas : une PHOTO (avec son effet, son cadre, sa
+// légende et ses décos) ou une décoration (emoji/texte/image).
+function ObjView({ it }) {
+  if (it.kind === 'photo') {
+    const p = it.photo;
+    const { imgStyle, wrapStyle } = effectPreview(getPhotoEffect(p.effect));
+    const pdeco = p.deco || [];
+    return (
+      <div className="relative overflow-hidden" style={{ width: `${it.scale * 100}cqmin`, aspectRatio: String(it.ar || 4 / 3), containerType: 'size' }}>
+        <div className="flex h-full w-full items-center justify-center overflow-hidden" style={wrapStyle}>
+          <img src={p.display || p.full} alt="" className="h-full w-full object-cover" style={imgStyle} draggable={false} />
+        </div>
+        {pdeco.map((d, k) => (
+          <div key={k} className="absolute" style={{ left: `${d.xf * 100}%`, top: `${d.yf * 100}%`, transform: `translate(-50%,-50%) rotate(${d.rot}deg)` }}>
+            <DecoItemView it={d} />
+          </div>
+        ))}
+        {p.caption ? (
+          <div className="absolute inset-x-0 bottom-0 px-1 py-0.5 text-center italic text-white" style={{ backgroundColor: 'rgba(0,0,0,0.45)', fontSize: '3cqmin' }}>{p.caption}</div>
+        ) : null}
+      </div>
+    );
+  }
+  return <DecoItemView it={it} />;
+}
+
 export function DecoEditor({ title, aspect, background, initialItems, onChange, onClose, toolbar = null }) {
   const [items, setItems] = useState(() => (initialItems || []).map((d) => ({ ...d })));
   const [sel, setSel] = useState(null);
@@ -341,10 +367,10 @@ export function DecoEditor({ title, aspect, background, initialItems, onChange, 
               <div
                 key={i}
                 onPointerDown={(e) => pointerDown(e, i)}
-                className={`absolute cursor-move touch-none ${sel === i ? 'outline outline-2 outline-coral-400' : ''}`}
+                className={`absolute cursor-move touch-none ${sel === i ? 'outline outline-2 outline-coral-400 outline-offset-1' : ''}`}
                 style={{ left: `${it.xf * 100}%`, top: `${it.yf * 100}%`, transform: `translate(-50%,-50%) rotate(${it.rot}deg)` }}
               >
-                <DecoItemView it={it} />
+                <ObjView it={it} />
               </div>
             ))}
           </div>
@@ -352,8 +378,10 @@ export function DecoEditor({ title, aspect, background, initialItems, onChange, 
           {selItem ? (
             <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-600">Élément sélectionné</span>
-                <button onClick={() => remove(sel)} className="text-xs font-medium text-red-600">Supprimer</button>
+                <span className="text-xs font-semibold text-slate-600">{selItem.kind === 'photo' ? 'Photo sélectionnée' : 'Élément sélectionné'}</span>
+                {selItem.kind !== 'photo' && (
+                  <button onClick={() => remove(sel)} className="text-xs font-medium text-red-600">Supprimer</button>
+                )}
               </div>
               {selItem.type === 'text' && (
                 <div className="mt-2 flex items-center gap-2">
@@ -364,7 +392,7 @@ export function DecoEditor({ title, aspect, background, initialItems, onChange, 
                 </div>
               )}
               <label className="mt-2 block text-xs text-slate-600">Taille
-                <input type="range" min="0.05" max="0.6" step="0.01" value={selItem.scale}
+                <input type="range" min="0.05" max={selItem.kind === 'photo' ? '1.3' : '0.6'} step="0.01" value={selItem.scale}
                   onChange={(e) => update(sel, { scale: parseFloat(e.target.value) })} className="w-full" />
               </label>
               <label className="block text-xs text-slate-600">Rotation
@@ -373,7 +401,7 @@ export function DecoEditor({ title, aspect, background, initialItems, onChange, 
               </label>
             </div>
           ) : (
-            <p className="mt-3 text-center text-xs text-slate-500">Touche un élément pour le déplacer, le redimensionner ou le pivoter.</p>
+            <p className="mt-3 text-center text-xs text-slate-500">Touche un élément (photo, emoji, texte…) pour le déplacer, le redimensionner ou le pivoter.</p>
           )}
 
           <div className="mt-3">
@@ -450,7 +478,7 @@ function themePatternStyle(theme) {
 export function PageDecorateModal({
   photos, format, onFormatChange, theme, title, note, firstPage,
   dayIndex, location, bg, pageIndex, pageCount,
-  initialItems, onChange, onClose,
+  initialItems, onChange, initialFree, onChangeFree, onClose,
 }) {
   const spec = resolveBg(bg, pageIndex, pageCount);
   const onPlate = spec.type !== 'none';
@@ -458,6 +486,25 @@ export function PageDecorateModal({
   const pct = (v, total) => `${(v / total) * 100}%`;
   const ink = theme?.ink || '#1C2B2D';
   const accent = theme?.accent || '#C8643C';
+  const minPage = Math.min(lay.pageW, lay.pageH);
+
+  // Disposition libre active si on a des boîtes valides pour cette page.
+  const freeValid = Array.isArray(initialFree) && initialFree.length === photos.length && photos.length > 0;
+
+  // Passage en disposition libre : on initialise les boîtes depuis la grille.
+  const enableFree = () => {
+    const boxes = photos.map((p, i) => {
+      const c = lay.cells[i] || { x: lay.pad, y: lay.pad, w: minPage * 0.4, h: minPage * 0.3 };
+      return {
+        xf: (c.x + c.w / 2) / lay.pageW,
+        yf: (c.y + c.h / 2) / lay.pageH,
+        scale: c.w / minPage,
+        rot: 0,
+      };
+    });
+    onChangeFree(boxes);
+  };
+  const disableFree = () => onChangeFree(null);
 
   // Fond de la page
   let baseStyle = { backgroundColor: theme?.paper || '#FBF8F3', ...themePatternStyle(theme) };
@@ -489,8 +536,9 @@ export function PageDecorateModal({
       <div className="absolute overflow-hidden" style={{ left: pct(lay.pad, lay.pageW), top: pct(lay.pad, lay.pageH), width: pct(lay.contentW, lay.pageW), height: pct(lay.headerH, lay.pageH) }}>
         {headerInner}
       </div>
-      {/* photos */}
-      {photos.map((p, i) => {
+      {/* photos en grille (en disposition libre, elles deviennent des objets
+          déplaçables et ne sont donc plus dessinées dans le fond) */}
+      {!freeValid && photos.map((p, i) => {
         const c = lay.cells[i];
         if (!c) return null;
         const { imgStyle, wrapStyle } = effectPreview(getPhotoEffect(p.effect));
@@ -514,25 +562,57 @@ export function PageDecorateModal({
     </div>
   );
 
+  // Objets manipulables : en disposition libre, les photos en tête (z-order
+  // derrière), puis les décorations.
+  const photoObjs = freeValid
+    ? photos.map((p, i) => ({ kind: 'photo', photo: p, ar: p.w && p.h ? p.w / p.h : 4 / 3, ...initialFree[i] }))
+    : [];
+  const objects = [...photoObjs, ...(initialItems || [])];
+
+  const handleChange = (objs) => {
+    const decos = objs.filter((o) => o.kind !== 'photo');
+    onChange(decos);
+    if (freeValid) {
+      onChangeFree(objs.filter((o) => o.kind === 'photo').map(({ xf, yf, scale, rot }) => ({ xf, yf, scale, rot })));
+    }
+  };
+
   const FORMAT_LABELS = { carre: '21 × 21 cm', a4paysage: 'A4 paysage', a4portrait: 'A4 portrait' };
-  const toolbar = onFormatChange ? (
-    <div className="mb-2 flex flex-wrap items-center gap-2">
-      <span className="text-xs font-medium text-slate-600">Format :</span>
-      {Object.entries(FORMAT_LABELS).map(([k, lbl]) => (
-        <button key={k} onClick={() => onFormatChange(k)}
-          className={`rounded-md px-2.5 py-1 text-xs font-semibold ${format === k ? 'bg-coral-500 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
-          {lbl}
+  const toolbar = (
+    <div className="mb-2 space-y-2">
+      {onFormatChange && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium text-slate-600">Format :</span>
+          {Object.entries(FORMAT_LABELS).map(([k, lbl]) => (
+            <button key={k} onClick={() => onFormatChange(k)}
+              className={`rounded-md px-2.5 py-1 text-xs font-semibold ${format === k ? 'bg-coral-500 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
+              {lbl}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-medium text-slate-600">Photos :</span>
+        <button onClick={freeValid ? disableFree : enableFree}
+          className={`rounded-md px-2.5 py-1 text-xs font-semibold ${freeValid ? 'bg-coral-500 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
+          {freeValid ? '✓ Disposition libre (déplaçables)' : '✋ Disposer les photos librement'}
         </button>
-      ))}
+        {freeValid && (
+          <button onClick={enableFree} className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-200" title="Revenir à la disposition automatique en grille">
+            ↺ Réinitialiser
+          </button>
+        )}
+      </div>
     </div>
-  ) : null;
+  );
 
   return (
     <DecoEditor
-      title="Décorer la page"
+      key={freeValid ? `free-${photos.length}` : 'grid'}
+      title="Composer la page"
       aspect={lay.pageW / lay.pageH}
-      initialItems={initialItems || []}
-      onChange={onChange}
+      initialItems={objects}
+      onChange={handleChange}
       onClose={onClose}
       background={background}
       toolbar={toolbar}
@@ -623,6 +703,11 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
   const pageCount = splitCounts.length;
   const chunks = splitPhotos(entry.photos, entry.split);
   const setPageDeco = (p, items) => update({ pageDeco: { ...(entry.pageDeco || {}), [p]: items } });
+  const setPageFree = (p, boxes) => {
+    const next = { ...(entry.freePages || {}) };
+    if (boxes) next[p] = boxes; else delete next[p];
+    update({ freePages: next });
+  };
   // Change le nombre de pages (réparti équitablement, toujours valide).
   const setPagesCount = (n) =>
     update({ split: balancedSplit(total, Math.max(1, Math.min(total, n))) });
@@ -865,9 +950,9 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
         )}
       </div>
 
-      {/* DÉCORER LES PAGES (emojis/stickers/textes en dehors des photos) */}
+      {/* COMPOSER LES PAGES : déplacer les photos + emojis/stickers/textes */}
       <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
-        <span className="text-sm font-medium text-slate-700">✨ Décorer&nbsp;:</span>
+        <span className="text-sm font-medium text-slate-700">✨ Composer / décorer&nbsp;:</span>
         {Array.from({ length: pageCount }).map((_, p) => (
           <button
             key={p}
@@ -876,6 +961,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
             className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
           >
             {pageCount > 1 ? `Page ${p + 1}` : 'Cette page'}
+            {entry.freePages?.[p] ? ' ✋' : ''}
             {(entry.pageDeco?.[p]?.length || 0) > 0 ? ` (${entry.pageDeco[p].length})` : ''}
           </button>
         ))}
@@ -897,6 +983,8 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
           pageCount={pageCount}
           initialItems={entry.pageDeco?.[decoPage] || []}
           onChange={(items) => setPageDeco(decoPage, items)}
+          initialFree={entry.freePages?.[decoPage] || null}
+          onChangeFree={(boxes) => setPageFree(decoPage, boxes)}
           onClose={() => setDecoPage(null)}
         />
       )}

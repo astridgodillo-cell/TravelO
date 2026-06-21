@@ -471,6 +471,9 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
           const firstPage = p === 0;
           const onPlate = spec.type !== 'none';
           const lay = pageLayout(chunk, format, { title: e.title, note: e.note, firstPage, onPlate });
+          const free = e.freePages?.[p];
+          const freeValid = Array.isArray(free) && free.length === chunk.length && chunk.length > 0;
+          const minPage = Math.min(pageW, pageH);
           return (
             <Page key={`${e.i}-${p}`} size={[pageW, pageH]} style={st.dayPage}>
               {spec.type === 'none' && <PagePattern theme={theme} pageW={pageW} pageH={pageH} />}
@@ -485,7 +488,24 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
                   {firstPage && e.note ? <Text style={st.note}>{e.note}</Text> : null}
                 </View>
               </View>
-              <Mosaic cells={lay.cells} photos={chunk} st={st} />
+              {freeValid ? (
+                chunk.map((photo, i) => {
+                  const b = free[i];
+                  const ar = photo.w && photo.h ? photo.w / photo.h : 4 / 3;
+                  const bw = b.scale * minPage;
+                  const bh = bw / ar;
+                  return (
+                    <View key={i} style={{ position: 'absolute', left: b.xf * pageW - bw / 2, top: b.yf * pageH - bh / 2, width: bw, height: bh, transform: `rotate(${b.rot}deg)`, transformOrigin: 'center' }}>
+                      <PdfPhoto photo={photo} st={st} w={bw} h={bh} />
+                      {photo.caption ? (
+                        <View style={st.capWrap}><Text style={st.capTxt}>{photo.caption}</Text></View>
+                      ) : null}
+                    </View>
+                  );
+                })
+              ) : (
+                <Mosaic cells={lay.cells} photos={chunk} st={st} />
+              )}
               {e.pageDeco?.[p]?.length ? (
                 <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
                   <DecoLayer items={e.pageDeco[p]} w={pageW} h={pageH} />
