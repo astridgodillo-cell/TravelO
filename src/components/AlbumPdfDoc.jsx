@@ -294,6 +294,14 @@ function DecoLayer({ items, w, h }) {
             </View>
           );
         }
+        if (it.type === 'image') {
+          if (!it.value) return null;
+          const iw = size;
+          const ih = size / (it.ar || 1);
+          return (
+            <Image key={i} src={it.value} style={{ position: 'absolute', width: iw, height: ih, left: cx - iw / 2, top: cy - ih / 2, transform: `rotate(${it.rot}deg)`, transformOrigin: 'center' }} />
+          );
+        }
         const url = twemojiUrl(it.value);
         if (!url) return null;
         return (

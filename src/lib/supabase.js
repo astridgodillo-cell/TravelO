@@ -354,6 +354,31 @@ async function renderOriented(file, maxDim, quality) {
   return { blob, w, h };
 }
 
+// Envoi d'une image-sticker (PNG/clipart) à poser sur une page/photo. On
+// conserve la TRANSPARENCE (export PNG) et on limite la taille (max 700 px).
+export async function uploadAlbumSticker(file) {
+  let blob = file;
+  let w = null;
+  let h = null;
+  try {
+    const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    const max = 700;
+    const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
+    w = Math.max(1, Math.round(bitmap.width * scale));
+    h = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+    const b = await new Promise((res) => canvas.toBlob(res, 'image/png'));
+    if (b) blob = b;
+  } catch {
+    /* repli : fichier d'origine */
+  }
+  const url = await uploadToBrochureBucket(blob, '-stk');
+  return { url, w, h };
+}
+
 async function uploadToBrochureBucket(fileOrBlob, suffix = '') {
   const user = await getCurrentUser();
   const type = fileOrBlob?.type || 'image/jpeg';
@@ -428,8 +453,8 @@ export async function repairAlbumPhoto(photo) {
     return photo; // image inaccessible (réseau/CORS) → on n'y touche pas
   }
 
-  let ow = null;
-  let oh = null;
+  let ow;
+  let oh;
   try {
     const bmp = await createImageBitmap(blob, { imageOrientation: 'from-image' });
     ow = bmp.width;

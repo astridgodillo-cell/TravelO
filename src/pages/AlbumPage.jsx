@@ -5,6 +5,7 @@ import {
   getItinerary,
   updateItinerary,
   uploadAlbumPhoto,
+  uploadAlbumSticker,
   repairAlbumPhoto,
 } from '../lib/supabase';
 import { renderRouteMapImage } from '../lib/staticMapImage';
@@ -21,7 +22,7 @@ import {
   bakePhotoEffects,
   ALBUM_THEMES,
   getTheme,
-  STICKER_EMOJIS,
+  STICKER_CATEGORIES,
   splitPhotos,
   pageLayout,
   resolveBg,
@@ -249,10 +250,26 @@ export function EffectPicker({ photo, current, onPick, onClose }) {
 // Éditeur de décorations réutilisable : un canevas (avec un fond fourni) sur
 // lequel on pose des emojis/stickers/textes, déplaçables (glisser),
 // redimensionnables et pivotables. Coordonnées en fractions du canevas.
+// Affiche un élément de décoration (emoji, texte ou image). `sizeUnit` est
+// l'unité de taille (cqmin dans un conteneur dimensionné).
+function DecoItemView({ it }) {
+  if (it.type === 'image') {
+    return <img src={it.value} alt="" draggable={false} style={{ width: `${it.scale * 100}cqmin`, height: 'auto', display: 'block' }} />;
+  }
+  return (
+    <span style={{ fontSize: `${it.scale * 100}cqmin`, lineHeight: 1, color: it.color, fontWeight: it.type === 'text' ? 700 : 400, whiteSpace: 'nowrap', textShadow: it.type === 'text' ? '0 1px 2px rgba(0,0,0,0.5)' : 'none' }}>
+      {it.value}
+    </span>
+  );
+}
+
 export function DecoEditor({ title, aspect, background, initialItems, onChange, onClose, toolbar = null }) {
   const [items, setItems] = useState(() => (initialItems || []).map((d) => ({ ...d })));
   const [sel, setSel] = useState(null);
+  const [cat, setCat] = useState(STICKER_CATEGORIES[0].key);
+  const [uploading, setUploading] = useState(false);
   const canvasRef = useRef(null);
+  const fileRef = useRef(null);
   const drag = useRef(null);
 
   const commit = (next) => { setItems(next); onChange(next); };
@@ -261,6 +278,19 @@ export function DecoEditor({ title, aspect, background, initialItems, onChange, 
   const addEmoji = (e) => addItem({ type: 'emoji', value: e, xf: 0.5, yf: 0.5, scale: 0.16, rot: 0 });
   const addText = () => addItem({ type: 'text', value: 'Texte', xf: 0.5, yf: 0.5, scale: 0.1, rot: 0, color: '#ffffff' });
   const remove = (i) => { commit(items.filter((_, k) => k !== i)); setSel(null); };
+  async function addImageFile(file) {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const { url, w, h } = await uploadAlbumSticker(file);
+      addItem({ type: 'image', value: url, ar: w && h ? w / h : 1, xf: 0.5, yf: 0.5, scale: 0.25, rot: 0 });
+    } catch {
+      alert("L'import de l'image a échoué. Réessaie avec un fichier PNG ou JPG.");
+    } finally {
+      setUploading(false);
+    }
+  }
+  const activeCat = STICKER_CATEGORIES.find((c) => c.key === cat) || STICKER_CATEGORIES[0];
 
   function pointerDown(e, i) {
     e.stopPropagation();
@@ -300,19 +330,9 @@ export function DecoEditor({ title, aspect, background, initialItems, onChange, 
               key={i}
               onMouseDown={(e) => pointerDown(e, i)}
               className={`absolute cursor-move ${sel === i ? 'outline outline-2 outline-coral-400' : ''}`}
-              style={{
-                left: `${it.xf * 100}%`,
-                top: `${it.yf * 100}%`,
-                transform: `translate(-50%,-50%) rotate(${it.rot}deg)`,
-                fontSize: `${it.scale * 100}cqmin`,
-                lineHeight: 1,
-                color: it.color,
-                fontWeight: it.type === 'text' ? 700 : 400,
-                whiteSpace: 'nowrap',
-                textShadow: it.type === 'text' ? '0 1px 2px rgba(0,0,0,0.5)' : 'none',
-              }}
+              style={{ left: `${it.xf * 100}%`, top: `${it.yf * 100}%`, transform: `translate(-50%,-50%) rotate(${it.rot}deg)` }}
             >
-              {it.value}
+              <DecoItemView it={it} />
             </div>
           ))}
         </div>
@@ -345,13 +365,27 @@ export function DecoEditor({ title, aspect, background, initialItems, onChange, 
         )}
 
         <div className="mt-3">
-          <div className="mb-2 flex gap-2">
-            <span className="rounded-md bg-coral-500 px-3 py-1 text-xs font-semibold text-white">Emojis & stickers</span>
-            <button onClick={addText} className="rounded-md bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-200">➕ Ajouter un texte</button>
+          <div className="mb-2 flex flex-wrap gap-2">
+            <button onClick={addText} className="rounded-md bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-200">➕ Texte</button>
+            <button onClick={() => fileRef.current?.click()} disabled={uploading}
+              className="rounded-md bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-200 disabled:opacity-50">
+              {uploading ? 'Import…' : '🖼️ Importer une image (PNG)'}
+            </button>
+            <input ref={fileRef} type="file" accept="image/*" className="hidden"
+              onChange={(e) => { addImageFile(e.target.files?.[0]); e.target.value = ''; }} />
+          </div>
+          {/* onglets de catégories */}
+          <div className="mb-1 flex flex-wrap gap-1">
+            {STICKER_CATEGORIES.map((c) => (
+              <button key={c.key} onClick={() => setCat(c.key)} title={c.name}
+                className={`rounded-md px-2 py-1 text-base leading-none ${cat === c.key ? 'bg-coral-500' : 'bg-slate-100 hover:bg-slate-200'}`}>
+                {c.label}
+              </button>
+            ))}
           </div>
           <div className="grid max-h-40 grid-cols-10 gap-1 overflow-y-auto rounded-lg border border-slate-200 p-2 text-xl">
-            {STICKER_EMOJIS.map((e) => (
-              <button key={e} onClick={() => addEmoji(e)} className="rounded hover:bg-slate-100">{e}</button>
+            {activeCat.emojis.map((e, idx) => (
+              <button key={e + idx} onClick={() => addEmoji(e)} className="rounded hover:bg-slate-100">{e}</button>
             ))}
           </div>
         </div>
@@ -454,8 +488,8 @@ export function PageDecorateModal({
               <img src={p.display || p.full} alt="" className="h-full w-full object-cover" style={imgStyle} draggable={false} />
             </div>
             {pdeco.map((it, k) => (
-              <div key={k} className="absolute" style={{ left: `${it.xf * 100}%`, top: `${it.yf * 100}%`, transform: `translate(-50%,-50%) rotate(${it.rot}deg)`, fontSize: `${it.scale * 100}cqmin`, lineHeight: 1, color: it.color, fontWeight: it.type === 'text' ? 700 : 400, whiteSpace: 'nowrap', textShadow: it.type === 'text' ? '0 1px 2px rgba(0,0,0,0.5)' : 'none' }}>
-                {it.value}
+              <div key={k} className="absolute" style={{ left: `${it.xf * 100}%`, top: `${it.yf * 100}%`, transform: `translate(-50%,-50%) rotate(${it.rot}deg)` }}>
+                <DecoItemView it={it} />
               </div>
             ))}
             {p.caption ? (
@@ -508,8 +542,8 @@ function PhotoTile({ photo, onCaption, onRemove, onMoveLeft, onMoveRight, canLef
         {/* aperçu des décorations */}
         {deco.map((it, i) => (
           <div key={i} className="pointer-events-none absolute"
-            style={{ left: `${it.xf * 100}%`, top: `${it.yf * 100}%`, transform: `translate(-50%,-50%) rotate(${it.rot}deg)`, fontSize: `${it.scale * 100}cqmin`, lineHeight: 1, color: it.color, fontWeight: it.type === 'text' ? 700 : 400, whiteSpace: 'nowrap', textShadow: it.type === 'text' ? '0 1px 2px rgba(0,0,0,0.5)' : 'none' }}>
-            {it.value}
+            style={{ left: `${it.xf * 100}%`, top: `${it.yf * 100}%`, transform: `translate(-50%,-50%) rotate(${it.rot}deg)` }}>
+            <DecoItemView it={it} />
           </div>
         ))}
         <button
