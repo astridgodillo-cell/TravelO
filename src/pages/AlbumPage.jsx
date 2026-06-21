@@ -1091,7 +1091,7 @@ export default function AlbumPage() {
             Préparer l'album pour l'impression
           </h2>
           <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
-            mise en page v11
+            mise en page v12
           </span>
         </div>
         <p className="mt-1 text-sm text-slate-600">

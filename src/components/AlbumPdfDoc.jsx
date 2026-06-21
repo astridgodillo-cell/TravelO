@@ -183,11 +183,12 @@ function splitPhotos(photos, manual) {
 
 // Estime (en mm) la hauteur prise par l'en-tête d'une page, pour dimensionner
 // la mosaïque sans déborder (ce qui créait des pages blanches).
-function estimateHeaderMm(title, note, firstPage, contentWmm) {
+function estimateHeaderMm(title, note, firstPage, contentWmm, onPlate) {
   // On SUR-estime volontairement : si l'en-tête réel est plus petit, il reste
   // juste un léger espace en bas ; s'il était sous-estimé, le contenu
-  // déborderait et créerait une page fantôme (le défaut qu'on veut éviter).
-  if (!firstPage) return 16; // pages « suite » : petit intitulé + plaque
+  // déborderait et créerait une page fantôme / d'un autre format.
+  const plate = onPlate ? 8 : 0; // la plaque (fond coloré/photo) ajoute du rembourrage
+  if (!firstPage) return 18 + plate; // pages « suite » : petit intitulé
   let h = 12; // kicker + marges
   if (title) {
     const perLine = Math.max(14, Math.floor(contentWmm / 4.6));
@@ -197,7 +198,7 @@ function estimateHeaderMm(title, note, firstPage, contentWmm) {
     const perLine = Math.max(24, Math.floor(contentWmm / 2.0));
     h += 6 + Math.ceil((note || '').length / perLine) * 6;
   }
-  return h + 10; // sécurité
+  return h + 12 + plate; // sécurité
 }
 
 // Résout le fond à appliquer à une page donnée d'une journée :
@@ -360,7 +361,7 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
   return (
     <Document title={`${album?.title || 'Album'} — TravelO`} author="TravelO">
       {/* COUVERTURE — photo pleine page jusqu'au fond perdu */}
-      <Page size={[pageW, pageH]} style={st.coverPage} wrap={false}>
+      <Page size={[pageW, pageH]} style={st.coverPage}>
         {cover && (
           <View style={st.coverImgWrap}>
             <Image src={imgFull(cover)} style={st.coverImg} />
@@ -388,7 +389,7 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
         const stopsMm = nStops ? Math.ceil(nStops / 2) * 7 + 6 : 0;
         const mapH = pageH - mm(PAD_MM) * 2 - mm(20) - mm(stopsMm) - mm(6);
         return (
-          <Page size={[pageW, pageH]} style={st.page} wrap={false}>
+          <Page size={[pageW, pageH]} style={st.page}>
             <View style={st.header}>
               <Text style={st.dayKicker}>Itinéraire</Text>
               <Text style={st.dayTitle}>La carte du voyage</Text>
@@ -426,13 +427,15 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
           const spec = resolveBg(e.bg, p, pageCount);
           const firstPage = p === 0;
           const onPlate = spec.type !== 'none';
-          const headerMm = estimateHeaderMm(e.title, e.note, firstPage, contentWmm);
+          const headerMm = estimateHeaderMm(e.title, e.note, firstPage, contentWmm, onPlate);
+          // Marge de sécurité (mm) : on garde le contenu strictement sous la
+          // hauteur de page → react-pdf ne crée jamais de page de continuation.
           const availH = Math.max(
             mm(45),
-            pageH - mm(PAD_MM) * 2 - mm(headerMm)
+            pageH - mm(PAD_MM) * 2 - mm(headerMm) - mm(4)
           );
           return (
-            <Page key={`${e.i}-${p}`} size={[pageW, pageH]} style={st.page} wrap={false}>
+            <Page key={`${e.i}-${p}`} size={[pageW, pageH]} style={st.page}>
               <PageBackground spec={spec} pageW={pageW} pageH={pageH} st={st} />
               <View style={onPlate ? st.headerPlate : st.header}>
                 <Text style={st.dayKicker}>
@@ -455,7 +458,7 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
       })}
 
       {/* PAGE DE FIN — quatrième de couverture (personnalisable) */}
-      <Page size={[pageW, pageH]} style={st.endPage} wrap={false}>
+      <Page size={[pageW, pageH]} style={st.endPage}>
         {endPhoto && imgFull(endPhoto) && (
           <>
             <View style={st.endImgWrap}>
