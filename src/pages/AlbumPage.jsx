@@ -16,6 +16,119 @@ const FORMAT_LABELS = {
   a4portrait: 'A4 portrait 21 × 29,7 cm',
 };
 
+// Doit correspondre à PHOTOS_PER_PAGE dans AlbumPdfDoc.jsx.
+const PHOTOS_PER_PAGE = 6;
+const dayPageCount = (entry) =>
+  Math.max(1, Math.ceil((entry?.photos?.length || 0) / PHOTOS_PER_PAGE));
+
+// Palette de couleurs de fond proposée (beiges, neutres, et quelques teintes).
+const BG_COLORS = ['#FBF8F3', '#F3ECDD', '#E7E0D4', '#D9C9A8', '#C8643C', '#0F4C45', '#27408B', '#1C2B2D'];
+
+// Renvoie un objet de fond exploitable (gère l'ancien format où bg était
+// directement une photo).
+function normalizeBg(bg) {
+  if (bg && bg.full) {
+    return { mode: 'perPage', spread: { type: 'none' }, pages: [{ type: 'photo', photo: bg, toned: true }] };
+  }
+  return bg || { mode: 'perPage', spread: { type: 'none' }, pages: [] };
+}
+
+// Réglage d'un fond (aucun / couleur / photo + atténuée ou pleines couleurs).
+function BgSpecEditor({ spec, onChange, onPickPhoto }) {
+  const type = spec?.type || 'none';
+  const toned = spec?.toned !== false;
+  return (
+    <div>
+      <div className="flex flex-wrap gap-1">
+        {[
+          ['none', 'Aucun (beige)'],
+          ['color', 'Couleur'],
+          ['photo', 'Photo'],
+        ].map(([t, label]) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() =>
+              onChange(
+                t === 'none'
+                  ? { type: 'none' }
+                  : t === 'color'
+                    ? { type: 'color', color: spec?.color || BG_COLORS[1] }
+                    : { type: 'photo', photo: spec?.photo || null, toned }
+              )
+            }
+            className={`rounded-md px-2.5 py-1 text-xs font-medium ${
+              type === t ? 'bg-coral-500 text-white' : 'border border-slate-300 bg-white text-slate-700'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {type === 'color' && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {BG_COLORS.map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => onChange({ type: 'color', color: c })}
+              style={{ backgroundColor: c }}
+              className={`h-7 w-7 rounded-full border ${
+                spec?.color === c ? 'ring-2 ring-coral-400 ring-offset-1' : 'border-slate-300'
+              }`}
+              title={c}
+            />
+          ))}
+        </div>
+      )}
+
+      {type === 'photo' && (
+        <div className="mt-2 flex items-center gap-3">
+          <div className="h-14 w-20 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+            {spec?.photo ? (
+              <img src={spec.photo.display || spec.photo.full} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <span className="flex h-full w-full items-center justify-center text-[10px] text-slate-400">
+                Aucune
+              </span>
+            )}
+          </div>
+          <div className="min-w-0">
+            <button
+              type="button"
+              onClick={onPickPhoto}
+              className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+            >
+              {spec?.photo ? 'Changer la photo' : 'Choisir la photo'}
+            </button>
+            <div className="mt-1.5 flex gap-1">
+              <button
+                type="button"
+                onClick={() => onChange({ ...spec, type: 'photo', toned: true })}
+                className={`rounded-md px-2 py-0.5 text-[11px] font-medium ${
+                  toned ? 'bg-coral-500 text-white' : 'border border-slate-300 bg-white text-slate-600'
+                }`}
+              >
+                Atténuée (beige)
+              </button>
+              <button
+                type="button"
+                onClick={() => onChange({ ...spec, type: 'photo', toned: false })}
+                className={`rounded-md px-2 py-0.5 text-[11px] font-medium ${
+                  !toned ? 'bg-coral-500 text-white' : 'border border-slate-300 bg-white text-slate-600'
+                }`}
+              >
+                Pleines couleurs
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Album de voyage — mode « pendant le voyage » (carnet de bord).
 // Route : /itineraire/:id/album
 //
@@ -94,10 +207,22 @@ function PhotoTile({ photo, onCaption, onRemove, onMoveLeft, onMoveRight, canLef
   );
 }
 
-function DayCard({ day, index, entry, onChange, onAddPhotos, onChooseBg, busy }) {
+function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhoto, busy }) {
   const fileRef = useRef(null);
+  const [bgOpen, setBgOpen] = useState(false);
 
   const update = (patch) => onChange({ ...entry, ...patch });
+
+  const bg = normalizeBg(entry.bg);
+  const pageCount = dayPageCount(entry);
+  const setBg = (next) => update({ bg: next });
+  const getPageSpec = (p) => bg.pages?.[p] || { type: 'none' };
+  const setPageSpec = (p, spec) => {
+    const pages = [...(bg.pages || [])];
+    while (pages.length <= p) pages.push({ type: 'none' });
+    pages[p] = spec;
+    setBg({ ...bg, pages });
+  };
 
   function setPhotoCaption(pi, caption) {
     const photos = entry.photos.map((p, i) =>
@@ -118,35 +243,11 @@ function DayCard({ day, index, entry, onChange, onAddPhotos, onChooseBg, busy })
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+      <div className="mb-3 flex items-center justify-between gap-3">
         <span className="rounded-full bg-coral-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-coral-600">
           Jour {index + 1}
           {day?.location ? ` · ${day.location}` : ''}
         </span>
-        <div className="flex items-center gap-2">
-          {entry.bg && (
-            <span className="h-7 w-9 overflow-hidden rounded border border-slate-200">
-              <img src={entry.bg.display || entry.bg.full} alt="" className="h-full w-full object-cover" />
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={onChooseBg}
-            className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
-          >
-            🖼️ Fond de page
-          </button>
-          {entry.bg && (
-            <button
-              type="button"
-              onClick={() => update({ bg: null })}
-              className="text-xs font-medium text-slate-400 hover:text-slate-600"
-              title="Enlever le fond"
-            >
-              ✕
-            </button>
-          )}
-        </div>
       </div>
 
       <input
@@ -201,6 +302,77 @@ function DayCard({ day, index, entry, onChange, onAddPhotos, onChooseBg, busy })
           if (files.length) onAddPhotos(files);
         }}
       />
+
+      {/* FOND DE PAGE de cette journée */}
+      <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+        <button
+          type="button"
+          onClick={() => setBgOpen((o) => !o)}
+          className="flex w-full items-center justify-between text-sm font-medium text-slate-700"
+        >
+          <span>🖼️ Fond de page</span>
+          <span className="text-xs text-slate-400">
+            {pageCount > 1 ? `${pageCount} pages` : '1 page'} {bgOpen ? '▴' : '▾'}
+          </span>
+        </button>
+
+        {bgOpen && (
+          <div className="mt-3 space-y-3">
+            {pageCount > 1 && (
+              <div className="flex flex-col gap-1.5 text-xs text-slate-600">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    checked={bg.mode !== 'spread'}
+                    onChange={() => setBg({ ...bg, mode: 'perPage' })}
+                  />
+                  Un fond différent possible pour chaque page
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    checked={bg.mode === 'spread'}
+                    onChange={() => setBg({ ...bg, mode: 'spread' })}
+                  />
+                  Une seule photo étirée sur les {pageCount} pages (panorama)
+                </label>
+              </div>
+            )}
+
+            {bg.mode === 'spread' && pageCount > 1 ? (
+              <div className="rounded-lg border border-slate-200 bg-white p-2.5">
+                <p className="mb-1.5 text-xs font-semibold text-slate-500">
+                  Photo étirée sur les {pageCount} pages
+                </p>
+                <BgSpecEditor
+                  spec={bg.spread || { type: 'photo' }}
+                  onChange={(spec) => setBg({ ...bg, spread: spec })}
+                  onPickPhoto={() => onPickBgPhoto('spread')}
+                />
+              </div>
+            ) : pageCount === 1 ? (
+              <div className="rounded-lg border border-slate-200 bg-white p-2.5">
+                <BgSpecEditor
+                  spec={getPageSpec(0)}
+                  onChange={(spec) => setPageSpec(0, spec)}
+                  onPickPhoto={() => onPickBgPhoto(0)}
+                />
+              </div>
+            ) : (
+              Array.from({ length: pageCount }).map((_, p) => (
+                <div key={p} className="rounded-lg border border-slate-200 bg-white p-2.5">
+                  <p className="mb-1.5 text-xs font-semibold text-slate-500">Page {p + 1}</p>
+                  <BgSpecEditor
+                    spec={getPageSpec(p)}
+                    onChange={(spec) => setPageSpec(p, spec)}
+                    onPickPhoto={() => onPickBgPhoto(p)}
+                  />
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
     </section>
   );
 }
@@ -366,11 +538,16 @@ export default function AlbumPage() {
       const dayEntries = {};
       days.forEach((d, i) => {
         const s = saved?.days?.[i];
+        // Migration de l'ancien format (bg = une photo) vers le nouveau modèle.
+        let bg = s?.bg ?? null;
+        if (bg && bg.full) {
+          bg = { mode: 'perPage', spread: { type: 'none' }, pages: [{ type: 'photo', photo: bg, toned: true }] };
+        }
         dayEntries[i] = {
           title: s?.title ?? (d.day_title || d.location || `Jour ${i + 1}`),
           note: s?.note ?? '',
           photos: Array.isArray(s?.photos) ? s.photos : [],
-          bg: s?.bg ?? null,
+          bg,
         };
       });
 
@@ -405,7 +582,8 @@ export default function AlbumPage() {
           uploaded.push(await uploadAlbumPhoto(f));
         } catch (err) {
           throw new Error(
-            "L'envoi d'une photo a échoué. Si cela persiste, l'espace de stockage des photos n'est peut-être pas encore activé."
+            "L'envoi d'une photo a échoué. Si cela persiste, l'espace de stockage des photos n'est peut-être pas encore activé.",
+            { cause: err }
           );
         }
       }
@@ -476,7 +654,20 @@ export default function AlbumPage() {
           photos.push(await repairAlbumPhoto(p));
           tick();
         }
-        const bg = entry.bg ? await repairAlbumPhoto(entry.bg) : null;
+        // Réparation des photos de fond (panorama étiré + chaque page).
+        let bg = entry.bg;
+        if (bg) {
+          bg = { ...bg };
+          if (bg.spread?.photo) {
+            bg.spread = { ...bg.spread, photo: await repairAlbumPhoto(bg.spread.photo) };
+          }
+          if (Array.isArray(bg.pages)) {
+            bg.pages = [];
+            for (const sp of entry.bg.pages) {
+              bg.pages.push(sp?.photo ? { ...sp, photo: await repairAlbumPhoto(sp.photo) } : sp);
+            }
+          }
+        }
         newDays[i] = { ...entry, photos, bg };
       }
       let cover = album.cover;
@@ -716,7 +907,7 @@ export default function AlbumPage() {
             entry={album.days[i]}
             onChange={(entry) => setDayEntry(i, entry)}
             onAddPhotos={(files) => addPhotos(i, files)}
-            onChooseBg={() => setPickerFor(`daybg:${i}`)}
+            onPickBgPhoto={(slot) => setPickerFor({ kind: 'dayBg', i, slot })}
             busy={busyDay === i}
           />
         ))}
@@ -873,21 +1064,20 @@ export default function AlbumPage() {
       </section>
 
       {pickerFor && (() => {
-        const dayBg = pickerFor.startsWith('daybg:')
-          ? parseInt(pickerFor.split(':')[1], 10)
-          : null;
-        const title =
-          dayBg != null
-            ? `Fond de la page · Jour ${dayBg + 1}`
-            : pickerFor === 'end'
-              ? 'Choisir la photo de fond'
-              : 'Choisir la photo de couverture';
-        const current =
-          dayBg != null
-            ? album.days[dayBg]?.bg
-            : pickerFor === 'end'
-              ? album.endPhoto
-              : album.cover;
+        const kind = pickerFor.kind;
+        let title = 'Choisir la photo de couverture';
+        let current = album.cover;
+        if (kind === 'end') {
+          title = 'Choisir la photo de fond';
+          current = album.endPhoto;
+        } else if (kind === 'dayBg') {
+          const bg = normalizeBg(album.days[pickerFor.i]?.bg);
+          title = `Fond · Jour ${pickerFor.i + 1}`;
+          current =
+            pickerFor.slot === 'spread'
+              ? bg.spread?.photo
+              : bg.pages?.[pickerFor.slot]?.photo;
+        }
         return (
           <CoverPicker
             title={title}
@@ -895,16 +1085,26 @@ export default function AlbumPage() {
             album={album}
             current={current}
             onPick={(photo) => {
-              if (dayBg != null) {
-                setAlbum((prev) => ({
-                  ...prev,
-                  days: {
-                    ...prev.days,
-                    [dayBg]: { ...prev.days[dayBg], bg: photo },
-                  },
-                }));
+              if (kind === 'dayBg') {
+                const { i, slot } = pickerFor;
+                setAlbum((prev) => {
+                  const entry = prev.days[i];
+                  const bg = normalizeBg(entry.bg);
+                  if (slot === 'spread') {
+                    bg.spread = { type: 'photo', photo, toned: bg.spread?.toned !== false };
+                  } else {
+                    const pages = [...(bg.pages || [])];
+                    while (pages.length <= slot) pages.push({ type: 'none' });
+                    pages[slot] = { type: 'photo', photo, toned: pages[slot]?.toned !== false };
+                    bg.pages = pages;
+                  }
+                  return {
+                    ...prev,
+                    days: { ...prev.days, [i]: { ...entry, bg: { ...bg } } },
+                  };
+                });
               } else {
-                const field = pickerFor === 'end' ? 'endPhoto' : 'cover';
+                const field = kind === 'end' ? 'endPhoto' : 'cover';
                 setAlbum((prev) => ({ ...prev, [field]: photo }));
               }
               setDirty(true);

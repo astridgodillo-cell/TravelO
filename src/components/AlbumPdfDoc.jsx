@@ -14,7 +14,6 @@
  *   - les photos utilisent leur version PLEINE QUALITÉ (champ .full) → 300 DPI ;
  *   - couleurs en RVB (la plupart des imprimeurs photo convertissent eux-mêmes).
  */
-import React from 'react';
 import {
   Document, Page, View, Text, Image, StyleSheet, Font,
   Svg, Rect, Defs, LinearGradient, Stop,
@@ -148,6 +147,120 @@ function buildFillLayout(photos, contentW, availH, gap) {
   }));
 }
 
+// Au-delà de ce nombre de photos, une journée continue sur une nouvelle page.
+const PHOTOS_PER_PAGE = 6;
+
+function chunkPhotos(photos, size) {
+  const out = [];
+  for (let i = 0; i < photos.length; i += size) out.push(photos.slice(i, i + size));
+  return out.length ? out : [[]];
+}
+
+// Résout le fond à appliquer à une page donnée d'une journée :
+//   bg = { mode:'perPage'|'spread', spread:<spec>, pages:[<spec>...] }
+//   spec = { type:'none'|'color'|'photo', color?, photo?, toned? }
+function resolveBg(bg, pageIndex, pageCount) {
+  if (!bg) return { type: 'none' };
+  // Ancien format éventuel : bg était directement une photo.
+  if (bg.full) return { type: 'photo', photo: bg, toned: true };
+  if (bg.mode === 'spread') {
+    const s = bg.spread || { type: 'none' };
+    // Une photo en mode « étiré » : on note l'indice de page pour découper le
+    // panorama. Une couleur (ou aucun) est identique sur toutes les pages.
+    if (s.type === 'photo' && s.photo) {
+      return { ...s, spreadIndex: pageIndex, spreadCount: pageCount };
+    }
+    return s;
+  }
+  return (bg.pages && bg.pages[pageIndex]) || { type: 'none' };
+}
+
+// Couche de fond d'une page (couleur unie, photo pleine page, ou photo étirée
+// sur plusieurs pages). Le voile beige est appliqué si la photo est « atténuée ».
+function PageBackground({ spec, pageW, pageH, st }) {
+  if (!spec || spec.type === 'none') return null;
+  if (spec.type === 'color') {
+    return <View style={[st.bgWrap, { backgroundColor: spec.color }]} />;
+  }
+  if (spec.type === 'photo' && imgFull(spec.photo)) {
+    const src = imgFull(spec.photo);
+    const toned = spec.toned !== false;
+    if (spec.spreadCount > 1) {
+      // Panorama : l'image couvre toute la largeur des N pages, on n'en montre
+      // que la tranche correspondant à la page courante.
+      return (
+        <>
+          <View style={st.bgWrap}>
+            <Image
+              src={src}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: -spec.spreadIndex * pageW,
+                width: pageW * spec.spreadCount,
+                height: pageH,
+                objectFit: 'cover',
+              }}
+            />
+          </View>
+          {toned && <View style={st.bgScrim} />}
+        </>
+      );
+    }
+    return (
+      <>
+        <View style={st.bgWrap}>
+          <Image src={src} style={st.coverImg} />
+        </View>
+        {toned && <View style={st.bgScrim} />}
+      </>
+    );
+  }
+  return null;
+}
+
+// Mosaïque d'une page : photos à leurs proportions exactes (pas de recadrage),
+// rangées remplissant la largeur, ensemble centré verticalement.
+function Mosaic({ photos, contentW, availH, gap, st }) {
+  const rows = buildFillLayout(photos, contentW, availH, gap);
+  if (!rows.length) return null;
+  const naturalTotal =
+    rows.reduce((s, r) => s + r.naturalH, 0) + gap * Math.max(0, rows.length - 1);
+  const scale = naturalTotal > 0 ? Math.min(1, availH / naturalTotal) : 1;
+  return (
+    <View style={st.mosaic}>
+      {rows.map((row, ri) => {
+        const h = row.naturalH * scale;
+        return (
+          <View
+            key={ri}
+            style={{ height: h, flexDirection: 'row', marginBottom: ri < rows.length - 1 ? gap : 0 }}
+          >
+            {row.items.map((it, ci) => (
+              <View
+                key={ci}
+                style={{
+                  width: it.ar * h,
+                  height: h,
+                  marginRight: ci < row.items.length - 1 ? gap : 0,
+                  position: 'relative',
+                }}
+              >
+                <Image src={imgFull(it.photo)} style={st.mosaicImg} />
+                {it.photo.caption ? (
+                  <View style={st.capWrap}>
+                    <Text style={st.capTxt}>{it.photo.caption}</Text>
+                  </View>
+                ) : null}
+              </View>
+            ))}
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 function CoverFade({ color = '#1C2B2D' }) {
   return (
     <Svg style={{ position: 'absolute', bottom: 0, left: 0, width: '100%', height: '60%' }}>
@@ -169,9 +282,6 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
   const pageW = mm(fmt.trimW + BLEED_MM * 2);
   const pageH = mm(fmt.trimH + BLEED_MM * 2);
   const contentW = pageW - mm(PAD_MM) * 2;
-  // Hauteur estimée disponible pour les photos (sert à choisir le nombre de
-  // rangées qui remplira au mieux la page).
-  const photoAvailH = pageH - mm(PAD_MM) * 2 - mm(HEADER_RESERVE_MM);
   const st = makeStyles(pageW, pageH);
 
   const dateRange = fmtDateRange(summary);
@@ -244,75 +354,40 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
         </Page>
       )}
 
-      {/* UNE PAGE PAR JOURNÉE */}
-      {entries.map((e) => {
-        const gap = mm(GAP_MM);
-        const rows = buildFillLayout(e.photos, contentW, photoAvailH, gap);
-        // Hauteur « naturelle » de la mosaïque (sans aucun recadrage). Si elle
-        // dépasse l'espace dispo, on réduit l'ensemble proportionnellement
-        // (toujours sans recadrer) ; sinon on garde la taille et on centre.
-        const naturalTotal =
-          rows.reduce((s, r) => s + r.naturalH, 0) + gap * Math.max(0, rows.length - 1);
-        const scale = naturalTotal > 0 ? Math.min(1, photoAvailH / naturalTotal) : 1;
-        return (
-          <Page key={e.i} size={[pageW, pageH]} style={st.page}>
-            {e.bg && imgFull(e.bg) && (
-              <>
-                <View style={st.bgWrap}>
-                  <Image src={imgFull(e.bg)} style={st.coverImg} />
-                </View>
-                {/* voile clair : le fond reste visible mais le contenu lisible */}
-                <View style={st.bgScrim} />
-              </>
-            )}
-            <View style={st.header}>
-              <Text style={st.dayKicker}>
-                Jour {e.i + 1}{e.location ? ` · ${e.location}` : ''}
-              </Text>
-              {e.title ? <Text style={st.dayTitle}>{e.title}</Text> : null}
-              {e.note ? <Text style={st.note}>{e.note}</Text> : null}
-            </View>
-
-            {rows.length > 0 && (
-              // La mosaïque est centrée dans la hauteur restante ; chaque photo
-              // garde ses proportions exactes (pas de recadrage).
-              <View style={st.mosaic}>
-                {rows.map((row, ri) => {
-                  const h = row.naturalH * scale;
-                  return (
-                  <View
-                    key={ri}
-                    style={{
-                      height: h,
-                      flexDirection: 'row',
-                      marginBottom: ri < rows.length - 1 ? gap : 0,
-                    }}
-                  >
-                    {row.items.map((it, ci) => (
-                      <View
-                        key={ci}
-                        style={{
-                          width: it.ar * h,
-                          height: h,
-                          marginRight: ci < row.items.length - 1 ? gap : 0,
-                          position: 'relative',
-                        }}
-                      >
-                        <Image src={imgFull(it.photo)} style={st.mosaicImg} />
-                        {it.photo.caption ? (
-                          <View style={st.capWrap}>
-                            <Text style={st.capTxt}>{it.photo.caption}</Text>
-                          </View>
-                        ) : null}
-                      </View>
-                    ))}
-                  </View>
-                  );
-                })}
+      {/* UNE OU PLUSIEURS PAGES PAR JOURNÉE */}
+      {entries.flatMap((e) => {
+        const chunks = chunkPhotos(e.photos, PHOTOS_PER_PAGE);
+        const pageCount = chunks.length;
+        return chunks.map((chunk, p) => {
+          const spec = resolveBg(e.bg, p, pageCount);
+          const firstPage = p === 0;
+          // En-tête sur une plaque translucide dès qu'il y a un fond (couleur ou
+          // photo), pour que le titre reste lisible. Sur fond beige : en-tête nu.
+          const onPlate = spec.type !== 'none';
+          // Plus d'espace photos sur les pages « suite » (en-tête réduit).
+          const availH =
+            pageH - mm(PAD_MM) * 2 - mm(firstPage ? HEADER_RESERVE_MM : 14);
+          return (
+            <Page key={`${e.i}-${p}`} size={[pageW, pageH]} style={st.page}>
+              <PageBackground spec={spec} pageW={pageW} pageH={pageH} st={st} />
+              <View style={onPlate ? st.headerPlate : st.header}>
+                <Text style={st.dayKicker}>
+                  Jour {e.i + 1}{e.location ? ` · ${e.location}` : ''}
+                  {!firstPage ? ' · suite' : ''}
+                </Text>
+                {firstPage && e.title ? <Text style={st.dayTitle}>{e.title}</Text> : null}
+                {firstPage && e.note ? <Text style={st.note}>{e.note}</Text> : null}
               </View>
-            )}
-          </Page>
-        );
+              <Mosaic
+                photos={chunk}
+                contentW={contentW}
+                availH={availH}
+                gap={mm(GAP_MM)}
+                st={st}
+              />
+            </Page>
+          );
+        });
       })}
 
       {/* PAGE DE FIN — quatrième de couverture (personnalisable) */}
@@ -383,6 +458,8 @@ function makeStyles(pageW, pageH) {
     bgScrim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(251,248,243,0.80)' },
 
     header: { flexShrink: 0, marginBottom: mm(4) },
+    // En-tête posé sur une plaque claire (quand la page a un fond coloré/photo).
+    headerPlate: { flexShrink: 0, alignSelf: 'flex-start', maxWidth: '100%', backgroundColor: 'rgba(251,248,243,0.85)', borderRadius: 6, paddingVertical: 9, paddingHorizontal: 13, marginBottom: mm(4) },
     dayKicker: { fontFamily: 'AlbumBody', fontWeight: 700, fontSize: 8.5, letterSpacing: 2, textTransform: 'uppercase', color: PALETTE.accent, marginBottom: 5 },
     dayTitle: { fontFamily: 'AlbumDisplay', fontWeight: 600, fontSize: 22, color: PALETTE.ink, lineHeight: 1.1 },
     note: { fontFamily: 'AlbumBody', fontWeight: 300, fontSize: 10.5, lineHeight: 1.5, color: PALETTE.text, marginTop: 6 },
