@@ -460,7 +460,12 @@ export default function AlbumPage() {
     setError(null);
     try {
       const blob = await pdf(
-        <AlbumPdfDoc album={album} days={days} format={format} />
+        <AlbumPdfDoc
+          album={album}
+          days={days}
+          format={format}
+          summary={trip?.itinerary?.summary || null}
+        />
       ).toBlob();
       if (pdfUrl) URL.revokeObjectURL(pdfUrl);
       setPdfUrl(URL.createObjectURL(blob));

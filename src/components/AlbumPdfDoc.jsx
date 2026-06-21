@@ -68,37 +68,84 @@ const imgFull = (p) => p?.full || p?.display || '';
 
 const PAD_MM = 12; // marge depuis le bord de page (3 mm de fond perdu + 9 mm)
 const GAP_MM = 2; // espace entre les photos de la mosaïque
+// Hauteur réservée à l'en-tête (titre + texte) + numéro de page, pour estimer
+// l'espace photos lors du choix du nombre de rangées.
+const HEADER_RESERVE_MM = 32;
 
-// Mise en page « mosaïque justifiée » : on remplit des rangées de la largeur du
-// contenu, chaque photo conservant ses proportions réelles (paysage = large,
-// portrait = haute). Résultat : tout s'emboîte comme un puzzle, sans aucune
-// déformation. On borne la hauteur des rangées pour ne pas avoir de pavé géant.
-function justifyRows(photos, contentW, targetH, maxH, gap) {
+function fmtDay(iso) {
+  if (!iso) return '';
+  try {
+    return new Date(iso).toLocaleDateString('fr-FR', {
+      day: 'numeric', month: 'long', year: 'numeric',
+    });
+  } catch { return ''; }
+}
+
+// « 12 – 18 juin 2025 » si possible, sinon une seule date, sinon rien.
+function fmtDateRange(summary) {
+  const a = fmtDay(summary?.start_date);
+  const b = fmtDay(summary?.end_date);
+  if (a && b && a !== b) return `${a} – ${b}`;
+  return a || b || '';
+}
+
+// Découpe N photos en R rangées CONTIGUËS, en équilibrant la « largeur »
+// (somme des proportions) de chaque rangée. Chaque rangée a au moins une photo.
+function partitionRows(ars, R) {
+  const total = ars.reduce((a, b) => a + b, 0);
+  const target = total / R;
+  const rows = [];
+  let i = 0;
+  for (let r = 0; r < R; r++) {
+    const remainingRows = R - r;
+    const row = [];
+    let acc = 0;
+    // On laisse toujours assez de photos pour les rangées suivantes.
+    while (i < ars.length && ars.length - i > remainingRows - 1) {
+      row.push(i);
+      acc += ars[i];
+      i += 1;
+      if (acc >= target && r < R - 1) break;
+    }
+    rows.push(row);
+  }
+  while (i < ars.length) rows[rows.length - 1].push(i++);
+  return rows.filter((r) => r.length);
+}
+
+// Choisit la mise en page qui REMPLIT la page : on cherche le nombre de rangées
+// dont la hauteur « naturelle » (quand chaque rangée occupe toute la largeur)
+// se rapproche le plus de la hauteur disponible. Les hauteurs sont ensuite
+// réparties proportionnellement via flexbox pour remplir exactement la page,
+// largeur ET hauteur, chaque photo gardant ses proportions (recadrage minime).
+function buildFillLayout(photos, contentW, availH, gap) {
   const items = photos.map((p) => ({
     photo: p,
     ar: p.w && p.h ? p.w / p.h : 4 / 3,
   }));
-  const rows = [];
-  let row = [];
-  let arSum = 0;
-  const flush = (last) => {
-    if (!row.length) return;
-    const avail = contentW - gap * (row.length - 1);
-    let h = avail / arSum;
-    if (last && h > targetH) h = targetH; // dernière rangée : on ne l'étire pas
-    if (h > maxH) h = maxH; // sécurité
-    rows.push({ h, items: row.map((it) => ({ ...it, w: it.ar * h })) });
-    row = [];
-    arSum = 0;
-  };
-  for (const it of items) {
-    row.push(it);
-    arSum += it.ar;
-    const avail = contentW - gap * (row.length - 1);
-    if (avail / arSum <= targetH) flush(false);
+  const n = items.length;
+  if (!n) return [];
+  const ars = items.map((it) => it.ar);
+
+  let best = null;
+  for (let R = 1; R <= n; R++) {
+    const groups = partitionRows(ars, R);
+    let naturalTotal = gap * (groups.length - 1);
+    const rows = groups.map((idxs) => {
+      const sumAr = idxs.reduce((s, k) => s + ars[k], 0);
+      const w = contentW - gap * (idxs.length - 1);
+      const h = w / sumAr; // hauteur si la rangée remplit toute la largeur
+      naturalTotal += h;
+      return { idxs, naturalH: h };
+    });
+    const diff = Math.abs(naturalTotal - availH);
+    if (!best || diff < best.diff) best = { rows, diff };
   }
-  flush(true);
-  return rows;
+
+  return best.rows.map((r) => ({
+    naturalH: r.naturalH,
+    items: r.idxs.map((k) => items[k]),
+  }));
 }
 
 function CoverFade({ color = '#1C2B2D' }) {
@@ -116,26 +163,35 @@ function CoverFade({ color = '#1C2B2D' }) {
   );
 }
 
-export default function AlbumPdfDoc({ album, days = [], format = 'carre' }) {
+export default function AlbumPdfDoc({ album, days = [], format = 'carre', summary = null }) {
   const fmt = FORMATS[format] || FORMATS.carre;
   // Page = format final + 3 mm de fond perdu sur chaque bord.
   const pageW = mm(fmt.trimW + BLEED_MM * 2);
   const pageH = mm(fmt.trimH + BLEED_MM * 2);
   const contentW = pageW - mm(PAD_MM) * 2;
+  // Hauteur estimée disponible pour les photos (sert à choisir le nombre de
+  // rangées qui remplira au mieux la page).
+  const photoAvailH = pageH - mm(PAD_MM) * 2 - mm(HEADER_RESERVE_MM);
   const st = makeStyles(pageW, pageH);
 
-  const entries = days.map((d, i) => ({
-    i,
-    location: d?.location || '',
-    ...(album?.days?.[i] || { title: '', note: '', photos: [] }),
-  }));
+  const dateRange = fmtDateRange(summary);
+
+  const entries = days
+    .map((d, i) => ({
+      i,
+      location: d?.location || '',
+      ...(album?.days?.[i] || { title: '', note: '', photos: [] }),
+    }))
+    .map((e) => ({ ...e, photos: (e.photos || []).filter((p) => imgFull(p)) }))
+    // On ne crée pas de page pour une journée totalement vide.
+    .filter((e) => e.photos.length > 0 || (e.note || '').trim() || (e.title || '').trim());
 
   // Couverture : celle choisie par l'utilisateur, sinon la première photo
   // disponible de l'album.
   let cover = album?.cover || null;
   if (!cover) {
     for (const e of entries) {
-      if (e.photos?.length) { cover = e.photos[0]; break; }
+      if (e.photos.length) { cover = e.photos[0]; break; }
     }
   }
 
@@ -143,24 +199,29 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre' }) {
     <Document title={`${album?.title || 'Album'} — TravelO`} author="TravelO">
       {/* COUVERTURE — photo pleine page jusqu'au fond perdu */}
       <Page size={[pageW, pageH]} style={st.coverPage}>
-        {cover ? (
-          <Image src={imgFull(cover)} style={st.coverImg} />
-        ) : (
-          <View style={st.coverPlain} />
+        {cover && (
+          <View style={st.coverImgWrap}>
+            <Image src={imgFull(cover)} style={st.coverImg} />
+          </View>
         )}
         <CoverFade color={PALETTE.ink} />
         <View style={st.coverContent}>
           <Text style={st.coverKicker}>Album de voyage</Text>
           <Text style={st.coverTitle}>{album?.title || 'Mon voyage'}</Text>
+          {dateRange ? (
+            <>
+              <View style={st.coverRule} />
+              <Text style={st.coverDates}>{dateRange}</Text>
+            </>
+          ) : null}
         </View>
       </Page>
 
       {/* UNE PAGE PAR JOURNÉE */}
       {entries.map((e) => {
-        const photos = (e.photos || []).filter((p) => imgFull(p));
-        const rows = justifyRows(photos, contentW, mm(48), mm(82), mm(GAP_MM));
+        const rows = buildFillLayout(e.photos, contentW, photoAvailH, mm(GAP_MM));
         return (
-          <Page key={e.i} size={[pageW, pageH]} style={st.page} wrap>
+          <Page key={e.i} size={[pageW, pageH]} style={st.page}>
             <View style={st.header}>
               <Text style={st.dayKicker}>
                 Jour {e.i + 1}{e.location ? ` · ${e.location}` : ''}
@@ -170,19 +231,24 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre' }) {
             </View>
 
             {rows.length > 0 && (
+              // flexGrow:1 → la mosaïque occupe TOUTE la hauteur restante.
               <View style={st.mosaic}>
                 {rows.map((row, ri) => (
                   <View
                     key={ri}
-                    style={[st.row, { marginBottom: mm(GAP_MM) }]}
-                    wrap={false}
+                    style={{
+                      flexGrow: row.naturalH,
+                      flexBasis: 0,
+                      flexDirection: 'row',
+                      marginBottom: ri < rows.length - 1 ? mm(GAP_MM) : 0,
+                    }}
                   >
                     {row.items.map((it, ci) => (
                       <View
                         key={ci}
                         style={{
-                          width: it.w,
-                          height: row.h,
+                          flexGrow: it.ar,
+                          flexBasis: 0,
                           marginRight: ci < row.items.length - 1 ? mm(GAP_MM) : 0,
                           position: 'relative',
                         }}
@@ -199,12 +265,6 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre' }) {
                 ))}
               </View>
             )}
-
-            <Text
-              style={st.pageNum}
-              render={({ pageNumber }) => String(pageNumber)}
-              fixed
-            />
           </Page>
         );
       })}
@@ -220,6 +280,7 @@ function makeStyles(pageW, pageH) {
     page: {
       width: pageW,
       height: pageH,
+      flexDirection: 'column',
       paddingTop: pad,
       paddingBottom: pad,
       paddingHorizontal: pad,
@@ -228,24 +289,24 @@ function makeStyles(pageW, pageH) {
       color: PALETTE.text,
     },
 
-    coverPage: { position: 'relative', width: pageW, height: pageH },
-    coverImg: { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover' },
-    coverPlain: { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: PALETTE.ink },
+    coverPage: { position: 'relative', width: pageW, height: pageH, backgroundColor: PALETTE.ink },
+    coverImgWrap: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+    coverImg: { width: '100%', height: '100%', objectFit: 'cover' },
     coverContent: { position: 'absolute', left: pad, right: pad, bottom: pad },
     coverKicker: { fontFamily: 'AlbumBody', fontWeight: 700, fontSize: 9, letterSpacing: 3, textTransform: 'uppercase', color: '#FFFFFF', marginBottom: 8, opacity: 0.9 },
     coverTitle: { fontFamily: 'AlbumDisplay', fontWeight: 600, fontSize: 38, lineHeight: 1.05, color: '#FFFFFF' },
+    coverRule: { width: mm(16), height: 2, backgroundColor: PALETTE.accent, marginTop: 12, marginBottom: 10 },
+    coverDates: { fontFamily: 'AlbumBody', fontWeight: 400, fontSize: 11, letterSpacing: 1, color: '#FFFFFF', opacity: 0.95 },
 
-    header: { marginBottom: mm(6) },
+    header: { flexShrink: 0, marginBottom: mm(4) },
     dayKicker: { fontFamily: 'AlbumBody', fontWeight: 700, fontSize: 8.5, letterSpacing: 2, textTransform: 'uppercase', color: PALETTE.accent, marginBottom: 5 },
     dayTitle: { fontFamily: 'AlbumDisplay', fontWeight: 600, fontSize: 22, color: PALETTE.ink, lineHeight: 1.1 },
-    note: { fontFamily: 'AlbumBody', fontWeight: 300, fontSize: 10.5, lineHeight: 1.55, color: PALETTE.text, marginTop: 7 },
+    note: { fontFamily: 'AlbumBody', fontWeight: 300, fontSize: 10.5, lineHeight: 1.5, color: PALETTE.text, marginTop: 6 },
 
-    mosaic: { marginTop: mm(2) },
-    row: { flexDirection: 'row', alignItems: 'flex-start' },
+    // flexGrow:1 → la mosaïque prend toute la hauteur restante de la page.
+    mosaic: { flexGrow: 1, flexDirection: 'column', marginTop: mm(2) },
     mosaicImg: { width: '100%', height: '100%', objectFit: 'cover' },
     capWrap: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.42)', paddingVertical: 2, paddingHorizontal: 4 },
     capTxt: { fontFamily: 'AlbumBody', fontWeight: 400, fontStyle: 'italic', fontSize: 7.5, color: '#FFFFFF' },
-
-    pageNum: { position: 'absolute', bottom: mm(5), left: 0, right: 0, textAlign: 'center', fontFamily: 'AlbumBody', fontSize: 7.5, color: PALETTE.soft },
   });
 }
