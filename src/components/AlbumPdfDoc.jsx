@@ -163,7 +163,7 @@ function CoverFade({ color = '#1C2B2D' }) {
   );
 }
 
-export default function AlbumPdfDoc({ album, days = [], format = 'carre', summary = null, routeMap = null, stops = [] }) {
+export default function AlbumPdfDoc({ album, days = [], format = 'carre', summary = null, routeMap = null, stops = [], endNote = '', endPhoto = null }) {
   const fmt = FORMATS[format] || FORMATS.carre;
   // Page = format final + 3 mm de fond perdu sur chaque bord.
   const pageW = mm(fmt.trimW + BLEED_MM * 2);
@@ -296,15 +296,24 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
         );
       })}
 
-      {/* PAGE DE FIN — quatrième de couverture */}
+      {/* PAGE DE FIN — quatrième de couverture (personnalisable) */}
       <Page size={[pageW, pageH]} style={st.endPage}>
+        {endPhoto && imgFull(endPhoto) && (
+          <>
+            <View style={st.endImgWrap}>
+              <Image src={imgFull(endPhoto)} style={st.coverImg} />
+            </View>
+            {/* voile sombre pour garder le texte lisible sur la photo */}
+            <View style={st.endScrim} />
+          </>
+        )}
         <View style={st.endInner}>
           <Text style={st.endKicker}>Fin du voyage</Text>
           <Text style={st.endTitle}>{album?.title || 'Mon voyage'}</Text>
           {dateRange ? <Text style={st.endDates}>{dateRange}</Text> : null}
           <View style={st.endRule} />
           <Text style={st.endQuote}>
-            « Les voyages finissent, les souvenirs restent. »
+            {(endNote || '').trim() || '« Les voyages finissent, les souvenirs restent. »'}
           </Text>
           <Text style={st.endBrand}>Album réalisé avec TravelO</Text>
         </View>
@@ -371,7 +380,9 @@ function makeStyles(pageW, pageH) {
     capTxt: { fontFamily: 'AlbumBody', fontWeight: 400, fontStyle: 'italic', fontSize: 7.5, color: '#FFFFFF' },
 
     // Page de fin (quatrième de couverture) : fond sombre, texte centré.
-    endPage: { width: pageW, height: pageH, backgroundColor: PALETTE.ink, justifyContent: 'center', alignItems: 'center', paddingHorizontal: pad },
+    endPage: { position: 'relative', width: pageW, height: pageH, backgroundColor: PALETTE.ink, justifyContent: 'center', alignItems: 'center', paddingHorizontal: pad },
+    endImgWrap: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+    endScrim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15,22,22,0.58)' },
     endInner: { alignItems: 'center' },
     endKicker: { fontFamily: 'AlbumBody', fontWeight: 700, fontSize: 9, letterSpacing: 3, textTransform: 'uppercase', color: PALETTE.accent, marginBottom: 14 },
     endTitle: { fontFamily: 'AlbumDisplay', fontWeight: 600, fontSize: 28, color: '#FFFFFF', textAlign: 'center', lineHeight: 1.1 },

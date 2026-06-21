@@ -183,7 +183,7 @@ function DayCard({ day, index, entry, onChange, onAddPhotos, busy }) {
 
 // Fenêtre de choix de la photo de couverture : montre toutes les photos déjà
 // présentes dans l'album, regroupées par journée. Un clic choisit la couverture.
-function CoverPicker({ days, album, current, onPick, onClose }) {
+function CoverPicker({ days, album, current, onPick, onClose, title = 'Choisir la photo de couverture' }) {
   const fileRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState(null);
@@ -221,7 +221,7 @@ function CoverPicker({ days, album, current, onPick, onClose }) {
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4">
       <div className="my-8 w-full max-w-3xl rounded-2xl bg-white p-5 shadow-2xl">
         <div className="mb-3 flex items-center justify-between gap-3">
-          <h3 className="font-semibold text-slate-800">Choisir la photo de couverture</h3>
+          <h3 className="font-semibold text-slate-800">{title}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700" aria-label="Fermer">
             ✕
           </button>
@@ -234,10 +234,10 @@ function CoverPicker({ days, album, current, onPick, onClose }) {
             disabled={uploading}
             className="w-full rounded-lg bg-coral-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-coral-600 disabled:opacity-50"
           >
-            {uploading ? 'Envoi de la photo…' : '📤 Importer une autre photo en couverture'}
+            {uploading ? 'Envoi de la photo…' : '📤 Importer une autre photo'}
           </button>
           <p className="mt-2 text-center text-xs text-slate-500">
-            Choisis une photo depuis ton appareil : elle sera utilisée en couverture,
+            Choisis une photo depuis ton appareil : elle sera utilisée ici,
             sans être ajoutée à une journée.
           </p>
           {uploadError && (
@@ -317,8 +317,8 @@ export default function AlbumPage() {
   const [generating, setGenerating] = useState(false);
   const [pdfUrl, setPdfUrl] = useState(null);
 
-  // Choix de la couverture
-  const [coverPickerOpen, setCoverPickerOpen] = useState(false);
+  // Sélecteur de photo : 'cover' (couverture), 'end' (page de fin) ou null.
+  const [pickerFor, setPickerFor] = useState(null);
 
   // Réparation des photos (orientation)
   const [repairing, setRepairing] = useState(false);
@@ -353,6 +353,8 @@ export default function AlbumPage() {
       setAlbum({
         title: saved?.title ?? (it.summary?.title || data.title || 'Mon album'),
         cover: saved?.cover ?? null,
+        endNote: saved?.endNote ?? '',
+        endPhoto: saved?.endPhoto ?? null,
         days: dayEntries,
       });
       setSavedOnce(!!saved);
@@ -405,6 +407,8 @@ export default function AlbumPage() {
         travel_album: {
           title: album.title,
           cover: album.cover || null,
+          endNote: album.endNote || '',
+          endPhoto: album.endPhoto || null,
           days: album.days,
           updatedAt: new Date().toISOString(),
         },
@@ -433,7 +437,7 @@ export default function AlbumPage() {
     setError(null);
     setRepairMsg('Vérification des photos…');
     try {
-      const total = photoCount + (album.cover ? 1 : 0);
+      const total = photoCount + (album.cover ? 1 : 0) + (album.endPhoto ? 1 : 0);
       let done = 0;
       const tick = () => {
         done += 1;
@@ -454,8 +458,13 @@ export default function AlbumPage() {
         cover = await repairAlbumPhoto(cover);
         tick();
       }
+      let endPhoto = album.endPhoto;
+      if (endPhoto) {
+        endPhoto = await repairAlbumPhoto(endPhoto);
+        tick();
+      }
 
-      const nextAlbum = { ...album, days: newDays, cover };
+      const nextAlbum = { ...album, days: newDays, cover, endPhoto };
       setAlbum(nextAlbum);
 
       const next = {
@@ -463,6 +472,8 @@ export default function AlbumPage() {
         travel_album: {
           title: nextAlbum.title,
           cover: nextAlbum.cover || null,
+          endNote: nextAlbum.endNote || '',
+          endPhoto: nextAlbum.endPhoto || null,
           days: nextAlbum.days,
           updatedAt: new Date().toISOString(),
         },
@@ -523,6 +534,8 @@ export default function AlbumPage() {
           summary={trip?.itinerary?.summary || null}
           routeMap={routeMap}
           stops={stops}
+          endNote={album.endNote}
+          endPhoto={album.endPhoto}
         />
       ).toBlob();
       if (pdfUrl) URL.revokeObjectURL(pdfUrl);
@@ -618,7 +631,7 @@ export default function AlbumPage() {
           <div className="mt-2 flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => setCoverPickerOpen(true)}
+              onClick={() => setPickerFor('cover')}
               className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
             >
               🖼️ Choisir la couverture
@@ -687,6 +700,69 @@ export default function AlbumPage() {
           Ce voyage n'a pas encore de journées à illustrer.
         </p>
       )}
+
+      {/* PAGE DE FIN */}
+      <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+        <h2 className="text-lg font-semibold text-slate-900">Page de fin</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          La toute dernière page de l'album. Tu peux y écrire ton propre message
+          et choisir une photo de fond.
+        </p>
+
+        <textarea
+          value={album.endNote}
+          onChange={(e) => {
+            setAlbum((prev) => ({ ...prev, endNote: e.target.value }));
+            setDirty(true);
+          }}
+          rows={3}
+          placeholder="Ton mot de fin (par défaut : « Les voyages finissent, les souvenirs restent. »)"
+          className="mt-3 w-full resize-y rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-none focus:border-coral-400"
+        />
+
+        <div className="mt-3 flex items-center gap-4">
+          <div className="relative h-24 w-32 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
+            {album.endPhoto ? (
+              <img
+                src={album.endPhoto.display || album.endPhoto.full}
+                alt=""
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <span className="flex h-full w-full items-center justify-center px-2 text-center text-[11px] text-slate-400">
+                Fond uni (sombre)
+              </span>
+            )}
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-slate-700">Photo de fond (facultative)</p>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Sans photo, la page de fin est sur un fond sombre uni.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setPickerFor('end')}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                🖼️ Choisir une photo de fond
+              </button>
+              {album.endPhoto && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAlbum((prev) => ({ ...prev, endPhoto: null }));
+                    setDirty(true);
+                  }}
+                  className="rounded-lg px-3 py-1.5 text-xs font-medium text-slate-500 hover:text-slate-700"
+                >
+                  Enlever la photo
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* EXPORT IMPRIMABLE */}
       <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
@@ -769,17 +845,19 @@ export default function AlbumPage() {
         )}
       </section>
 
-      {coverPickerOpen && (
+      {pickerFor && (
         <CoverPicker
+          title={pickerFor === 'end' ? 'Choisir la photo de fond' : 'Choisir la photo de couverture'}
           days={days}
           album={album}
-          current={album.cover}
+          current={pickerFor === 'end' ? album.endPhoto : album.cover}
           onPick={(photo) => {
-            setAlbum((prev) => ({ ...prev, cover: photo }));
+            const field = pickerFor === 'end' ? 'endPhoto' : 'cover';
+            setAlbum((prev) => ({ ...prev, [field]: photo }));
             setDirty(true);
-            setCoverPickerOpen(false);
+            setPickerFor(null);
           }}
-          onClose={() => setCoverPickerOpen(false)}
+          onClose={() => setPickerFor(null)}
         />
       )}
     </div>
