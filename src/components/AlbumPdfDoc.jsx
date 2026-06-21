@@ -18,6 +18,7 @@ import {
   Document, Page, View, Text, Image, StyleSheet, Font,
   Svg, Rect, Defs, LinearGradient, Stop,
 } from '@react-pdf/renderer';
+import { getPhotoEffect } from '../lib/albumModel';
 
 const CDN = 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl';
 
@@ -264,6 +265,31 @@ function PageBackground({ spec, pageW, pageH, st }) {
   return null;
 }
 
+// Cadre décoratif d'une photo dans le PDF (selon l'effet choisi).
+function pdfFrame(frame) {
+  if (frame === 'postcard') return { backgroundColor: '#FFFFFF', padding: 4, borderWidth: 0.7, borderColor: '#E2DDD0' };
+  if (frame === 'polaroid') return { backgroundColor: '#FFFFFF', paddingTop: 4, paddingHorizontal: 4, paddingBottom: 16 };
+  if (frame === 'stamp') return { backgroundColor: '#FFFFFF', padding: 5, borderWidth: 1.4, borderColor: '#B9B2A3', borderStyle: 'dashed' };
+  if (frame === 'parchment') return { backgroundColor: '#EFE2C4', padding: 5, borderWidth: 0.8, borderColor: '#CDBD97' };
+  return null;
+}
+
+// Une photo de la mosaïque : applique le cadre décoratif et utilise la version
+// filtrée (_fx) si un filtre couleur a été « cuit » dans l'image.
+function PdfPhoto({ photo, st }) {
+  const effect = getPhotoEffect(photo.effect);
+  const src = photo._fx || imgFull(photo);
+  const frame = pdfFrame(effect.frame);
+  if (frame) {
+    return (
+      <View style={{ width: '100%', height: '100%', ...frame }}>
+        <Image src={src} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      </View>
+    );
+  }
+  return <Image src={src} style={st.mosaicImg} />;
+}
+
 // Mosaïque d'une page : TOUTES les tailles sont calculées en points (jamais en
 // pourcentage), pour que react-pdf ne déborde jamais (sinon il crée des pages
 // fantômes/vides et ne respecte plus la répartition). Les rangées remplissent
@@ -297,7 +323,7 @@ function Mosaic({ photos, contentW, availH, gap, st }) {
                   position: 'relative',
                 }}
               >
-                <Image src={imgFull(it.photo)} style={st.mosaicImg} />
+                <PdfPhoto photo={it.photo} st={st} />
                 {it.photo.caption ? (
                   <View style={st.capWrap}>
                     <Text style={st.capTxt}>{it.photo.caption}</Text>

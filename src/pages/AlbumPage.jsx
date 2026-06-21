@@ -16,6 +16,9 @@ import {
   computeSplit,
   BG_COLORS,
   normalizeBg,
+  PHOTO_EFFECTS,
+  getPhotoEffect,
+  bakePhotoEffects,
 } from '../lib/albumModel';
 
 // Réglage d'un fond (aucun / couleur / photo + atténuée ou pleines couleurs).
@@ -136,15 +139,33 @@ function isLowRes(photo) {
   return longEdge > 0 && longEdge < MIN_PRINT_PX;
 }
 
-function PhotoTile({ photo, onCaption, onRemove, onMoveLeft, onMoveRight, canLeft, canRight }) {
+function effectPreview(effect) {
+  // Aperçu (HTML) du filtre + cadre dans l'éditeur.
+  const style = {};
+  const wrap = {};
+  if (effect.css) style.filter = effect.css;
+  if (effect.frame === 'postcard') Object.assign(wrap, { padding: '6%', background: '#fff', border: '1px solid #e2ddd0' });
+  if (effect.frame === 'polaroid') Object.assign(wrap, { padding: '5% 5% 16% 5%', background: '#fff', boxShadow: 'inset 0 0 0 1px #eee' });
+  if (effect.frame === 'stamp') Object.assign(wrap, { padding: '6%', background: '#fff', border: '2px dashed #b9b2a3' });
+  if (effect.frame === 'parchment') Object.assign(wrap, { padding: '6%', background: '#efe2c4', border: '1px solid #cdbd97' });
+  return { imgStyle: style, wrapStyle: wrap };
+}
+
+function PhotoTile({ photo, onCaption, onRemove, onMoveLeft, onMoveRight, canLeft, canRight, onEffect }) {
+  const [fxOpen, setFxOpen] = useState(false);
+  const effect = getPhotoEffect(photo.effect);
+  const { imgStyle, wrapStyle } = effectPreview(effect);
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
       <div className="relative aspect-[4/3] bg-slate-100">
-        <img
-          src={photo.display || photo.full}
-          alt=""
-          className="h-full w-full object-cover"
-        />
+        <div className="flex h-full w-full items-center justify-center overflow-hidden" style={wrapStyle}>
+          <img
+            src={photo.display || photo.full}
+            alt=""
+            className="h-full w-full object-cover"
+            style={imgStyle}
+          />
+        </div>
         <button
           type="button"
           onClick={onRemove}
@@ -173,12 +194,40 @@ function PhotoTile({ photo, onCaption, onRemove, onMoveLeft, onMoveRight, canLef
             ›
           </button>
         </div>
+        {/* Choix de l'effet */}
+        <button
+          type="button"
+          onClick={() => setFxOpen((o) => !o)}
+          className="absolute bottom-1.5 right-1.5 flex items-center gap-1 rounded-full bg-black/55 px-2 py-1 text-[10px] font-semibold text-white hover:bg-black/75"
+          title="Effet / filtre"
+        >
+          🎨 {effect.id === 'none' ? 'Effet' : effect.label}
+        </button>
+        {fxOpen && (
+          <>
+            <div className="fixed inset-0 z-30" onClick={() => setFxOpen(false)} />
+            <div className="absolute bottom-9 right-1.5 z-40 grid w-44 grid-cols-2 gap-1 rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
+              {PHOTO_EFFECTS.map((e) => (
+                <button
+                  key={e.id}
+                  type="button"
+                  onClick={() => { onEffect(e.id); setFxOpen(false); }}
+                  className={`rounded-md px-2 py-1 text-[11px] font-medium ${
+                    effect.id === e.id ? 'bg-coral-500 text-white' : 'bg-slate-50 text-slate-700 hover:bg-slate-100'
+                  }`}
+                >
+                  {e.label}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
         {isLowRes(photo) && (
           <span
             className="absolute bottom-1.5 left-1.5 rounded-md bg-amber-500/90 px-2 py-0.5 text-[10px] font-semibold text-white"
             title="Cette photo est un peu petite : elle peut sembler floue si elle est imprimée en grand."
           >
-            ⚠︎ petite photo
+            ⚠︎ petite
           </span>
         )}
       </div>
@@ -230,6 +279,10 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
     );
     update({ photos });
   }
+  function setPhotoEffect(pi, effect) {
+    const photos = entry.photos.map((p, i) => (i === pi ? { ...p, effect } : p));
+    update({ photos });
+  }
   function removePhoto(pi) {
     update({ photos: entry.photos.filter((_, i) => i !== pi) });
   }
@@ -272,6 +325,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
               key={pi}
               photo={p}
               onCaption={(c) => setPhotoCaption(pi, c)}
+              onEffect={(fx) => setPhotoEffect(pi, fx)}
               onRemove={() => removePhoto(pi)}
               onMoveLeft={() => movePhoto(pi, -1)}
               onMoveRight={() => movePhoto(pi, 1)}
@@ -811,9 +865,17 @@ export default function AlbumPage() {
         }
       }
 
+      // « Cuisson » des filtres couleur dans les photos (les cadres, eux, sont
+      // dessinés dans le PDF).
+      const bakedDays = {};
+      for (const [k, e] of Object.entries(album.days)) {
+        bakedDays[k] = { ...e, photos: await bakePhotoEffects(e.photos) };
+      }
+      const albumForPdf = { ...album, days: bakedDays };
+
       const blob = await pdf(
         <AlbumPdfDoc
-          album={album}
+          album={albumForPdf}
           days={days}
           format={format}
           summary={trip?.itinerary?.summary || null}

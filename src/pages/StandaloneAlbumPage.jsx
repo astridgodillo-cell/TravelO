@@ -10,7 +10,7 @@ import {
 import { renderRouteMapImage } from '../lib/staticMapImage';
 import AlbumPdfDoc from '../components/AlbumPdfDoc';
 import { DayCard, CoverPicker } from './AlbumPage';
-import { FORMAT_LABELS, normalizeBg } from '../lib/albumModel';
+import { FORMAT_LABELS, normalizeBg, bakePhotoEffects } from '../lib/albumModel';
 
 const emptyDay = () => ({ title: '', note: '', photos: [], bg: null, split: null });
 
@@ -230,9 +230,13 @@ export default function StandaloneAlbumPage() {
       }
 
       const days = album.days.map((d) => ({ location: '', day_title: d.title }));
+      // « Cuisson » des filtres couleur dans les photos.
+      const bakedDays = [];
+      for (const d of album.days) bakedDays.push({ ...d, photos: await bakePhotoEffects(d.photos) });
+      const albumForPdf = { ...album, days: bakedDays };
       const blob = await pdf(
         <AlbumPdfDoc
-          album={album}
+          album={albumForPdf}
           days={days}
           format={format}
           summary={{ start_date: album.dateStart, end_date: album.dateEnd }}
