@@ -21,6 +21,7 @@ import {
   bakePhotoEffects,
   ALBUM_THEMES,
   getTheme,
+  STICKER_EMOJIS,
 } from '../lib/albumModel';
 
 // Sélecteur de thème (ambiance appliquée à tout l'album).
@@ -242,16 +243,147 @@ export function EffectPicker({ photo, current, onPick, onClose }) {
   );
 }
 
-function PhotoTile({ photo, onCaption, onRemove, onMoveLeft, onMoveRight, canLeft, canRight, onEffect }) {
+// Fenêtre pour décorer une photo : poser emojis/stickers et textes, les
+// déplacer (glisser), les redimensionner et les pivoter.
+export function DecorateModal({ photo, onChange, onClose }) {
+  const [items, setItems] = useState(() => (photo.deco || []).map((d) => ({ ...d })));
+  const [sel, setSel] = useState(null);
+  const [tab, setTab] = useState('emoji');
+  const canvasRef = useRef(null);
+  const drag = useRef(null);
+  const ar = photo.w && photo.h ? photo.w / photo.h : 4 / 3;
+
+  const commit = (next) => { setItems(next); onChange(next); };
+  const update = (i, patch) => commit(items.map((it, k) => (k === i ? { ...it, ...patch } : it)));
+  const addItem = (it) => { const next = [...items, it]; commit(next); setSel(next.length - 1); };
+  const addEmoji = (e) => addItem({ type: 'emoji', value: e, xf: 0.5, yf: 0.5, scale: 0.16, rot: 0 });
+  const addText = () => addItem({ type: 'text', value: 'Texte', xf: 0.5, yf: 0.5, scale: 0.1, rot: 0, color: '#ffffff' });
+  const remove = (i) => { commit(items.filter((_, k) => k !== i)); setSel(null); };
+
+  function pointerDown(e, i) {
+    e.stopPropagation();
+    setSel(i);
+    const rect = canvasRef.current.getBoundingClientRect();
+    drag.current = { i, rect };
+  }
+  function pointerMove(e) {
+    if (!drag.current) return;
+    const { i, rect } = drag.current;
+    const xf = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    const yf = Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height));
+    update(i, { xf, yf });
+  }
+  const endDrag = () => { drag.current = null; };
+
+  const selItem = sel != null ? items[sel] : null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-3" onMouseUp={endDrag} onMouseMove={pointerMove}>
+      <div className="my-6 w-full max-w-xl rounded-2xl bg-white p-4 shadow-2xl">
+        <div className="mb-2 flex items-center justify-between">
+          <h3 className="font-semibold text-slate-800">Décorer la photo</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700">✕</button>
+        </div>
+
+        <div
+          ref={canvasRef}
+          className="relative mx-auto w-full max-w-md overflow-hidden rounded-lg bg-slate-200 select-none"
+          style={{ aspectRatio: String(ar), containerType: 'size' }}
+          onMouseDown={() => setSel(null)}
+        >
+          <img src={photo.display || photo.full} alt="" className="absolute inset-0 h-full w-full object-cover" draggable={false} />
+          {items.map((it, i) => (
+            <div
+              key={i}
+              onMouseDown={(e) => pointerDown(e, i)}
+              className={`absolute cursor-move ${sel === i ? 'outline outline-2 outline-coral-400' : ''}`}
+              style={{
+                left: `${it.xf * 100}%`,
+                top: `${it.yf * 100}%`,
+                transform: `translate(-50%,-50%) rotate(${it.rot}deg)`,
+                fontSize: `${it.scale * 100}cqmin`,
+                lineHeight: 1,
+                color: it.color,
+                fontWeight: it.type === 'text' ? 700 : 400,
+                whiteSpace: 'nowrap',
+                textShadow: it.type === 'text' ? '0 1px 2px rgba(0,0,0,0.5)' : 'none',
+              }}
+            >
+              {it.value}
+            </div>
+          ))}
+        </div>
+
+        {/* Réglages de l'élément sélectionné */}
+        {selItem ? (
+          <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-600">Élément sélectionné</span>
+              <button onClick={() => remove(sel)} className="text-xs font-medium text-red-600">Supprimer</button>
+            </div>
+            {selItem.type === 'text' && (
+              <div className="mt-2 flex items-center gap-2">
+                <input value={selItem.value} onChange={(e) => update(sel, { value: e.target.value })}
+                  className="min-w-0 flex-1 rounded border border-slate-300 px-2 py-1 text-sm" />
+                <input type="color" value={selItem.color || '#ffffff'} onChange={(e) => update(sel, { color: e.target.value })}
+                  className="h-8 w-10 rounded border border-slate-300" />
+              </div>
+            )}
+            <label className="mt-2 block text-xs text-slate-600">Taille
+              <input type="range" min="0.05" max="0.5" step="0.01" value={selItem.scale}
+                onChange={(e) => update(sel, { scale: parseFloat(e.target.value) })} className="w-full" />
+            </label>
+            <label className="block text-xs text-slate-600">Rotation
+              <input type="range" min="-180" max="180" step="1" value={selItem.rot}
+                onChange={(e) => update(sel, { rot: parseInt(e.target.value, 10) })} className="w-full" />
+            </label>
+          </div>
+        ) : (
+          <p className="mt-3 text-center text-xs text-slate-500">Touche un élément pour le déplacer, le redimensionner ou le pivoter.</p>
+        )}
+
+        {/* Ajout */}
+        <div className="mt-3">
+          <div className="mb-2 flex gap-2">
+            <button onClick={() => setTab('emoji')} className={`rounded-md px-3 py-1 text-xs font-semibold ${tab === 'emoji' ? 'bg-coral-500 text-white' : 'bg-slate-100 text-slate-700'}`}>Emojis & stickers</button>
+            <button onClick={addText} className="rounded-md bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-200">➕ Ajouter un texte</button>
+          </div>
+          {tab === 'emoji' && (
+            <div className="grid max-h-40 grid-cols-10 gap-1 overflow-y-auto rounded-lg border border-slate-200 p-2 text-xl">
+              {STICKER_EMOJIS.map((e) => (
+                <button key={e} onClick={() => addEmoji(e)} className="rounded hover:bg-slate-100">{e}</button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-4 flex justify-end">
+          <button onClick={onClose} className="rounded-lg bg-coral-500 px-4 py-2 text-sm font-semibold text-white">Terminé</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PhotoTile({ photo, onCaption, onRemove, onMoveLeft, onMoveRight, canLeft, canRight, onEffect, onDeco }) {
   const [fxOpen, setFxOpen] = useState(false);
+  const [decoOpen, setDecoOpen] = useState(false);
   const effect = getPhotoEffect(photo.effect);
   const { imgStyle, wrapStyle } = effectPreview(effect);
+  const deco = photo.deco || [];
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-      <div className="relative aspect-[4/3] bg-slate-100">
+      <div className="relative aspect-[4/3] bg-slate-100" style={{ containerType: 'size' }}>
         <div className="flex h-full w-full items-center justify-center overflow-hidden" style={wrapStyle}>
           <img src={photo.display || photo.full} alt="" className="h-full w-full object-cover" style={imgStyle} />
         </div>
+        {/* aperçu des décorations */}
+        {deco.map((it, i) => (
+          <div key={i} className="pointer-events-none absolute"
+            style={{ left: `${it.xf * 100}%`, top: `${it.yf * 100}%`, transform: `translate(-50%,-50%) rotate(${it.rot}deg)`, fontSize: `${it.scale * 100}cqmin`, lineHeight: 1, color: it.color, fontWeight: it.type === 'text' ? 700 : 400, whiteSpace: 'nowrap', textShadow: it.type === 'text' ? '0 1px 2px rgba(0,0,0,0.5)' : 'none' }}>
+            {it.value}
+          </div>
+        ))}
         <button
           type="button"
           onClick={onRemove}
@@ -274,8 +406,16 @@ function PhotoTile({ photo, onCaption, onRemove, onMoveLeft, onMoveRight, canLef
         >
           🎨 {effect.id === 'none' ? 'Effet' : effect.label}
         </button>
+        <button
+          type="button"
+          onClick={() => setDecoOpen(true)}
+          className="absolute bottom-1.5 left-1.5 flex items-center gap-1 rounded-full bg-black/55 px-2 py-1 text-[10px] font-semibold text-white hover:bg-black/75"
+          title="Ajouter emojis / stickers / texte"
+        >
+          ✨ Décorer
+        </button>
         {isLowRes(photo) && (
-          <span className="absolute bottom-1.5 left-1.5 rounded-md bg-amber-500/90 px-2 py-0.5 text-[10px] font-semibold text-white"
+          <span className="absolute left-1/2 top-1.5 -translate-x-1/2 rounded-md bg-amber-500/90 px-2 py-0.5 text-[10px] font-semibold text-white"
             title="Photo un peu petite : risque de flou à l'impression en grand.">⚠︎ petite</span>
         )}
       </div>
@@ -287,6 +427,9 @@ function PhotoTile({ photo, onCaption, onRemove, onMoveLeft, onMoveRight, canLef
       />
       {fxOpen && (
         <EffectPicker photo={photo} current={effect.id} onPick={onEffect} onClose={() => setFxOpen(false)} />
+      )}
+      {decoOpen && (
+        <DecorateModal photo={photo} onChange={onDeco} onClose={() => setDecoOpen(false)} />
       )}
     </div>
   );
@@ -334,6 +477,10 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
     const photos = entry.photos.map((p, i) => (i === pi ? { ...p, effect } : p));
     update({ photos });
   }
+  function setPhotoDeco(pi, deco) {
+    const photos = entry.photos.map((p, i) => (i === pi ? { ...p, deco } : p));
+    update({ photos });
+  }
   function removePhoto(pi) {
     update({ photos: entry.photos.filter((_, i) => i !== pi) });
   }
@@ -377,6 +524,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
               photo={p}
               onCaption={(c) => setPhotoCaption(pi, c)}
               onEffect={(fx) => setPhotoEffect(pi, fx)}
+              onDeco={(d) => setPhotoDeco(pi, d)}
               onRemove={() => removePhoto(pi)}
               onMoveLeft={() => movePhoto(pi, -1)}
               onMoveRight={() => movePhoto(pi, 1)}

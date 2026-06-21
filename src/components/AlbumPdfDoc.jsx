@@ -18,7 +18,7 @@ import {
   Document, Page, View, Text, Image, StyleSheet, Font,
   Svg, Rect, Circle, Defs, LinearGradient, Stop,
 } from '@react-pdf/renderer';
-import { getPhotoEffect } from '../lib/albumModel';
+import { getPhotoEffect, twemojiUrl } from '../lib/albumModel';
 
 const CDN = 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl';
 
@@ -381,12 +381,7 @@ function PagePattern({ theme, pageW, pageH }) {
   );
 }
 
-// Une photo de la mosaïque : applique l'effet choisi (cadre + filtre couleur
-// déjà « cuit » dans _fx) en utilisant les dimensions réelles de la case.
-function PdfPhoto({ photo, st, w, h }) {
-  const effect = getPhotoEffect(photo.effect);
-  const src = photo._fx || imgFull(photo);
-  const frame = effect.frame;
+function FramedImage({ src, frame, w, h, st }) {
   if (!frame) return <Image src={src} style={st.mosaicImg} />;
   if (frame === 'stamp') return <StampFrame src={src} w={w} h={h} />;
   if (frame === 'film') return <FilmFrame src={src} w={w} h={h} />;
@@ -405,6 +400,41 @@ function PdfPhoto({ photo, st, w, h }) {
   return (
     <View style={{ width: '100%', height: '100%', ...fs }}>
       <Image src={src} style={COVER_IMG} />
+    </View>
+  );
+}
+
+// Une photo de la mosaïque : applique l'effet (cadre + filtre « cuit » dans
+// _fx) puis pose par-dessus les décorations (emojis/stickers/textes), placées
+// en fractions de la case → fidèle à l'éditeur.
+function PdfPhoto({ photo, st, w, h }) {
+  const effect = getPhotoEffect(photo.effect);
+  const src = photo._fx || imgFull(photo);
+  const deco = photo.deco || [];
+  const framed = <FramedImage src={src} frame={effect.frame} w={w} h={h} st={st} />;
+  if (!deco.length) return framed;
+  return (
+    <View style={{ width: '100%', height: '100%', position: 'relative' }}>
+      {framed}
+      {deco.map((it, i) => {
+        const size = it.scale * Math.min(w, h);
+        const cx = it.xf * w;
+        const cy = it.yf * h;
+        if (it.type === 'text') {
+          const fs = size;
+          const estW = Math.max(1, (it.value || '').length) * fs * 0.62;
+          return (
+            <View key={i} style={{ position: 'absolute', left: cx - estW / 2, top: cy - fs * 0.7, width: estW, transform: `rotate(${it.rot}deg)`, transformOrigin: 'center' }}>
+              <Text style={{ fontFamily: 'AlbumDisplay', fontWeight: 700, fontSize: fs, color: it.color || '#FFFFFF', textAlign: 'center' }}>{it.value}</Text>
+            </View>
+          );
+        }
+        const url = twemojiUrl(it.value);
+        if (!url) return null;
+        return (
+          <Image key={i} src={url} style={{ position: 'absolute', width: size, height: size, left: cx - size / 2, top: cy - size / 2, transform: `rotate(${it.rot}deg)`, transformOrigin: 'center' }} />
+        );
+      })}
     </View>
   );
 }

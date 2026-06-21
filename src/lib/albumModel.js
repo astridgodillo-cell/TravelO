@@ -114,6 +114,26 @@ export function getTheme(id) {
   return ALBUM_THEMES.find((t) => t.id === id) || ALBUM_THEMES[0];
 }
 
+// Stickers/emojis proposés pour décorer les photos.
+export const STICKER_EMOJIS = [
+  '❤️', '💛', '💚', '💙', '💜', '🧡', '⭐', '✨', '🌟', '💫',
+  '😍', '😎', '🥰', '😂', '🤩', '😜', '🥳', '😘', '🤗', '😌',
+  '✈️', '🧳', '🗺️', '📍', '🏖️', '⛰️', '🏝️', '🚗', '🚂', '⛵',
+  '☀️', '🌈', '⛅', '🌙', '🔥', '❄️', '🌊', '🌴', '🌸', '🍀',
+  '📷', '🎉', '🎈', '🍷', '🍕', '🍦', '☕', '🍔', '🥐', '🍓',
+  '👍', '🙌', '👏', '💪', '🤙', '✌️', '💋', '💖', '🏆', '🗯️',
+];
+
+// URL d'image (Twemoji) pour un emoji → permet de l'imprimer en couleur dans
+// le PDF (react-pdf n'affiche pas les emojis en couleur via une police).
+export function twemojiUrl(emoji) {
+  const cps = [...emoji]
+    .map((c) => c.codePointAt(0).toString(16))
+    .filter((c) => c !== 'fe0f' && c !== '200d');
+  if (!cps.length) return null;
+  return `https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.1.0/assets/72x72/${cps.join('-')}.png`;
+}
+
 // Pour le PDF : renvoie une copie des photos où celles ayant un filtre couleur
 // reçoivent une version filtrée (_fx, data URL). Les cadres décoratifs, eux,
 // sont dessinés directement dans le PDF (pas besoin de retoucher l'image).
