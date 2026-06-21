@@ -334,8 +334,10 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
       ...(album?.days?.[i] || { title: '', note: '', photos: [] }),
     }))
     .map((e) => ({ ...e, photos: (e.photos || []).filter((p) => imgFull(p)) }))
-    // On ne crée pas de page pour une journée totalement vide.
-    .filter((e) => e.photos.length > 0 || (e.note || '').trim() || (e.title || '').trim());
+    // On ne crée une page que si la journée a des photos ou un texte écrit par
+    // l'utilisateur. (Le titre seul, repris automatiquement du programme, ne
+    // suffit pas : sinon chaque jour sans photo créerait une page quasi vide.)
+    .filter((e) => e.photos.length > 0 || (e.note || '').trim());
 
   // Couverture : celle choisie par l'utilisateur, sinon la première photo
   // disponible de l'album.
