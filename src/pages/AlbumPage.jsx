@@ -27,6 +27,7 @@ import {
   splitPhotos,
   pageLayout,
   resolveBg,
+  unitLabel,
 } from '../lib/albumModel';
 
 // Petit indicateur de chargement animé (réutilisé sur les boutons d'envoi).
@@ -488,7 +489,7 @@ function themePatternStyle(theme) {
 // pour que rien ne se décale ensuite dans le PDF.
 export function PageDecorateModal({
   photos, format, onFormatChange, theme, title, note, firstPage,
-  dayIndex, location, bg, pageIndex, pageCount,
+  dayIndex, location, bg, pageIndex, pageCount, unit = 'jour',
   initialItems, onChange, initialFree, onChangeFree, onClose,
 }) {
   const spec = resolveBg(bg, pageIndex, pageCount);
@@ -533,7 +534,7 @@ export function PageDecorateModal({
   const headerInner = (
     <div style={{ display: 'inline-block', maxWidth: '100%', ...(onPlate ? { backgroundColor: 'rgba(251,248,243,0.85)', borderRadius: '4px', padding: '1.5% 2.2%' } : {}) }}>
       <div style={{ color: accent, fontSize: '1.45cqmin', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: '0.8%' }}>
-        Jour {dayIndex + 1}{location ? ` · ${location}` : ''}{!firstPage ? ' · suite' : ''}
+        {unitLabel(unit)} {dayIndex + 1}{location ? ` · ${location}` : ''}{!firstPage ? ' · suite' : ''}
       </div>
       {firstPage && title ? <div style={{ color: ink, fontSize: '3.7cqmin', fontWeight: 700, lineHeight: 1.1, fontFamily: 'Georgia, serif' }}>{title}</div> : null}
       {firstPage && note ? <div style={{ color: '#41433F', fontSize: '1.75cqmin', lineHeight: 1.45, marginTop: '1%' }}>{note}</div> : null}
@@ -701,7 +702,7 @@ function PhotoTile({ photo, onCaption, onRemove, onMoveLeft, onMoveRight, canLef
   );
 }
 
-export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhoto, busy, progress = null, format = 'carre', onFormatChange = null, theme = null }) {
+export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhoto, busy, progress = null, format = 'carre', onFormatChange = null, theme = null, unit = 'jour' }) {
   const fileRef = useRef(null);
   const [bgOpen, setBgOpen] = useState(false);
   const [decoPage, setDecoPage] = useState(null);
@@ -770,7 +771,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
     <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
       <div className="mb-3 flex items-center justify-between gap-3">
         <span className="rounded-full bg-coral-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-coral-600">
-          Jour {index + 1}
+          {unitLabel(unit)} {index + 1}
           {day?.location ? ` · ${day.location}` : ''}
         </span>
       </div>
@@ -1001,6 +1002,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
           bg={entry.bg}
           pageIndex={decoPage}
           pageCount={pageCount}
+          unit={unit}
           initialItems={entry.pageDeco?.[decoPage] || []}
           onChange={(items) => setPageDeco(decoPage, items)}
           initialFree={entry.freePages?.[decoPage] || null}
@@ -1170,27 +1172,46 @@ export default function AlbumPage() {
         return;
       }
       const it = data?.itinerary || {};
-      const days = Array.isArray(it.days) ? it.days : [];
+      const itDays = Array.isArray(it.days) ? it.days : [];
       const saved = it.travel_album || null;
 
-      // On initialise une entrée par journée (titre repris du programme),
-      // puis on fusionne ce qui a déjà été enregistré.
-      const dayEntries = {};
-      days.forEach((d, i) => {
-        const s = saved?.days?.[i];
-        // Migration de l'ancien format (bg = une photo) vers le nouveau modèle.
-        let bg = s?.bg ?? null;
-        if (bg && bg.full) {
-          bg = { mode: 'perPage', spread: { type: 'none' }, pages: [{ type: 'photo', photo: bg, toned: true }] };
-        }
-        dayEntries[i] = {
-          title: s?.title ?? (d.day_title || d.location || `Jour ${i + 1}`),
-          note: s?.note ?? '',
-          photos: Array.isArray(s?.photos) ? s.photos : [],
-          bg,
-          split: Array.isArray(s?.split) ? s.split : null,
-        };
-      });
+      // Migration de l'ancien format (bg = une photo) vers le nouveau modèle.
+      const migrateBg = (bg) =>
+        bg && bg.full
+          ? { mode: 'perPage', spread: { type: 'none' }, pages: [{ type: 'photo', photo: bg, toned: true }] }
+          : (bg ?? null);
+
+      // Les sections de l'album sont une LISTE (comme l'album créé de zéro), ce
+      // qui permet de fusionner / déplacer / supprimer / ajouter des sections.
+      // - si déjà enregistré en liste → on l'utilise tel quel ;
+      // - sinon → une section par journée du programme (titre + lieu repris).
+      let daysArr;
+      if (Array.isArray(saved?.days)) {
+        daysArr = saved.days.map((s) => ({
+          location: s.location || '',
+          title: s.title || '',
+          note: s.note || '',
+          photos: Array.isArray(s.photos) ? s.photos : [],
+          bg: migrateBg(s.bg),
+          split: Array.isArray(s.split) ? s.split : null,
+          pageDeco: s.pageDeco || {},
+          freePages: s.freePages || {},
+        }));
+      } else {
+        daysArr = itDays.map((d, i) => {
+          const s = saved?.days?.[i];
+          return {
+            location: d.location || '',
+            title: s?.title ?? (d.day_title || d.location || `Jour ${i + 1}`),
+            note: s?.note ?? '',
+            photos: Array.isArray(s?.photos) ? s.photos : [],
+            bg: migrateBg(s?.bg ?? null),
+            split: Array.isArray(s?.split) ? s.split : null,
+            pageDeco: s?.pageDeco || {},
+            freePages: s?.freePages || {},
+          };
+        });
+      }
 
       setTrip(data);
       setAlbum({
@@ -1199,7 +1220,8 @@ export default function AlbumPage() {
         endNote: saved?.endNote ?? '',
         endPhoto: saved?.endPhoto ?? null,
         theme: saved?.theme ?? 'classique',
-        days: dayEntries,
+        unit: saved?.unit ?? 'jour',
+        days: daysArr,
       });
       setSavedOnce(!!saved);
       setLoading(false);
@@ -1210,9 +1232,48 @@ export default function AlbumPage() {
   }, [id]);
 
   function setDayEntry(i, entry) {
-    setAlbum((prev) => ({ ...prev, days: { ...prev.days, [i]: entry } }));
+    setAlbum((prev) => {
+      const days = [...prev.days];
+      days[i] = entry;
+      return { ...prev, days };
+    });
     setDirty(true);
   }
+
+  const addDay = () =>
+    setAlbum((prev) => {
+      setDirty(true);
+      return {
+        ...prev,
+        days: [...prev.days, { location: '', title: '', note: '', photos: [], bg: null, split: null, pageDeco: {}, freePages: {} }],
+      };
+    });
+  const removeDay = (i) =>
+    setAlbum((prev) => {
+      setDirty(true);
+      return { ...prev, days: prev.days.filter((_, k) => k !== i) };
+    });
+  const moveDay = (i, dir) =>
+    setAlbum((prev) => {
+      const j = i + dir;
+      if (j < 0 || j >= prev.days.length) return prev;
+      const days = [...prev.days];
+      [days[i], days[j]] = [days[j], days[i]];
+      setDirty(true);
+      return { ...prev, days };
+    });
+  const mergeDayUp = (i) =>
+    setAlbum((prev) => {
+      if (i <= 0) return prev;
+      const a = prev.days[i - 1];
+      const b = prev.days[i];
+      const note = [a.note, b.title, b.note].map((s) => (s || '').trim()).filter(Boolean).join('\n');
+      const merged = { ...a, photos: [...(a.photos || []), ...(b.photos || [])], note, split: null, pageDeco: {}, freePages: {} };
+      const days = prev.days.filter((_, k) => k !== i);
+      days[i - 1] = merged;
+      setDirty(true);
+      return { ...prev, days };
+    });
 
   async function addPhotos(i, files) {
     setBusyDay(i);
@@ -1232,9 +1293,10 @@ export default function AlbumPage() {
         }
       }
       setAlbum((prev) => {
-        const entry = prev.days[i];
-        const photos = [...entry.photos, ...uploaded.map((u) => ({ ...u, caption: '' }))];
-        return { ...prev, days: { ...prev.days, [i]: { ...entry, photos } } };
+        const days = [...prev.days];
+        const entry = days[i];
+        days[i] = { ...entry, photos: [...entry.photos, ...uploaded.map((u) => ({ ...u, caption: '' }))] };
+        return { ...prev, days };
       });
       setDirty(true);
     } catch (err) {
@@ -1258,6 +1320,7 @@ export default function AlbumPage() {
           endNote: album.endNote || '',
           endPhoto: album.endPhoto || null,
           theme: album.theme || 'classique',
+          unit: album.unit || 'jour',
           days: album.days,
           updatedAt: new Date().toISOString(),
         },
@@ -1275,7 +1338,7 @@ export default function AlbumPage() {
   }
 
   const photoCount = album
-    ? Object.values(album.days).reduce((n, e) => n + (e.photos?.length || 0), 0)
+    ? (album.days || []).reduce((n, e) => n + (e.photos?.length || 0), 0)
     : 0;
 
   // Répare toutes les photos déjà ajoutées : remet à l'endroit celles qui sont
@@ -1293,8 +1356,8 @@ export default function AlbumPage() {
         setRepairMsg(`Réparation des photos… ${done}/${total}`);
       };
 
-      const newDays = {};
-      for (const [i, entry] of Object.entries(album.days)) {
+      const newDays = [];
+      for (const entry of album.days) {
         const photos = [];
         for (const p of entry.photos || []) {
           photos.push(await repairAlbumPhoto(p));
@@ -1314,7 +1377,7 @@ export default function AlbumPage() {
             }
           }
         }
-        newDays[i] = { ...entry, photos, bg };
+        newDays.push({ ...entry, photos, bg });
       }
       let cover = album.cover;
       if (cover) {
@@ -1338,6 +1401,7 @@ export default function AlbumPage() {
           endNote: nextAlbum.endNote || '',
           endPhoto: nextAlbum.endPhoto || null,
           theme: nextAlbum.theme || 'classique',
+          unit: nextAlbum.unit || 'jour',
           days: nextAlbum.days,
           updatedAt: new Date().toISOString(),
         },
@@ -1372,7 +1436,8 @@ export default function AlbumPage() {
       let routeMap = null;
       const stops = [];
       const points = [];
-      days.forEach((d) => {
+      const tripDays = Array.isArray(trip?.itinerary?.days) ? trip.itinerary.days : [];
+      tripDays.forEach((d) => {
         const c = d?.coordinates;
         if (c && typeof c.lat === 'number' && typeof c.lng === 'number') {
           points.push(c);
@@ -1400,20 +1465,21 @@ export default function AlbumPage() {
 
       // « Cuisson » des filtres couleur dans les photos (les cadres, eux, sont
       // dessinés dans le PDF).
-      const bakedDays = {};
-      for (const [k, e] of Object.entries(album.days)) {
-        bakedDays[k] = { ...e, photos: await bakePhotoEffects(e.photos) };
+      const bakedDays = [];
+      for (const e of album.days) {
+        bakedDays.push({ ...e, photos: await bakePhotoEffects(e.photos) });
       }
       const albumForPdf = { ...album, days: bakedDays };
 
       const blob = await pdf(
         <AlbumPdfDoc
           album={albumForPdf}
-          days={days}
+          days={album.days.map((s) => ({ location: s.location || '' }))}
           format={format}
           summary={trip?.itinerary?.summary || null}
           routeMap={routeMap}
           stops={stops}
+          unit={album.unit}
           endNote={album.endNote}
           endPhoto={album.endPhoto}
           theme={getTheme(album.theme)}
@@ -1454,7 +1520,10 @@ export default function AlbumPage() {
     );
   }
 
-  const days = Array.isArray(trip?.itinerary?.days) ? trip.itinerary.days : [];
+  // Sections de l'album (liste éditable) + vue allégée {location} pour les
+  // composants qui n'ont besoin que du lieu (sélecteur de photo, etc.).
+  const sections = album?.days || [];
+  const days = sections.map((s) => ({ location: s.location || '' }));
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -1492,6 +1561,19 @@ export default function AlbumPage() {
         value={album.theme || 'classique'}
         onChange={(t) => { setAlbum((prev) => ({ ...prev, theme: t })); setDirty(true); }}
       />
+
+      {/* Unité des sections : journées ou étapes */}
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <span className="text-sm font-medium text-slate-700">Organiser par&nbsp;:</span>
+        {[['jour', 'Jours'], ['etape', 'Étapes']].map(([k, lbl]) => (
+          <button key={k} type="button"
+            onClick={() => { setAlbum((prev) => ({ ...prev, unit: k })); setDirty(true); }}
+            className={`rounded-md px-3 py-1 text-xs font-semibold ${(album.unit || 'jour') === k ? 'bg-coral-500 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
+            {lbl}
+          </button>
+        ))}
+        <span className="text-xs text-slate-500">Regroupe plusieurs journées d'une même étape avec « Fusionner ».</span>
+      </div>
 
       {/* Photo de couverture */}
       <div className="mt-4 flex items-center gap-4">
@@ -1569,27 +1651,55 @@ export default function AlbumPage() {
       )}
 
       <div className="mt-5 space-y-5">
-        {days.map((d, i) => (
-          <DayCard
-            key={i}
-            day={d}
-            index={i}
-            entry={album.days[i]}
-            onChange={(entry) => setDayEntry(i, entry)}
-            onAddPhotos={(files) => addPhotos(i, files)}
-            progress={busyDay === i ? addProgress : null}
-            onPickBgPhoto={(slot) => setPickerFor({ kind: 'dayBg', i, slot })}
-            busy={busyDay === i}
-            format={format}
-            onFormatChange={setFormat}
-            theme={getTheme(album.theme)}
-          />
-        ))}
+        {sections.map((d, i) => {
+          const w = unitLabel(album.unit).toLowerCase();
+          const prevW = w === 'étape' ? "l'étape" : 'le jour';
+          return (
+            <div key={i}>
+              <div className="mb-1 flex flex-wrap items-center justify-end gap-2">
+                <button type="button" onClick={() => moveDay(i, -1)} disabled={i === 0}
+                  className="rounded border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-600 disabled:opacity-30" title="Monter">↑</button>
+                <button type="button" onClick={() => moveDay(i, 1)} disabled={i === sections.length - 1}
+                  className="rounded border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-600 disabled:opacity-30" title="Descendre">↓</button>
+                <button type="button" disabled={i === 0}
+                  onClick={() => { if (window.confirm(`Fusionner cette ${w} avec ${prevW} ${i} ? Toutes les photos seront regroupées.`)) mergeDayUp(i); }}
+                  className="rounded border border-slate-300 bg-white px-2 py-0.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-30"
+                  title="Regrouper les photos de cette section avec la précédente">
+                  ⤵ Fusionner avec {prevW} précédent{w === 'étape' ? 'e' : ''}
+                </button>
+                <button type="button"
+                  onClick={() => { if (window.confirm('Supprimer cette section ? Ses photos seront retirées de l’album.')) removeDay(i); }}
+                  className="rounded border border-red-200 bg-white px-2 py-0.5 text-xs font-medium text-red-600 hover:bg-red-50">
+                  Supprimer
+                </button>
+              </div>
+              <DayCard
+                day={d}
+                index={i}
+                entry={album.days[i]}
+                onChange={(entry) => setDayEntry(i, entry)}
+                onAddPhotos={(files) => addPhotos(i, files)}
+                progress={busyDay === i ? addProgress : null}
+                onPickBgPhoto={(slot) => setPickerFor({ kind: 'dayBg', i, slot })}
+                busy={busyDay === i}
+                format={format}
+                onFormatChange={setFormat}
+                theme={getTheme(album.theme)}
+                unit={album.unit}
+              />
+            </div>
+          );
+        })}
       </div>
 
-      {days.length === 0 && (
+      <button type="button" onClick={addDay}
+        className="mt-4 w-full rounded-xl border-2 border-dashed border-coral-300 bg-coral-50 px-3 py-3 text-sm font-semibold text-coral-700 hover:bg-coral-100">
+        ➕ Ajouter {(album.unit || 'jour') === 'etape' ? 'une étape' : 'un jour'} / une page
+      </button>
+
+      {sections.length === 0 && (
         <p className="mt-6 text-center text-sm text-slate-500">
-          Ce voyage n'a pas encore de journées à illustrer.
+          Ce voyage n'a pas encore de journées à illustrer. Utilise « Ajouter » ci-dessus.
         </p>
       )}
 
@@ -1752,7 +1862,7 @@ export default function AlbumPage() {
           current = album.endPhoto;
         } else if (kind === 'dayBg') {
           const bg = normalizeBg(album.days[pickerFor.i]?.bg);
-          title = `Fond · Jour ${pickerFor.i + 1}`;
+          title = `Fond · ${unitLabel(album.unit)} ${pickerFor.i + 1}`;
           current =
             pickerFor.slot === 'spread'
               ? bg.spread?.photo
@@ -1768,7 +1878,8 @@ export default function AlbumPage() {
               if (kind === 'dayBg') {
                 const { i, slot } = pickerFor;
                 setAlbum((prev) => {
-                  const entry = prev.days[i];
+                  const daysArr = [...prev.days];
+                  const entry = daysArr[i];
                   const bg = normalizeBg(entry.bg);
                   if (slot === 'spread') {
                     bg.spread = { type: 'photo', photo, toned: bg.spread?.toned !== false };
@@ -1778,10 +1889,8 @@ export default function AlbumPage() {
                     pages[slot] = { type: 'photo', photo, toned: pages[slot]?.toned !== false };
                     bg.pages = pages;
                   }
-                  return {
-                    ...prev,
-                    days: { ...prev.days, [i]: { ...entry, bg: { ...bg } } },
-                  };
+                  daysArr[i] = { ...entry, bg: { ...bg } };
+                  return { ...prev, days: daysArr };
                 });
               } else {
                 const field = kind === 'end' ? 'endPhoto' : 'cover';

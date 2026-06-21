@@ -11,7 +11,7 @@ import { renderRouteMapImage } from '../lib/staticMapImage';
 import AlbumPdfDoc from '../components/AlbumPdfDoc';
 import PdfPagesPreview from '../components/PdfPagesPreview';
 import { DayCard, CoverPicker, ThemePicker } from './AlbumPage';
-import { FORMAT_LABELS, normalizeBg, bakePhotoEffects, getTheme } from '../lib/albumModel';
+import { FORMAT_LABELS, normalizeBg, bakePhotoEffects, getTheme, unitLabel } from '../lib/albumModel';
 
 const emptyDay = () => ({ title: '', note: '', photos: [], bg: null, split: null });
 
@@ -70,6 +70,7 @@ export default function StandaloneAlbumPage() {
         endNote: c.endNote ?? '',
         endPhoto: c.endPhoto ?? null,
         theme: c.theme ?? 'classique',
+        unit: c.unit ?? 'jour',
         days: Array.isArray(c.days) && c.days.length ? c.days : [emptyDay()],
         map: c.map ?? { enabled: false, stops: [] },
       });
@@ -161,6 +162,7 @@ export default function StandaloneAlbumPage() {
       endNote: a.endNote || '',
       endPhoto: a.endPhoto || null,
       theme: a.theme || 'classique',
+      unit: a.unit || 'jour',
       days: a.days,
       map: a.map || { enabled: false, stops: [] },
     };
@@ -274,6 +276,7 @@ export default function StandaloneAlbumPage() {
           endNote={album.endNote}
           endPhoto={album.endPhoto}
           theme={getTheme(album.theme)}
+          unit={album.unit}
         />
       ).toBlob();
       if (pdfUrl) URL.revokeObjectURL(pdfUrl);
@@ -336,6 +339,18 @@ export default function StandaloneAlbumPage() {
 
       <ThemePicker value={album.theme || 'classique'} onChange={(t) => patch({ theme: t })} />
 
+      {/* Unité des sections : journées ou étapes */}
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <span className="text-sm font-medium text-slate-700">Organiser par&nbsp;:</span>
+        {[['jour', 'Jours'], ['etape', 'Étapes']].map(([k, lbl]) => (
+          <button key={k} type="button" onClick={() => patch({ unit: k })}
+            className={`rounded-md px-3 py-1 text-xs font-semibold ${(album.unit || 'jour') === k ? 'bg-coral-500 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
+            {lbl}
+          </button>
+        ))}
+        <span className="text-xs text-slate-500">Pratique pour regrouper plusieurs journées d'une même étape.</span>
+      </div>
+
       {/* Couverture */}
       <CoverThumb
         label="Photo de couverture"
@@ -369,13 +384,14 @@ export default function StandaloneAlbumPage() {
               <button
                 type="button"
                 onClick={() => {
-                  if (window.confirm(`Fusionner ce jour avec le Jour ${i} ? Toutes les photos seront regroupées dans le Jour ${i}.`)) mergeDayUp(i);
+                  const w = unitLabel(album.unit).toLowerCase();
+                  if (window.confirm(`Fusionner cette ${w} avec ${w === 'étape' ? "l'étape" : 'le jour'} ${i} ? Toutes les photos seront regroupées.`)) mergeDayUp(i);
                 }}
                 disabled={i === 0}
                 className="rounded border border-slate-300 bg-white px-2 py-0.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-30"
-                title="Regrouper les photos de ce jour avec le jour précédent"
+                title="Regrouper les photos de cette section avec la précédente"
               >
-                ⤵ Fusionner avec le jour précédent
+                ⤵ Fusionner avec {unitLabel(album.unit).toLowerCase() === 'étape' ? "l'étape" : 'le jour'} précédent{unitLabel(album.unit).toLowerCase() === 'étape' ? 'e' : ''}
               </button>
               <button type="button" onClick={() => removeDay(i)}
                 className="rounded border border-red-200 bg-white px-2 py-0.5 text-xs font-medium text-red-600 hover:bg-red-50">Supprimer ce jour</button>
@@ -392,6 +408,7 @@ export default function StandaloneAlbumPage() {
               format={format}
               onFormatChange={setFormat}
               theme={getTheme(album.theme)}
+              unit={album.unit}
             />
           </div>
         ))}
@@ -399,7 +416,7 @@ export default function StandaloneAlbumPage() {
 
       <button type="button" onClick={addDay}
         className="mt-4 w-full rounded-xl border-2 border-dashed border-coral-300 bg-coral-50 px-3 py-3 text-sm font-semibold text-coral-700 hover:bg-coral-100">
-        ➕ Ajouter un jour / une page
+        ➕ Ajouter {(album.unit || 'jour') === 'etape' ? 'une étape' : 'un jour'} / une page
       </button>
 
       {/* Carte */}

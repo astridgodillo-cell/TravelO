@@ -18,7 +18,7 @@ import {
   Document, Page, View, Text, Image, StyleSheet, Font,
   Svg, Rect, Circle, Defs, LinearGradient, Stop,
 } from '@react-pdf/renderer';
-import { getPhotoEffect, twemojiUrl, splitPhotos, pageLayout, resolveBg } from '../lib/albumModel';
+import { getPhotoEffect, twemojiUrl, splitPhotos, pageLayout, resolveBg, unitLabel } from '../lib/albumModel';
 
 const CDN = 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl';
 
@@ -367,7 +367,7 @@ function CoverFade({ color = '#1C2B2D' }) {
   );
 }
 
-export default function AlbumPdfDoc({ album, days = [], format = 'carre', summary = null, routeMap = null, stops = [], endNote = '', endPhoto = null, theme = null }) {
+export default function AlbumPdfDoc({ album, days = [], format = 'carre', summary = null, routeMap = null, stops = [], endNote = '', endPhoto = null, theme = null, unit = 'jour' }) {
   const fmt = FORMATS[format] || FORMATS.carre;
   // Page = format final + 3 mm de fond perdu sur chaque bord.
   const pageW = mm(fmt.trimW + BLEED_MM * 2);
@@ -481,7 +481,7 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
               <View style={{ position: 'absolute', left: lay.pad, top: lay.pad, width: lay.contentW, height: lay.headerH, overflow: 'hidden' }}>
                 <View style={onPlate ? st.headerPlate : st.header}>
                   <Text style={st.dayKicker}>
-                    Jour {e.i + 1}{e.location ? ` · ${e.location}` : ''}
+                    {unitLabel(unit)} {e.i + 1}{e.location ? ` · ${e.location}` : ''}
                     {!firstPage ? ' · suite' : ''}
                   </Text>
                   {firstPage && e.title ? <Text style={st.dayTitle}>{e.title}</Text> : null}

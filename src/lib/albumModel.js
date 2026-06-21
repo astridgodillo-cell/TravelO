@@ -247,6 +247,11 @@ export function getTheme(id) {
   return ALBUM_THEMES.find((t) => t.id === id) || ALBUM_THEMES[0];
 }
 
+// Unité d'une section d'album : journée ou étape.
+export function unitLabel(unit) {
+  return unit === 'etape' ? 'Étape' : 'Jour';
+}
+
 // Emojis/stickers proposés pour décorer, classés par catégories.
 export const STICKER_CATEGORIES = [
   {
