@@ -67,9 +67,6 @@ const imgFull = (p) => p?.full || p?.display || '';
 
 const PAD_MM = 12; // marge depuis le bord de page (3 mm de fond perdu + 9 mm)
 const GAP_MM = 2; // espace entre les photos de la mosaïque
-// Hauteur réservée à l'en-tête (titre + texte) + numéro de page, pour estimer
-// l'espace photos lors du choix du nombre de rangées.
-const HEADER_RESERVE_MM = 32;
 
 function fmtDay(iso) {
   if (!iso) return '';
@@ -150,10 +147,54 @@ function buildFillLayout(photos, contentW, availH, gap) {
 // Au-delà de ce nombre de photos, une journée continue sur une nouvelle page.
 const PHOTOS_PER_PAGE = 6;
 
-function chunkPhotos(photos, size) {
+// Répartit `total` photos sur `pages` pages, le plus équitablement possible.
+function balancedSplit(total, pages) {
+  const p = Math.max(1, pages);
+  const base = Math.floor(total / p);
+  const rem = total - base * p;
+  return Array.from({ length: p }, (_, k) => base + (k < rem ? 1 : 0));
+}
+
+// Nombre de photos par page : choix manuel de l'utilisateur s'il est valide,
+// sinon répartition automatique équilibrée (ex. 8 photos → 4 + 4).
+function computeSplit(total, manual) {
+  if (total <= PHOTOS_PER_PAGE) return [total];
+  if (
+    Array.isArray(manual) &&
+    manual.length &&
+    manual.every((n) => n > 0) &&
+    manual.reduce((a, b) => a + b, 0) === total
+  ) {
+    return manual;
+  }
+  return balancedSplit(total, Math.ceil(total / PHOTOS_PER_PAGE));
+}
+
+function splitPhotos(photos, manual) {
+  const counts = computeSplit(photos.length, manual);
   const out = [];
-  for (let i = 0; i < photos.length; i += size) out.push(photos.slice(i, i + size));
+  let idx = 0;
+  for (const c of counts) {
+    out.push(photos.slice(idx, idx + c));
+    idx += c;
+  }
   return out.length ? out : [[]];
+}
+
+// Estime (en mm) la hauteur prise par l'en-tête d'une page, pour dimensionner
+// la mosaïque sans déborder (ce qui créait des pages blanches).
+function estimateHeaderMm(title, note, firstPage, contentWmm) {
+  if (!firstPage) return 12; // pages « suite » : juste le petit intitulé
+  let h = 8; // kicker + marge
+  if (title) {
+    const perLine = Math.max(16, Math.floor(contentWmm / 4.4));
+    h += Math.max(1, Math.ceil(title.length / perLine)) * 9;
+  }
+  if (note) {
+    const perLine = Math.max(28, Math.floor(contentWmm / 1.9));
+    h += 6 + Math.ceil(note.length / perLine) * 5.6;
+  }
+  return h + 6; // marge basse + sécurité
 }
 
 // Résout le fond à appliquer à une page donnée d'une journée :
@@ -356,19 +397,17 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
 
       {/* UNE OU PLUSIEURS PAGES PAR JOURNÉE */}
       {entries.flatMap((e) => {
-        const chunks = chunkPhotos(e.photos, PHOTOS_PER_PAGE);
+        const chunks = splitPhotos(e.photos, e.split);
         const pageCount = chunks.length;
+        const contentWmm = contentW / MM;
         return chunks.map((chunk, p) => {
           const spec = resolveBg(e.bg, p, pageCount);
           const firstPage = p === 0;
-          // En-tête sur une plaque translucide dès qu'il y a un fond (couleur ou
-          // photo), pour que le titre reste lisible. Sur fond beige : en-tête nu.
           const onPlate = spec.type !== 'none';
-          // Plus d'espace photos sur les pages « suite » (en-tête réduit).
-          const availH =
-            pageH - mm(PAD_MM) * 2 - mm(firstPage ? HEADER_RESERVE_MM : 14);
+          const headerMm = estimateHeaderMm(e.title, e.note, firstPage, contentWmm);
+          const availH = pageH - mm(PAD_MM) * 2 - mm(headerMm);
           return (
-            <Page key={`${e.i}-${p}`} size={[pageW, pageH]} style={st.page}>
+            <Page key={`${e.i}-${p}`} size={[pageW, pageH]} style={st.page} wrap={false}>
               <PageBackground spec={spec} pageW={pageW} pageH={pageH} st={st} />
               <View style={onPlate ? st.headerPlate : st.header}>
                 <Text style={st.dayKicker}>
@@ -454,7 +493,7 @@ function makeStyles(pageW, pageH) {
     coverDates: { fontFamily: 'AlbumBody', fontWeight: 400, fontSize: 11, letterSpacing: 1, color: '#FFFFFF', opacity: 0.95 },
 
     // Fond de page (photo) + voile clair par-dessus.
-    bgWrap: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+    bgWrap: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, overflow: 'hidden' },
     bgScrim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(251,248,243,0.80)' },
 
     header: { flexShrink: 0, marginBottom: mm(4) },

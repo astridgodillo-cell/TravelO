@@ -18,8 +18,27 @@ const FORMAT_LABELS = {
 
 // Doit correspondre à PHOTOS_PER_PAGE dans AlbumPdfDoc.jsx.
 const PHOTOS_PER_PAGE = 6;
-const dayPageCount = (entry) =>
-  Math.max(1, Math.ceil((entry?.photos?.length || 0) / PHOTOS_PER_PAGE));
+
+function balancedSplit(total, pages) {
+  const p = Math.max(1, pages);
+  const base = Math.floor(total / p);
+  const rem = total - base * p;
+  return Array.from({ length: p }, (_, k) => base + (k < rem ? 1 : 0));
+}
+
+// Nombre de photos par page : choix manuel valide, sinon réparti équitablement.
+function computeSplit(total, manual) {
+  if (total <= PHOTOS_PER_PAGE) return [total];
+  if (
+    Array.isArray(manual) &&
+    manual.length &&
+    manual.every((n) => n > 0) &&
+    manual.reduce((a, b) => a + b, 0) === total
+  ) {
+    return manual;
+  }
+  return balancedSplit(total, Math.ceil(total / PHOTOS_PER_PAGE));
+}
 
 // Palette de couleurs de fond proposée (beiges, neutres, et quelques teintes).
 const BG_COLORS = ['#FBF8F3', '#F3ECDD', '#E7E0D4', '#D9C9A8', '#C8643C', '#0F4C45', '#27408B', '#1C2B2D'];
@@ -214,7 +233,10 @@ function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhoto, busy
   const update = (patch) => onChange({ ...entry, ...patch });
 
   const bg = normalizeBg(entry.bg);
-  const pageCount = dayPageCount(entry);
+  const total = entry.photos.length;
+  const splitCounts = computeSplit(total, entry.split);
+  const pageCount = splitCounts.length;
+  const splitSum = splitCounts.reduce((a, b) => a + b, 0);
   const setBg = (next) => update({ bg: next });
   const getPageSpec = (p) => bg.pages?.[p] || { type: 'none' };
   const setPageSpec = (p, spec) => {
@@ -302,6 +324,72 @@ function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhoto, busy
           if (files.length) onAddPhotos(files);
         }}
       />
+
+      {/* RÉPARTITION DES PHOTOS SUR LES PAGES (si plus de 6 photos) */}
+      {total > PHOTOS_PER_PAGE && (
+        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-medium text-slate-700">
+              Répartition des {total} photos
+            </p>
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-slate-500">Pages :</span>
+              <button
+                type="button"
+                onClick={() => update({ split: balancedSplit(total, Math.max(1, pageCount - 1)) })}
+                disabled={pageCount <= 1}
+                className="h-6 w-6 rounded border border-slate-300 bg-white font-bold text-slate-700 disabled:opacity-40"
+              >
+                −
+              </button>
+              <span className="w-4 text-center font-semibold text-slate-700">{pageCount}</span>
+              <button
+                type="button"
+                onClick={() => update({ split: balancedSplit(total, Math.min(total, pageCount + 1)) })}
+                disabled={pageCount >= total}
+                className="h-6 w-6 rounded border border-slate-300 bg-white font-bold text-slate-700 disabled:opacity-40"
+              >
+                +
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-2 flex flex-wrap gap-3">
+            {splitCounts.map((c, p) => (
+              <label key={p} className="flex items-center gap-1.5 text-xs text-slate-600">
+                Page {p + 1}
+                <input
+                  type="number"
+                  min={1}
+                  max={total}
+                  value={c}
+                  onChange={(e) => {
+                    const arr = [...splitCounts];
+                    arr[p] = Math.max(1, parseInt(e.target.value, 10) || 1);
+                    update({ split: arr });
+                  }}
+                  className="w-14 rounded-md border border-slate-300 px-2 py-1 text-center"
+                />
+              </label>
+            ))}
+          </div>
+
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <p className={`text-xs ${splitSum === total ? 'text-slate-400' : 'text-amber-600'}`}>
+              {splitSum === total
+                ? 'Réparti sur les pages ci-dessus.'
+                : `Le total doit faire ${total} (actuellement ${splitSum}).`}
+            </p>
+            <button
+              type="button"
+              onClick={() => update({ split: null })}
+              className="text-xs font-medium text-brand-700 hover:underline"
+            >
+              Répartition automatique
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* FOND DE PAGE de cette journée */}
       <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
@@ -548,6 +636,7 @@ export default function AlbumPage() {
           note: s?.note ?? '',
           photos: Array.isArray(s?.photos) ? s.photos : [],
           bg,
+          split: Array.isArray(s?.split) ? s.split : null,
         };
       });
 
