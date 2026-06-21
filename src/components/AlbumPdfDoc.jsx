@@ -154,8 +154,8 @@ function CoverFade({ color = '#1C2B2D' }) {
       <Defs>
         <LinearGradient id="albFade" x1="0" y1="0" x2="0" y2="1">
           <Stop offset="0" stopColor={color} stopOpacity="0" />
-          <Stop offset="0.6" stopColor={color} stopOpacity="0.45" />
-          <Stop offset="1" stopColor={color} stopOpacity="0.85" />
+          <Stop offset="0.55" stopColor={color} stopOpacity="0.5" />
+          <Stop offset="1" stopColor={color} stopOpacity="0.92" />
         </LinearGradient>
       </Defs>
       <Rect x="0" y="0" width="100%" height="100%" fill="url(#albFade)" />
@@ -292,7 +292,18 @@ function makeStyles(pageW, pageH) {
     coverPage: { position: 'relative', width: pageW, height: pageH, backgroundColor: PALETTE.ink },
     coverImgWrap: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
     coverImg: { width: '100%', height: '100%', objectFit: 'cover' },
-    coverContent: { position: 'absolute', left: pad, right: pad, bottom: pad },
+    // Plaque sombre semi-transparente derrière le texte : garantit que le titre
+    // (blanc) reste lisible, même si la photo a des zones claires à cet endroit.
+    coverContent: {
+      position: 'absolute',
+      left: pad,
+      right: pad,
+      bottom: pad,
+      backgroundColor: 'rgba(18,26,26,0.52)',
+      borderRadius: 6,
+      paddingVertical: 16,
+      paddingHorizontal: 18,
+    },
     coverKicker: { fontFamily: 'AlbumBody', fontWeight: 700, fontSize: 9, letterSpacing: 3, textTransform: 'uppercase', color: '#FFFFFF', marginBottom: 8, opacity: 0.9 },
     coverTitle: { fontFamily: 'AlbumDisplay', fontWeight: 600, fontSize: 38, lineHeight: 1.05, color: '#FFFFFF' },
     coverRule: { width: mm(16), height: 2, backgroundColor: PALETTE.accent, marginTop: 12, marginBottom: 10 },
