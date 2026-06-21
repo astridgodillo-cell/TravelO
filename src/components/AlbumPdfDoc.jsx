@@ -260,44 +260,47 @@ function PageBackground({ spec, pageW, pageH, st }) {
   return null;
 }
 
-// Mosaïque d'une page : photos à leurs proportions exactes (pas de recadrage),
-// rangées remplissant la largeur, ensemble centré verticalement.
+// Mosaïque d'une page : les rangées remplissent toute la largeur ET toute la
+// hauteur disponibles (puzzle plein). Le nombre de rangées est choisi pour que
+// la hauteur « naturelle » colle à l'espace dispo → l'étirement (et donc le
+// recadrage par objectFit cover) reste minimal. Chaque rangée occupe une part
+// de hauteur proportionnelle à sa hauteur naturelle ; chaque photo une part de
+// largeur proportionnelle à ses proportions.
 function Mosaic({ photos, contentW, availH, gap, st }) {
   const rows = buildFillLayout(photos, contentW, availH, gap);
   if (!rows.length) return null;
-  const naturalTotal =
-    rows.reduce((s, r) => s + r.naturalH, 0) + gap * Math.max(0, rows.length - 1);
-  const scale = naturalTotal > 0 ? Math.min(1, availH / naturalTotal) : 1;
   return (
     <View style={st.mosaic}>
-      {rows.map((row, ri) => {
-        const h = row.naturalH * scale;
-        return (
-          <View
-            key={ri}
-            style={{ height: h, flexDirection: 'row', marginBottom: ri < rows.length - 1 ? gap : 0 }}
-          >
-            {row.items.map((it, ci) => (
-              <View
-                key={ci}
-                style={{
-                  width: it.ar * h,
-                  height: h,
-                  marginRight: ci < row.items.length - 1 ? gap : 0,
-                  position: 'relative',
-                }}
-              >
-                <Image src={imgFull(it.photo)} style={st.mosaicImg} />
-                {it.photo.caption ? (
-                  <View style={st.capWrap}>
-                    <Text style={st.capTxt}>{it.photo.caption}</Text>
-                  </View>
-                ) : null}
-              </View>
-            ))}
-          </View>
-        );
-      })}
+      {rows.map((row, ri) => (
+        <View
+          key={ri}
+          style={{
+            flexGrow: row.naturalH,
+            flexBasis: 0,
+            flexDirection: 'row',
+            marginBottom: ri < rows.length - 1 ? gap : 0,
+          }}
+        >
+          {row.items.map((it, ci) => (
+            <View
+              key={ci}
+              style={{
+                flexGrow: it.ar,
+                flexBasis: 0,
+                marginRight: ci < row.items.length - 1 ? gap : 0,
+                position: 'relative',
+              }}
+            >
+              <Image src={imgFull(it.photo)} style={st.mosaicImg} />
+              {it.photo.caption ? (
+                <View style={st.capWrap}>
+                  <Text style={st.capTxt}>{it.photo.caption}</Text>
+                </View>
+              ) : null}
+            </View>
+          ))}
+        </View>
+      ))}
     </View>
   );
 }
@@ -525,7 +528,7 @@ function makeStyles(pageW, pageH) {
 
     // La mosaïque occupe la hauteur restante et est centrée (les photos
     // gardent leurs proportions, donc un léger espace peut subsister).
-    mosaic: { flexGrow: 1, flexDirection: 'column', justifyContent: 'center', alignItems: 'center', marginTop: mm(2), overflow: 'hidden' },
+    mosaic: { flexGrow: 1, flexDirection: 'column', marginTop: mm(2), overflow: 'hidden' },
     mosaicImg: { width: '100%', height: '100%', objectFit: 'cover' },
     capWrap: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.45)', paddingVertical: 4, paddingHorizontal: 5 },
     capTxt: { fontFamily: 'AlbumBody', fontWeight: 400, fontStyle: 'italic', fontSize: 10, textAlign: 'center', color: '#FFFFFF' },
