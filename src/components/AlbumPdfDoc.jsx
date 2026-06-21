@@ -371,31 +371,39 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
       </Page>
 
       {/* CARTE DU VOYAGE */}
-      {routeMap && (
-        <Page size={[pageW, pageH]} style={st.page}>
-          <View style={st.header}>
-            <Text style={st.dayKicker}>Itinéraire</Text>
-            <Text style={st.dayTitle}>La carte du voyage</Text>
-          </View>
-          <View style={st.mapWrap}>
-            <Image src={routeMap} style={st.mapImg} />
-          </View>
-          {stops.filter(Boolean).length > 0 && (
-            <View style={st.stops}>
-              {stops.map((s, k) =>
-                s ? (
-                  <View key={k} style={st.stopItem}>
-                    <View style={st.stopNum}>
-                      <Text style={st.stopNumTxt}>{k + 1}</Text>
-                    </View>
-                    <Text style={st.stopLabel}>{s}</Text>
-                  </View>
-                ) : null
-              )}
+      {routeMap && (() => {
+        const nStops = stops.filter(Boolean).length;
+        // Hauteur réservée à la liste des étapes (2 colonnes) + à l'en-tête,
+        // pour donner à la carte une hauteur FIXE (sinon l'image s'affiche à sa
+        // taille d'origine et déborde sur plusieurs pages).
+        const stopsMm = nStops ? Math.ceil(nStops / 2) * 7 + 6 : 0;
+        const mapH = pageH - mm(PAD_MM) * 2 - mm(20) - mm(stopsMm) - mm(6);
+        return (
+          <Page size={[pageW, pageH]} style={st.page}>
+            <View style={st.header}>
+              <Text style={st.dayKicker}>Itinéraire</Text>
+              <Text style={st.dayTitle}>La carte du voyage</Text>
             </View>
-          )}
-        </Page>
-      )}
+            <View style={[st.mapWrap, { height: mapH }]}>
+              <Image src={routeMap} style={st.mapImg} />
+            </View>
+            {nStops > 0 && (
+              <View style={st.stops}>
+                {stops.map((s, k) =>
+                  s ? (
+                    <View key={k} style={st.stopItem}>
+                      <View style={st.stopNum}>
+                        <Text style={st.stopNumTxt}>{k + 1}</Text>
+                      </View>
+                      <Text style={st.stopLabel}>{s}</Text>
+                    </View>
+                  ) : null
+                )}
+              </View>
+            )}
+          </Page>
+        );
+      })()}
 
       {/* UNE OU PLUSIEURS PAGES PAR JOURNÉE */}
       {entries.flatMap((e) => {
@@ -507,7 +515,7 @@ function makeStyles(pageW, pageH) {
     note: { fontFamily: 'AlbumBody', fontWeight: 300, fontSize: 10.5, lineHeight: 1.5, color: PALETTE.text, marginTop: 6 },
 
     // Carte du voyage : la carte occupe l'espace, la liste des étapes dessous.
-    mapWrap: { flexGrow: 1, marginTop: mm(2), borderWidth: 1, borderColor: PALETTE.line, backgroundColor: '#e9e6df' },
+    mapWrap: { flexShrink: 0, marginTop: mm(2), borderWidth: 1, borderColor: PALETTE.line, backgroundColor: '#e9e6df' },
     mapImg: { width: '100%', height: '100%', objectFit: 'contain' },
     stops: { flexShrink: 0, flexDirection: 'row', flexWrap: 'wrap', marginTop: mm(4) },
     stopItem: { flexDirection: 'row', alignItems: 'center', width: '50%', marginBottom: 6, paddingRight: 8 },
