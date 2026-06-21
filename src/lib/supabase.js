@@ -328,6 +328,78 @@ export async function externalizeImageUrl(url) {
   return uploadBrochureImage(blob);
 }
 
+// ----- STOCKAGE DES PHOTOS D'ALBUM (deux résolutions) -----
+// On réutilise le bucket existant « brochure-photos » (déjà public), donc
+// aucune nouvelle configuration côté Supabase n'est nécessaire.
+
+// Réduit une image à une largeur/hauteur max et renvoie un Blob JPEG + ses
+// dimensions. Sert à fabriquer la version « légère » affichée à l'écran,
+// pour ne pas charger des photos de téléphone de 5–10 Mo dans le navigateur.
+async function downscaleImage(file, maxDim = 1600, quality = 0.82) {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
+  const w = Math.max(1, Math.round(bitmap.width * scale));
+  const h = Math.max(1, Math.round(bitmap.height * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+  bitmap.close?.();
+  const blob = await new Promise((res) =>
+    canvas.toBlob(res, 'image/jpeg', quality)
+  );
+  return { blob, w, h };
+}
+
+async function uploadToBrochureBucket(fileOrBlob, suffix = '') {
+  const user = await getCurrentUser();
+  const type = fileOrBlob?.type || 'image/jpeg';
+  const ext = (type.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+  const rand =
+    (crypto.randomUUID && crypto.randomUUID()) ||
+    `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const path = `${user?.id || 'anon'}/album/${rand}${suffix}.${ext}`;
+  const { error } = await supabase.storage
+    .from(BROCHURE_BUCKET)
+    .upload(path, fileOrBlob, { contentType: type, upsert: false });
+  if (error) throw error;
+  const { data } = supabase.storage.from(BROCHURE_BUCKET).getPublicUrl(path);
+  return data.publicUrl;
+}
+
+// Envoie une photo d'album en DEUX résolutions :
+//   - full    : l'image d'origine (haute définition, conservée pour
+//               l'impression à 300 DPI sans perte de qualité visible) ;
+//   - display : une version allégée (max 1600 px) pour l'affichage web.
+// Renvoie aussi les dimensions d'origine en pixels (w/h), utiles pour
+// vérifier qu'une photo est assez grande pour l'impression.
+export async function uploadAlbumPhoto(file) {
+  let origW = null;
+  let origH = null;
+  try {
+    const bmp = await createImageBitmap(file);
+    origW = bmp.width;
+    origH = bmp.height;
+    bmp.close?.();
+  } catch {
+    /* dimensions inconnues, on continue */
+  }
+
+  let displayBlob = file;
+  try {
+    const ds = await downscaleImage(file, 1600, 0.82);
+    if (ds.blob) displayBlob = ds.blob;
+  } catch {
+    /* repli : on affichera l'image pleine résolution */
+  }
+
+  const [full, display] = await Promise.all([
+    uploadToBrochureBucket(file, '-full'),
+    uploadToBrochureBucket(displayBlob, '-disp'),
+  ]);
+  return { full, display, w: origW, h: origH };
+}
+
 // ----- PARTAGE DE LISTES (entre utilisateurs, en temps réel) -----
 
 // Invite un utilisateur (par email) à partager une liste. Crée une invitation

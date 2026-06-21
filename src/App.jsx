@@ -23,6 +23,7 @@ import AdminPage from './pages/AdminPage';
 import ProfilePage from './pages/ProfilePage';
 import OnboardingPage from './pages/OnboardingPage';
 import BrochurePdfPage from './pages/BrochurePdfPage';
+import AlbumPage from './pages/AlbumPage';
 
 export default function App() {
   const { pathname } = useLocation();
@@ -129,6 +130,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <BrochurePdfPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/itineraire/:id/album"
+            element={
+              <ProtectedRoute>
+                <AlbumPage />
               </ProtectedRoute>
             }
           />

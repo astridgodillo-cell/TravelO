@@ -438,6 +438,12 @@ export default function ItineraryDetailPage() {
           >
             📖 Aperçu web
           </Link>
+          <Link
+            to={`/itineraire/${id}/album`}
+            className="btn-secondary w-full text-center sm:w-auto shrink-0"
+          >
+            📷 Album photo
+          </Link>
           <button
             onClick={() => window.print()}
             className="btn-secondary w-full sm:w-auto shrink-0"
