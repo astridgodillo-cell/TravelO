@@ -410,7 +410,10 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
 
       {/* UNE OU PLUSIEURS PAGES PAR JOURNÉE */}
       {entries.flatMap((e) => {
-        const chunks = splitPhotos(e.photos, e.split);
+        // On ne garde que les pages contenant réellement des photos → aucune
+        // page vide ne peut apparaître (même si une répartition en prévoyait
+        // une de trop).
+        const chunks = splitPhotos(e.photos, e.split).filter((c) => c.length > 0);
         const pageCount = chunks.length;
         const contentWmm = contentW / MM;
         return chunks.map((chunk, p) => {
