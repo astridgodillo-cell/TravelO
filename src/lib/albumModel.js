@@ -145,6 +145,33 @@ export function resolveBg(bg, pageIndex, pageCount) {
   return pages[pageIndex] || { type: 'none' };
 }
 
+// Le fond d'une journée est-il « vide » (aucun choix de l'utilisateur) ? Sert à
+// ne poser des fonds automatiques que si l'utilisateur n'a rien défini.
+export function bgIsEmpty(bg) {
+  if (!bg) return true;
+  if (bg.full) return false;
+  if (bg.mode === 'spread') return !(bg.spread && bg.spread.type !== 'none');
+  return !(bg.pages || []).some((p) => p && p.type !== 'none');
+}
+
+// Construit un fond « par page » où chaque page reçoit une photo DIFFÉRENTE du
+// jour, tirée au hasard (jamais deux fois la même tant qu'il y a assez de
+// photos). `toned` : voile beige clair par-dessus (lisibilité) si true.
+export function autoBgFromPhotos(photos, pageCount, { toned = false } = {}) {
+  const usable = (photos || []).filter((p) => p && (p.full || p.display));
+  const idx = usable.map((_, i) => i);
+  for (let i = idx.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [idx[i], idx[j]] = [idx[j], idx[i]];
+  }
+  const pages = [];
+  for (let p = 0; p < pageCount; p += 1) {
+    const photo = usable[idx[p]];
+    pages.push(photo ? { type: 'photo', photo, toned } : { type: 'none' });
+  }
+  return { mode: 'perPage', spread: { type: 'none' }, pages };
+}
+
 // Disposition complète d'UNE page, en points (unité du PDF). Une SEULE source
 // de vérité, utilisée par le PDF ET par l'éditeur de décoration → ce que l'on
 // construit dans la sandbox sort à l'identique dans le PDF.

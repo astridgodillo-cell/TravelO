@@ -28,6 +28,8 @@ import {
   pageLayout,
   resolveBg,
   unitLabel,
+  bgIsEmpty,
+  autoBgFromPhotos,
 } from '../lib/albumModel';
 
 // Petit indicateur de chargement animé (réutilisé sur les boutons d'envoi).
@@ -947,6 +949,17 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
               </div>
             )}
 
+            {entry.photos.length > 0 && bg.mode !== 'spread' && (
+              <button
+                type="button"
+                onClick={() => setBg(autoBgFromPhotos(entry.photos, pageCount))}
+                className="rounded-lg border border-coral-300 bg-coral-50 px-3 py-1.5 text-xs font-semibold text-coral-700 hover:bg-coral-100"
+                title="Met en fond de chaque page une photo du jour, au hasard et toutes différentes"
+              >
+                🎲 Fonds aléatoires (photos du jour)
+              </button>
+            )}
+
             {bg.mode === 'spread' && pageCount > 1 ? (
               <div className="rounded-lg border border-slate-200 bg-white p-2.5">
                 <p className="mb-1.5 text-xs font-semibold text-slate-500">
@@ -1357,7 +1370,12 @@ export default function AlbumPage() {
       setAlbum((prev) => {
         const days = [...prev.days];
         const entry = days[i];
-        days[i] = { ...entry, photos: [...entry.photos, ...uploaded.map((u) => ({ ...u, caption: '' }))] };
+        const photos = [...entry.photos, ...uploaded.map((u) => ({ ...u, caption: '' }))];
+        // Par défaut : si aucun fond n'a été choisi, on met en fond de chaque
+        // page une photo du jour, tirée au hasard et toutes différentes.
+        const pages = computeSplit(photos.length, entry.split).length;
+        const bg = bgIsEmpty(entry.bg) ? autoBgFromPhotos(photos, pages) : entry.bg;
+        days[i] = { ...entry, photos, bg };
         return { ...prev, days };
       });
       setDirty(true);

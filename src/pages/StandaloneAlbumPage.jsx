@@ -11,7 +11,7 @@ import { renderRouteMapImage } from '../lib/staticMapImage';
 import AlbumPdfDoc from '../components/AlbumPdfDoc';
 import PdfPagesPreview from '../components/PdfPagesPreview';
 import { DayCard, CoverPicker, ThemePicker, Spinner } from './AlbumPage';
-import { FORMAT_LABELS, normalizeBg, bakePhotoEffects, getTheme, unitLabel, splitPhotos } from '../lib/albumModel';
+import { FORMAT_LABELS, normalizeBg, bakePhotoEffects, getTheme, unitLabel, splitPhotos, computeSplit, bgIsEmpty, autoBgFromPhotos } from '../lib/albumModel';
 
 const emptyDay = () => ({ title: '', note: '', photos: [], bg: null, split: null });
 
@@ -144,7 +144,13 @@ export default function StandaloneAlbumPage() {
       }
       setAlbum((prev) => {
         const days = [...prev.days];
-        days[i] = { ...days[i], photos: [...days[i].photos, ...uploaded.map((u) => ({ ...u, caption: '' }))] };
+        const entry = days[i];
+        const photos = [...entry.photos, ...uploaded.map((u) => ({ ...u, caption: '' }))];
+        // Par défaut : fond de chaque page = une photo du jour, au hasard et
+        // toutes différentes (tant qu'aucun fond n'a été choisi).
+        const pages = computeSplit(photos.length, entry.split).length;
+        const bg = bgIsEmpty(entry.bg) ? autoBgFromPhotos(photos, pages) : entry.bg;
+        days[i] = { ...entry, photos, bg };
         return { ...prev, days };
       });
       setDirty(true);
