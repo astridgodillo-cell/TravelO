@@ -407,7 +407,7 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
           const headerMm = estimateHeaderMm(e.title, e.note, firstPage, contentWmm);
           const availH = pageH - mm(PAD_MM) * 2 - mm(headerMm);
           return (
-            <Page key={`${e.i}-${p}`} size={[pageW, pageH]} style={st.page} wrap={false}>
+            <Page key={`${e.i}-${p}`} size={[pageW, pageH]} style={st.page}>
               <PageBackground spec={spec} pageW={pageW} pageH={pageH} st={st} />
               <View style={onPlate ? st.headerPlate : st.header}>
                 <Text style={st.dayKicker}>
@@ -470,6 +470,7 @@ function makeStyles(pageW, pageH) {
       backgroundColor: PALETTE.paper,
       fontFamily: 'AlbumBody',
       color: PALETTE.text,
+      overflow: 'hidden',
     },
 
     coverPage: { position: 'relative', width: pageW, height: pageH, backgroundColor: PALETTE.ink },
@@ -514,7 +515,7 @@ function makeStyles(pageW, pageH) {
 
     // La mosaïque occupe la hauteur restante et est centrée (les photos
     // gardent leurs proportions, donc un léger espace peut subsister).
-    mosaic: { flexGrow: 1, flexDirection: 'column', justifyContent: 'center', alignItems: 'center', marginTop: mm(2) },
+    mosaic: { flexGrow: 1, flexDirection: 'column', justifyContent: 'center', alignItems: 'center', marginTop: mm(2), overflow: 'hidden' },
     mosaicImg: { width: '100%', height: '100%', objectFit: 'cover' },
     capWrap: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.45)', paddingVertical: 4, paddingHorizontal: 5 },
     capTxt: { fontFamily: 'AlbumBody', fontWeight: 400, fontStyle: 'italic', fontSize: 10, textAlign: 'center', color: '#FFFFFF' },
