@@ -184,17 +184,20 @@ function splitPhotos(photos, manual) {
 // Estime (en mm) la hauteur prise par l'en-tête d'une page, pour dimensionner
 // la mosaïque sans déborder (ce qui créait des pages blanches).
 function estimateHeaderMm(title, note, firstPage, contentWmm) {
-  if (!firstPage) return 12; // pages « suite » : juste le petit intitulé
-  let h = 8; // kicker + marge
+  // On SUR-estime volontairement : si l'en-tête réel est plus petit, il reste
+  // juste un léger espace en bas ; s'il était sous-estimé, le contenu
+  // déborderait et créerait une page fantôme (le défaut qu'on veut éviter).
+  if (!firstPage) return 16; // pages « suite » : petit intitulé + plaque
+  let h = 12; // kicker + marges
   if (title) {
-    const perLine = Math.max(16, Math.floor(contentWmm / 4.4));
-    h += Math.max(1, Math.ceil(title.length / perLine)) * 9;
+    const perLine = Math.max(14, Math.floor(contentWmm / 4.6));
+    h += Math.max(1, Math.ceil((title || '').length / perLine)) * 9.5;
   }
   if (note) {
-    const perLine = Math.max(28, Math.floor(contentWmm / 1.9));
-    h += 6 + Math.ceil(note.length / perLine) * 5.6;
+    const perLine = Math.max(24, Math.floor(contentWmm / 2.0));
+    h += 6 + Math.ceil((note || '').length / perLine) * 6;
   }
-  return h + 6; // marge basse + sécurité
+  return h + 10; // sécurité
 }
 
 // Résout le fond à appliquer à une page donnée d'une journée :
@@ -260,47 +263,50 @@ function PageBackground({ spec, pageW, pageH, st }) {
   return null;
 }
 
-// Mosaïque d'une page : les rangées remplissent toute la largeur ET toute la
-// hauteur disponibles (puzzle plein). Le nombre de rangées est choisi pour que
-// la hauteur « naturelle » colle à l'espace dispo → l'étirement (et donc le
-// recadrage par objectFit cover) reste minimal. Chaque rangée occupe une part
-// de hauteur proportionnelle à sa hauteur naturelle ; chaque photo une part de
-// largeur proportionnelle à ses proportions.
+// Mosaïque d'une page : TOUTES les tailles sont calculées en points (jamais en
+// pourcentage), pour que react-pdf ne déborde jamais (sinon il crée des pages
+// fantômes/vides et ne respecte plus la répartition). Les rangées remplissent
+// la largeur ; l'ensemble remplit la hauteur dispo (léger recadrage via cover).
 function Mosaic({ photos, contentW, availH, gap, st }) {
   const rows = buildFillLayout(photos, contentW, availH, gap);
   if (!rows.length) return null;
+  const vgaps = gap * Math.max(0, rows.length - 1);
+  const sumNatural = rows.reduce((s, r) => s + r.naturalH, 0);
+  // Facteur d'étirement vertical pour remplir exactement la hauteur dispo.
+  // Borné pour éviter un recadrage trop fort (mieux vaut un petit espace).
+  let f = sumNatural > 0 ? (availH - vgaps) / sumNatural : 1;
+  if (!Number.isFinite(f) || f <= 0) f = 1;
+  f = Math.min(f, 1.18);
   return (
     <View style={st.mosaic}>
-      {rows.map((row, ri) => (
-        <View
-          key={ri}
-          style={{
-            flexGrow: row.naturalH,
-            flexBasis: 0,
-            flexDirection: 'row',
-            marginBottom: ri < rows.length - 1 ? gap : 0,
-          }}
-        >
-          {row.items.map((it, ci) => (
-            <View
-              key={ci}
-              style={{
-                flexGrow: it.ar,
-                flexBasis: 0,
-                marginRight: ci < row.items.length - 1 ? gap : 0,
-                position: 'relative',
-              }}
-            >
-              <Image src={imgFull(it.photo)} style={st.mosaicImg} />
-              {it.photo.caption ? (
-                <View style={st.capWrap}>
-                  <Text style={st.capTxt}>{it.photo.caption}</Text>
-                </View>
-              ) : null}
-            </View>
-          ))}
-        </View>
-      ))}
+      {rows.map((row, ri) => {
+        const h = row.naturalH * f; // hauteur (points) de la rangée
+        return (
+          <View
+            key={ri}
+            style={{ height: h, flexDirection: 'row', marginBottom: ri < rows.length - 1 ? gap : 0 }}
+          >
+            {row.items.map((it, ci) => (
+              <View
+                key={ci}
+                style={{
+                  width: it.ar * row.naturalH, // largeur (points) : remplit la ligne
+                  height: h,
+                  marginRight: ci < row.items.length - 1 ? gap : 0,
+                  position: 'relative',
+                }}
+              >
+                <Image src={imgFull(it.photo)} style={st.mosaicImg} />
+                {it.photo.caption ? (
+                  <View style={st.capWrap}>
+                    <Text style={st.capTxt}>{it.photo.caption}</Text>
+                  </View>
+                ) : null}
+              </View>
+            ))}
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -421,7 +427,10 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
           const firstPage = p === 0;
           const onPlate = spec.type !== 'none';
           const headerMm = estimateHeaderMm(e.title, e.note, firstPage, contentWmm);
-          const availH = pageH - mm(PAD_MM) * 2 - mm(headerMm);
+          const availH = Math.max(
+            mm(45),
+            pageH - mm(PAD_MM) * 2 - mm(headerMm)
+          );
           return (
             <Page key={`${e.i}-${p}`} size={[pageW, pageH]} style={st.page}>
               <PageBackground spec={spec} pageW={pageW} pageH={pageH} st={st} />
@@ -531,7 +540,9 @@ function makeStyles(pageW, pageH) {
 
     // La mosaïque occupe la hauteur restante et est centrée (les photos
     // gardent leurs proportions, donc un léger espace peut subsister).
-    mosaic: { flexGrow: 1, flexDirection: 'column', marginTop: mm(2), overflow: 'hidden' },
+    // La mosaïque est dimensionnée en points (pas de flexGrow) pour ne jamais
+    // déborder. Sa hauteur = somme des rangées ≈ espace dispo.
+    mosaic: { flexDirection: 'column', marginTop: mm(2), overflow: 'hidden' },
     mosaicImg: { width: '100%', height: '100%', objectFit: 'cover' },
     capWrap: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.45)', paddingVertical: 4, paddingHorizontal: 5 },
     capTxt: { fontFamily: 'AlbumBody', fontWeight: 400, fontStyle: 'italic', fontSize: 10, textAlign: 'center', color: '#FFFFFF' },
