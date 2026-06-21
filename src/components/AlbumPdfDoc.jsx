@@ -18,7 +18,7 @@ import {
   Document, Page, View, Text, Image, StyleSheet, Font,
   Svg, Rect, Circle, Defs, LinearGradient, Stop,
 } from '@react-pdf/renderer';
-import { getPhotoEffect, twemojiUrl } from '../lib/albumModel';
+import { getPhotoEffect, twemojiUrl, splitPhotos, pageLayout, resolveBg } from '../lib/albumModel';
 
 const CDN = 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl';
 
@@ -67,7 +67,6 @@ const PALETTE = {
 const imgFull = (p) => p?.full || p?.display || '';
 
 const PAD_MM = 12; // marge depuis le bord de page (3 mm de fond perdu + 9 mm)
-const GAP_MM = 2; // espace entre les photos de la mosaïque
 
 function fmtDay(iso) {
   if (!iso) return '';
@@ -86,140 +85,12 @@ function fmtDateRange(summary) {
   return a || b || '';
 }
 
-// Découpe N photos en R rangées CONTIGUËS, en équilibrant la « largeur »
-// (somme des proportions) de chaque rangée. Chaque rangée a au moins une photo.
-function partitionRows(ars, R) {
-  const total = ars.reduce((a, b) => a + b, 0);
-  const target = total / R;
-  const rows = [];
-  let i = 0;
-  for (let r = 0; r < R; r++) {
-    const remainingRows = R - r;
-    const row = [];
-    let acc = 0;
-    // On laisse toujours assez de photos pour les rangées suivantes.
-    while (i < ars.length && ars.length - i > remainingRows - 1) {
-      row.push(i);
-      acc += ars[i];
-      i += 1;
-      if (acc >= target && r < R - 1) break;
-    }
-    rows.push(row);
-  }
-  while (i < ars.length) rows[rows.length - 1].push(i++);
-  return rows.filter((r) => r.length);
-}
+// La répartition des photos en pages (splitPhotos) et la disposition d'une page
+// (pageLayout : positions EXACTES en points, en-tête de hauteur fixe) vivent
+// désormais dans lib/albumModel.js → une seule source de vérité partagée par le
+// PDF et l'éditeur de décoration, pour que la sandbox soit le calque exact du PDF.
 
-// Choisit la mise en page qui REMPLIT la page : on cherche le nombre de rangées
-// dont la hauteur « naturelle » (quand chaque rangée occupe toute la largeur)
-// se rapproche le plus de la hauteur disponible. Les hauteurs sont ensuite
-// réparties proportionnellement via flexbox pour remplir exactement la page,
-// largeur ET hauteur, chaque photo gardant ses proportions (recadrage minime).
-function buildFillLayout(photos, contentW, availH, gap) {
-  const items = photos.map((p) => ({
-    photo: p,
-    ar: p.w && p.h ? p.w / p.h : 4 / 3,
-  }));
-  const n = items.length;
-  if (!n) return [];
-  const ars = items.map((it) => it.ar);
-
-  let best = null;
-  for (let R = 1; R <= n; R++) {
-    const groups = partitionRows(ars, R);
-    let naturalTotal = gap * (groups.length - 1);
-    const rows = groups.map((idxs) => {
-      const sumAr = idxs.reduce((s, k) => s + ars[k], 0);
-      const w = contentW - gap * (idxs.length - 1);
-      const h = w / sumAr; // hauteur si la rangée remplit toute la largeur
-      naturalTotal += h;
-      return { idxs, naturalH: h };
-    });
-    const diff = Math.abs(naturalTotal - availH);
-    if (!best || diff < best.diff) best = { rows, diff };
-  }
-
-  return best.rows.map((r) => ({
-    naturalH: r.naturalH,
-    items: r.idxs.map((k) => items[k]),
-  }));
-}
-
-// Au-delà de ce nombre de photos, une journée continue sur une nouvelle page.
-const PHOTOS_PER_PAGE = 6;
-
-// Répartit `total` photos sur `pages` pages, le plus équitablement possible.
-function balancedSplit(total, pages) {
-  const p = Math.max(1, pages);
-  const base = Math.floor(total / p);
-  const rem = total - base * p;
-  return Array.from({ length: p }, (_, k) => base + (k < rem ? 1 : 0));
-}
-
-// Nombre de photos par page : choix manuel de l'utilisateur s'il est valide,
-// sinon répartition automatique équilibrée (ex. 8 photos → 4 + 4).
-function computeSplit(total, manual) {
-  if (total <= PHOTOS_PER_PAGE) return [total];
-  if (
-    Array.isArray(manual) &&
-    manual.length &&
-    manual.every((n) => n > 0) &&
-    manual.reduce((a, b) => a + b, 0) === total
-  ) {
-    return manual;
-  }
-  return balancedSplit(total, Math.ceil(total / PHOTOS_PER_PAGE));
-}
-
-function splitPhotos(photos, manual) {
-  const counts = computeSplit(photos.length, manual);
-  const out = [];
-  let idx = 0;
-  for (const c of counts) {
-    out.push(photos.slice(idx, idx + c));
-    idx += c;
-  }
-  return out.length ? out : [[]];
-}
-
-// Estime (en mm) la hauteur prise par l'en-tête d'une page, pour dimensionner
-// la mosaïque sans déborder (ce qui créait des pages blanches).
-function estimateHeaderMm(title, note, firstPage, contentWmm, onPlate) {
-  // On SUR-estime volontairement : si l'en-tête réel est plus petit, il reste
-  // juste un léger espace en bas ; s'il était sous-estimé, le contenu
-  // déborderait et créerait une page fantôme / d'un autre format.
-  const plate = onPlate ? 8 : 0; // la plaque (fond coloré/photo) ajoute du rembourrage
-  if (!firstPage) return 18 + plate; // pages « suite » : petit intitulé
-  let h = 12; // kicker + marges
-  if (title) {
-    const perLine = Math.max(14, Math.floor(contentWmm / 4.6));
-    h += Math.max(1, Math.ceil((title || '').length / perLine)) * 9.5;
-  }
-  if (note) {
-    const perLine = Math.max(24, Math.floor(contentWmm / 2.0));
-    h += 6 + Math.ceil((note || '').length / perLine) * 6;
-  }
-  return h + 12 + plate; // sécurité
-}
-
-// Résout le fond à appliquer à une page donnée d'une journée :
-//   bg = { mode:'perPage'|'spread', spread:<spec>, pages:[<spec>...] }
-//   spec = { type:'none'|'color'|'photo', color?, photo?, toned? }
-function resolveBg(bg, pageIndex, pageCount) {
-  if (!bg) return { type: 'none' };
-  // Ancien format éventuel : bg était directement une photo.
-  if (bg.full) return { type: 'photo', photo: bg, toned: true };
-  if (bg.mode === 'spread') {
-    const s = bg.spread || { type: 'none' };
-    // Une photo en mode « étiré » : on note l'indice de page pour découper le
-    // panorama. Une couleur (ou aucun) est identique sur toutes les pages.
-    if (s.type === 'photo' && s.photo) {
-      return { ...s, spreadIndex: pageIndex, spreadCount: pageCount };
-    }
-    return s;
-  }
-  return (bg.pages && bg.pages[pageIndex]) || { type: 'none' };
-}
+// resolveBg (fond d'une page donnée) est partagé dans lib/albumModel.js.
 
 // Couche de fond d'une page (couleur unie, photo pleine page, ou photo étirée
 // sur plusieurs pages). Le voile beige est appliqué si la photo est « atténuée ».
@@ -449,54 +320,27 @@ function PdfPhoto({ photo, st, w, h }) {
   );
 }
 
-// Mosaïque d'une page : TOUTES les tailles sont calculées en points (jamais en
-// pourcentage), pour que react-pdf ne déborde jamais (sinon il crée des pages
-// fantômes/vides et ne respecte plus la répartition). Les rangées remplissent
-// la largeur ; l'ensemble remplit la hauteur dispo (léger recadrage via cover).
-function Mosaic({ photos, contentW, availH, gap, st }) {
-  const rows = buildFillLayout(photos, contentW, availH, gap);
-  if (!rows.length) return null;
-  const vgaps = gap * Math.max(0, rows.length - 1);
-  const sumNatural = rows.reduce((s, r) => s + r.naturalH, 0);
-  // Facteur d'étirement vertical pour remplir exactement la hauteur dispo.
-  // Borné pour éviter un recadrage trop fort (mieux vaut un petit espace).
-  let f = sumNatural > 0 ? (availH - vgaps) / sumNatural : 1;
-  if (!Number.isFinite(f) || f <= 0) f = 1;
-  f = Math.min(f, 1.18);
+// Mosaïque d'une page : chaque photo est posée à une position ABSOLUE calculée
+// par pageLayout (points). Plus aucun flux → react-pdf ne peut pas déborder ni
+// créer de page fantôme, et l'éditeur (même pageLayout) est fidèle au pixel.
+function Mosaic({ cells, photos, st }) {
   return (
-    <View style={st.mosaic}>
-      {rows.map((row, ri) => {
-        const h = row.naturalH * f; // hauteur (points) de la rangée
+    <>
+      {photos.map((photo, i) => {
+        const c = cells[i];
+        if (!c) return null;
         return (
-          <View
-            key={ri}
-            style={{ height: h, flexDirection: 'row', marginBottom: ri < rows.length - 1 ? gap : 0 }}
-          >
-            {row.items.map((it, ci) => {
-              const cw = it.ar * row.naturalH;
-              return (
-              <View
-                key={ci}
-                style={{
-                  width: cw, // largeur (points) : remplit la ligne
-                  height: h,
-                  marginRight: ci < row.items.length - 1 ? gap : 0,
-                  position: 'relative',
-                }}
-              >
-                <PdfPhoto photo={it.photo} st={st} w={cw} h={h} />
-                {it.photo.caption ? (
-                  <View style={st.capWrap}>
-                    <Text style={st.capTxt}>{it.photo.caption}</Text>
-                  </View>
-                ) : null}
+          <View key={i} style={{ position: 'absolute', left: c.x, top: c.y, width: c.w, height: c.h }}>
+            <PdfPhoto photo={photo} st={st} w={c.w} h={c.h} />
+            {photo.caption ? (
+              <View style={st.capWrap}>
+                <Text style={st.capTxt}>{photo.caption}</Text>
               </View>
-              );
-            })}
+            ) : null}
           </View>
         );
       })}
-    </View>
+    </>
   );
 }
 
@@ -520,7 +364,6 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
   // Page = format final + 3 mm de fond perdu sur chaque bord.
   const pageW = mm(fmt.trimW + BLEED_MM * 2);
   const pageH = mm(fmt.trimH + BLEED_MM * 2);
-  const contentW = pageW - mm(PAD_MM) * 2;
   // Palette effective : thème éventuel par-dessus la palette par défaut.
   const P = {
     ...PALETTE,
@@ -615,37 +458,26 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
         // une de trop).
         const chunks = splitPhotos(e.photos, e.split).filter((c) => c.length > 0);
         const pageCount = chunks.length;
-        const contentWmm = contentW / MM;
         return chunks.map((chunk, p) => {
           const spec = resolveBg(e.bg, p, pageCount);
           const firstPage = p === 0;
           const onPlate = spec.type !== 'none';
-          const headerMm = estimateHeaderMm(e.title, e.note, firstPage, contentWmm, onPlate);
-          // Marge de sécurité (mm) : on garde le contenu strictement sous la
-          // hauteur de page → react-pdf ne crée jamais de page de continuation.
-          const availH = Math.max(
-            mm(45),
-            pageH - mm(PAD_MM) * 2 - mm(headerMm) - mm(4)
-          );
+          const lay = pageLayout(chunk, format, { title: e.title, note: e.note, firstPage, onPlate });
           return (
-            <Page key={`${e.i}-${p}`} size={[pageW, pageH]} style={st.page}>
+            <Page key={`${e.i}-${p}`} size={[pageW, pageH]} style={st.dayPage}>
               {spec.type === 'none' && <PagePattern theme={theme} pageW={pageW} pageH={pageH} />}
               <PageBackground spec={spec} pageW={pageW} pageH={pageH} st={st} />
-              <View style={onPlate ? st.headerPlate : st.header}>
-                <Text style={st.dayKicker}>
-                  Jour {e.i + 1}{e.location ? ` · ${e.location}` : ''}
-                  {!firstPage ? ' · suite' : ''}
-                </Text>
-                {firstPage && e.title ? <Text style={st.dayTitle}>{e.title}</Text> : null}
-                {firstPage && e.note ? <Text style={st.note}>{e.note}</Text> : null}
+              <View style={{ position: 'absolute', left: lay.pad, top: lay.pad, width: lay.contentW, height: lay.headerH, overflow: 'hidden' }}>
+                <View style={onPlate ? st.headerPlate : st.header}>
+                  <Text style={st.dayKicker}>
+                    Jour {e.i + 1}{e.location ? ` · ${e.location}` : ''}
+                    {!firstPage ? ' · suite' : ''}
+                  </Text>
+                  {firstPage && e.title ? <Text style={st.dayTitle}>{e.title}</Text> : null}
+                  {firstPage && e.note ? <Text style={st.note}>{e.note}</Text> : null}
+                </View>
               </View>
-              <Mosaic
-                photos={chunk}
-                contentW={contentW}
-                availH={availH}
-                gap={mm(GAP_MM)}
-                st={st}
-              />
+              <Mosaic cells={lay.cells} photos={chunk} st={st} />
               {e.pageDeco?.[p]?.length ? (
                 <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
                   <DecoLayer items={e.pageDeco[p]} w={pageW} h={pageH} />
@@ -699,6 +531,10 @@ function makeStyles(pageW, pageH, P = PALETTE) {
       color: P.text,
       overflow: 'hidden',
     },
+
+    // Page jour : sans rembourrage (les positions sont absolues, en points,
+    // calculées par pageLayout — voir Mosaic).
+    dayPage: { position: 'relative', width: pageW, height: pageH, backgroundColor: P.paper, fontFamily: 'AlbumBody', color: P.text, overflow: 'hidden' },
 
     coverPage: { position: 'relative', width: pageW, height: pageH, backgroundColor: P.ink },
     coverImgWrap: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },

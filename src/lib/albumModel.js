@@ -88,8 +88,9 @@ function buildFillLayout(photos, contentW, availH, gap) {
   return best.rows.map((r) => ({ naturalH: r.naturalH, ars: r.idxs.map((k) => ars[k]) }));
 }
 
-function estimateHeaderMm(title, note, firstPage, contentWmm) {
-  if (!firstPage) return 18;
+function estimateHeaderMm(title, note, firstPage, contentWmm, onPlate) {
+  const plate = onPlate ? 8 : 0;
+  if (!firstPage) return 18 + plate;
   let hh = 12;
   if (title) {
     const perLine = Math.max(14, Math.floor(contentWmm / 4.6));
@@ -99,7 +100,7 @@ function estimateHeaderMm(title, note, firstPage, contentWmm) {
     const perLine = Math.max(24, Math.floor(contentWmm / 2.0));
     hh += 6 + Math.ceil((note || '').length / perLine) * 6;
   }
-  return hh + 12;
+  return hh + 12 + plate;
 }
 
 export function splitPhotos(photos, manual) {
@@ -113,17 +114,36 @@ export function splitPhotos(photos, manual) {
   return out.length ? out : [[]];
 }
 
-// Renvoie les rectangles des photos d'UNE page, en FRACTIONS de la page (0..1),
-// afin que l'éditeur affiche les photos là où le PDF les imprimera.
-export function pageLayout(photos, format, title, note, firstPage) {
+// Résout le fond d'une page donnée d'une journée :
+//   bg = { mode:'perPage'|'spread', spread:<spec>, pages:[<spec>...] }
+//   spec = { type:'none'|'color'|'photo', color?, photo?, toned? }
+export function resolveBg(bg, pageIndex, pageCount) {
+  if (!bg) return { type: 'none' };
+  if (bg.full) return { type: 'photo', photo: bg, toned: true };
+  if (bg.mode === 'spread') {
+    const s = bg.spread || { type: 'none' };
+    if (s.type === 'photo' && s.photo) {
+      return { ...s, spreadIndex: pageIndex, spreadCount: pageCount };
+    }
+    return s;
+  }
+  return (bg.pages && bg.pages[pageIndex]) || { type: 'none' };
+}
+
+// Disposition complète d'UNE page, en points (unité du PDF). Une SEULE source
+// de vérité, utilisée par le PDF ET par l'éditeur de décoration → ce que l'on
+// construit dans la sandbox sort à l'identique dans le PDF.
+export function pageLayout(photos, format, opts = {}) {
+  const { title = '', note = '', firstPage = true, onPlate = false } = opts;
   const dims = FORMAT_DIMS[format] || FORMAT_DIMS.carre;
   const pageW = mm(dims.trimW + BLEED_MM * 2);
   const pageH = mm(dims.trimH + BLEED_MM * 2);
   const pad = mm(PAD_MM);
   const gap = mm(GAP_MM);
   const contentW = pageW - pad * 2;
-  const headerMm = estimateHeaderMm(title, note, firstPage, contentW / MM);
-  const availH = Math.max(mm(45), pageH - pad * 2 - mm(headerMm) - mm(4));
+  const headerMm = estimateHeaderMm(title, note, firstPage, contentW / MM, onPlate);
+  const headerH = mm(headerMm);
+  const availH = Math.max(mm(45), pageH - pad * 2 - headerH - mm(4));
   const rows = buildFillLayout(photos, contentW, availH, gap);
   const vgaps = gap * Math.max(0, rows.length - 1);
   const sumNatural = rows.reduce((s, r) => s + r.naturalH, 0);
@@ -131,18 +151,18 @@ export function pageLayout(photos, format, title, note, firstPage) {
   if (!Number.isFinite(f) || f <= 0) f = 1;
   f = Math.min(f, 1.18);
   const cells = [];
-  let y = pad + mm(headerMm) + gap;
+  let y = pad + headerH + gap;
   for (const row of rows) {
     const h = row.naturalH * f;
     let x = pad;
     for (const ar of row.ars) {
       const w = ar * row.naturalH;
-      cells.push({ xf: x / pageW, yf: y / pageH, wf: w / pageW, hf: h / pageH });
+      cells.push({ x, y, w, h, ar });
       x += w + gap;
     }
     y += h + gap;
   }
-  return { ratio: pageW / pageH, cells };
+  return { pageW, pageH, pad, gap, contentW, headerH, cells };
 }
 
 // Palette de couleurs de fond proposée : neutres/beiges en tête, puis un large

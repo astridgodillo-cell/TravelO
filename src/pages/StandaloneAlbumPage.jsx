@@ -350,6 +350,7 @@ export default function StandaloneAlbumPage() {
               onPickBgPhoto={(slot) => setPickerFor({ kind: 'dayBg', i, slot })}
               busy={busyDay === i}
               format={format}
+              onFormatChange={setFormat}
               theme={getTheme(album.theme)}
             />
           </div>

@@ -24,6 +24,7 @@ import {
   STICKER_EMOJIS,
   splitPhotos,
   pageLayout,
+  resolveBg,
 } from '../lib/albumModel';
 
 // Sélecteur de thème (ambiance appliquée à tout l'album).
@@ -248,7 +249,7 @@ export function EffectPicker({ photo, current, onPick, onClose }) {
 // Éditeur de décorations réutilisable : un canevas (avec un fond fourni) sur
 // lequel on pose des emojis/stickers/textes, déplaçables (glisser),
 // redimensionnables et pivotables. Coordonnées en fractions du canevas.
-export function DecoEditor({ title, aspect, background, initialItems, onChange, onClose }) {
+export function DecoEditor({ title, aspect, background, initialItems, onChange, onClose, toolbar = null }) {
   const [items, setItems] = useState(() => (initialItems || []).map((d) => ({ ...d })));
   const [sel, setSel] = useState(null);
   const canvasRef = useRef(null);
@@ -284,6 +285,8 @@ export function DecoEditor({ title, aspect, background, initialItems, onChange, 
           <h3 className="font-semibold text-slate-800">{title}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700">✕</button>
         </div>
+
+        {toolbar}
 
         <div
           ref={canvasRef}
@@ -378,37 +381,114 @@ export function DecorateModal({ photo, onChange, onClose }) {
   );
 }
 
-// Décorer LA PAGE (le fond du canevas reproduit la page : couleur du thème +
-// photos disposées comme à l'impression).
-export function PageDecorateModal({ photos, format, theme, title, note, firstPage, initialItems, onChange, onClose }) {
-  const { ratio, cells } = pageLayout(photos, format, firstPage ? title : '', firstPage ? note : '', firstPage);
-  const bg = (
-    <div className="absolute inset-0" style={{ backgroundColor: theme?.paper || '#FBF8F3' }}>
+// Fond CSS reproduisant le motif décoratif d'un thème (approximation visuelle).
+function themePatternStyle(theme) {
+  if (!theme || !theme.pattern || theme.pattern === 'none') return {};
+  const c = theme.patternColor || '#E7DDCB';
+  if (theme.pattern === 'dots' || theme.pattern === 'confetti') {
+    return { backgroundImage: `radial-gradient(${c} 1.6px, transparent 1.7px)`, backgroundSize: '16px 16px' };
+  }
+  if (theme.pattern === 'grid') {
+    return { backgroundImage: `linear-gradient(${c} 1px, transparent 1px), linear-gradient(90deg, ${c} 1px, transparent 1px)`, backgroundSize: '15px 15px' };
+  }
+  if (theme.pattern === 'diagonal') {
+    return { backgroundImage: `repeating-linear-gradient(20deg, ${c} 0 1px, transparent 1px 13px)` };
+  }
+  return {};
+}
+
+// Décorer LA PAGE : le fond du canevas reproduit EXACTEMENT la page imprimée
+// (fond, en-tête titre/description, photos disposées avec cadres et légendes),
+// pour que rien ne se décale ensuite dans le PDF.
+export function PageDecorateModal({
+  photos, format, onFormatChange, theme, title, note, firstPage,
+  dayIndex, location, bg, pageIndex, pageCount,
+  initialItems, onChange, onClose,
+}) {
+  const spec = resolveBg(bg, pageIndex, pageCount);
+  const onPlate = spec.type !== 'none';
+  const lay = pageLayout(photos, format, { title, note, firstPage, onPlate });
+  const pct = (v, total) => `${(v / total) * 100}%`;
+  const ink = theme?.ink || '#1C2B2D';
+  const accent = theme?.accent || '#C8643C';
+
+  // Fond de la page
+  let baseStyle = { backgroundColor: theme?.paper || '#FBF8F3', ...themePatternStyle(theme) };
+  let bgPhoto = null;
+  if (spec.type === 'color') baseStyle = { backgroundColor: spec.color };
+  else if (spec.type === 'photo' && (spec.photo?.display || spec.photo?.full)) {
+    bgPhoto = (
+      <>
+        <img src={spec.photo.display || spec.photo.full} alt="" className="absolute inset-0 h-full w-full object-cover" draggable={false} />
+        {spec.toned !== false && <div className="absolute inset-0" style={{ backgroundColor: 'rgba(251,248,243,0.80)' }} />}
+      </>
+    );
+  }
+
+  const headerInner = (
+    <div style={{ display: 'inline-block', maxWidth: '100%', ...(onPlate ? { backgroundColor: 'rgba(251,248,243,0.85)', borderRadius: '4px', padding: '1.5% 2.2%' } : {}) }}>
+      <div style={{ color: accent, fontSize: '1.45cqmin', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: '0.8%' }}>
+        Jour {dayIndex + 1}{location ? ` · ${location}` : ''}{!firstPage ? ' · suite' : ''}
+      </div>
+      {firstPage && title ? <div style={{ color: ink, fontSize: '3.7cqmin', fontWeight: 700, lineHeight: 1.1, fontFamily: 'Georgia, serif' }}>{title}</div> : null}
+      {firstPage && note ? <div style={{ color: '#41433F', fontSize: '1.75cqmin', lineHeight: 1.45, marginTop: '1%' }}>{note}</div> : null}
+    </div>
+  );
+
+  const background = (
+    <div className="absolute inset-0" style={baseStyle}>
+      {bgPhoto}
+      {/* en-tête (même boîte que le PDF, hauteur fixe) */}
+      <div className="absolute overflow-hidden" style={{ left: pct(lay.pad, lay.pageW), top: pct(lay.pad, lay.pageH), width: pct(lay.contentW, lay.pageW), height: pct(lay.headerH, lay.pageH) }}>
+        {headerInner}
+      </div>
+      {/* photos */}
       {photos.map((p, i) => {
-        const c = cells[i];
+        const c = lay.cells[i];
         if (!c) return null;
-        const { imgStyle } = effectPreview(getPhotoEffect(p.effect));
+        const { imgStyle, wrapStyle } = effectPreview(getPhotoEffect(p.effect));
+        const pdeco = p.deco || [];
         return (
-          <img
-            key={i}
-            src={p.display || p.full}
-            alt=""
-            className="absolute object-cover"
-            style={{ left: `${c.xf * 100}%`, top: `${c.yf * 100}%`, width: `${c.wf * 100}%`, height: `${c.hf * 100}%`, ...imgStyle }}
-            draggable={false}
-          />
+          <div key={i} className="absolute overflow-hidden" style={{ left: pct(c.x, lay.pageW), top: pct(c.y, lay.pageH), width: pct(c.w, lay.pageW), height: pct(c.h, lay.pageH), containerType: 'size' }}>
+            <div className="flex h-full w-full items-center justify-center overflow-hidden" style={wrapStyle}>
+              <img src={p.display || p.full} alt="" className="h-full w-full object-cover" style={imgStyle} draggable={false} />
+            </div>
+            {pdeco.map((it, k) => (
+              <div key={k} className="absolute" style={{ left: `${it.xf * 100}%`, top: `${it.yf * 100}%`, transform: `translate(-50%,-50%) rotate(${it.rot}deg)`, fontSize: `${it.scale * 100}cqmin`, lineHeight: 1, color: it.color, fontWeight: it.type === 'text' ? 700 : 400, whiteSpace: 'nowrap', textShadow: it.type === 'text' ? '0 1px 2px rgba(0,0,0,0.5)' : 'none' }}>
+                {it.value}
+              </div>
+            ))}
+            {p.caption ? (
+              <div className="absolute inset-x-0 bottom-0 px-1 py-0.5 text-center italic text-white" style={{ backgroundColor: 'rgba(0,0,0,0.45)', fontSize: '3cqmin' }}>{p.caption}</div>
+            ) : null}
+          </div>
         );
       })}
     </div>
   );
+
+  const FORMAT_LABELS = { carre: '21 × 21 cm', a4paysage: 'A4 paysage', a4portrait: 'A4 portrait' };
+  const toolbar = onFormatChange ? (
+    <div className="mb-2 flex flex-wrap items-center gap-2">
+      <span className="text-xs font-medium text-slate-600">Format :</span>
+      {Object.entries(FORMAT_LABELS).map(([k, lbl]) => (
+        <button key={k} onClick={() => onFormatChange(k)}
+          className={`rounded-md px-2.5 py-1 text-xs font-semibold ${format === k ? 'bg-coral-500 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
+          {lbl}
+        </button>
+      ))}
+    </div>
+  ) : null;
+
   return (
     <DecoEditor
       title="Décorer la page"
-      aspect={ratio}
+      aspect={lay.pageW / lay.pageH}
       initialItems={initialItems || []}
       onChange={onChange}
       onClose={onClose}
-      background={bg}
+      background={background}
+      toolbar={toolbar}
     />
   );
 }
@@ -483,7 +563,7 @@ function PhotoTile({ photo, onCaption, onRemove, onMoveLeft, onMoveRight, canLef
   );
 }
 
-export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhoto, busy, format = 'carre', theme = null }) {
+export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhoto, busy, format = 'carre', onFormatChange = null, theme = null }) {
   const fileRef = useRef(null);
   const [bgOpen, setBgOpen] = useState(false);
   const [decoPage, setDecoPage] = useState(null);
@@ -758,10 +838,16 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
         <PageDecorateModal
           photos={chunks[decoPage] || []}
           format={format}
+          onFormatChange={onFormatChange}
           theme={theme}
           title={entry.title}
           note={entry.note}
           firstPage={decoPage === 0}
+          dayIndex={index}
+          location={day?.location}
+          bg={entry.bg}
+          pageIndex={decoPage}
+          pageCount={pageCount}
           initialItems={entry.pageDeco?.[decoPage] || []}
           onChange={(items) => setPageDeco(decoPage, items)}
           onClose={() => setDecoPage(null)}
@@ -1329,6 +1415,7 @@ export default function AlbumPage() {
             onPickBgPhoto={(slot) => setPickerFor({ kind: 'dayBg', i, slot })}
             busy={busyDay === i}
             format={format}
+            onFormatChange={setFormat}
             theme={getTheme(album.theme)}
           />
         ))}
