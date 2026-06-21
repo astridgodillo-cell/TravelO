@@ -484,12 +484,13 @@ export default function StandaloneAlbumPage() {
         if (kind === 'end') { title = 'Choisir la photo de fond'; current = album.endPhoto; }
         else if (kind === 'dayBg') {
           const bg = normalizeBg(album.days[pickerFor.i]?.bg);
-          title = `Fond · Jour ${pickerFor.i + 1}`;
+          title = `Fond · ${unitLabel(album.unit)} ${pickerFor.i + 1}`;
           current = pickerFor.slot === 'spread' ? bg.spread?.photo : bg.pages?.[pickerFor.slot]?.photo;
         }
         return (
           <CoverPicker
             title={title}
+            unit={album.unit}
             days={album.days}
             album={album}
             current={current}

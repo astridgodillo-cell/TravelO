@@ -779,14 +779,14 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
       <input
         value={entry.title}
         onChange={(e) => update({ title: e.target.value })}
-        placeholder="Titre de la journée"
+        placeholder={unit === 'etape' ? "Titre de l'étape" : 'Titre de la journée'}
         className="w-full border-0 border-b border-slate-200 pb-1.5 text-lg font-semibold text-slate-900 outline-none focus:border-coral-400"
       />
 
       <textarea
         value={entry.note}
         onChange={(e) => update({ note: e.target.value })}
-        placeholder="Raconte ta journée : ce que tu as vu, mangé, ressenti…"
+        placeholder={unit === 'etape' ? 'Raconte cette étape : ce que tu as vu, mangé, ressenti…' : 'Raconte ta journée : ce que tu as vu, mangé, ressenti…'}
         rows={3}
         className="mt-3 w-full resize-y rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-none focus:border-coral-400"
       />
@@ -824,7 +824,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
               : 'Ajout des photos…'}
           </>
         ) : (
-          '📷 Ajouter des photos à cette journée'
+          `📷 Ajouter des photos à cette ${unit === 'etape' ? 'étape' : 'journée'}`
         )}
       </button>
       <input
@@ -1016,7 +1016,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
 
 // Fenêtre de choix de la photo de couverture : montre toutes les photos déjà
 // présentes dans l'album, regroupées par journée. Un clic choisit la couverture.
-export function CoverPicker({ days, album, current, onPick, onClose, title = 'Choisir la photo de couverture' }) {
+export function CoverPicker({ days, album, current, onPick, onClose, title = 'Choisir la photo de couverture', unit = 'jour' }) {
   const fileRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState(null);
@@ -1101,7 +1101,7 @@ export function CoverPicker({ days, album, current, onPick, onClose, title = 'Ch
             {groups.map((g) => (
               <div key={g.i}>
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-coral-600">
-                  Jour {g.i + 1}{g.location ? ` · ${g.location}` : ''}
+                  {unitLabel(unit)} {g.i + 1}{g.location ? ` · ${g.location}` : ''}
                 </p>
                 <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
                   {g.photos.map((p, k) => {
@@ -1699,7 +1699,7 @@ export default function AlbumPage() {
 
       {sections.length === 0 && (
         <p className="mt-6 text-center text-sm text-slate-500">
-          Ce voyage n'a pas encore de journées à illustrer. Utilise « Ajouter » ci-dessus.
+          Ce voyage n'a pas encore de {(album.unit || 'jour') === 'etape' ? 'étapes' : 'journées'} à illustrer. Utilise « Ajouter » ci-dessus.
         </p>
       )}
 
@@ -1872,6 +1872,7 @@ export default function AlbumPage() {
         return (
           <CoverPicker
             title={title}
+            unit={album.unit}
             days={days}
             album={album}
             current={current}
