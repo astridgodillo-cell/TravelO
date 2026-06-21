@@ -7,6 +7,7 @@ import {
   uploadAlbumPhoto,
   repairAlbumPhoto,
 } from '../lib/supabase';
+import { renderRouteMapImage } from '../lib/staticMapImage';
 import AlbumPdfDoc from '../components/AlbumPdfDoc';
 
 const FORMAT_LABELS = {
@@ -37,7 +38,7 @@ function isLowRes(photo) {
   return longEdge > 0 && longEdge < MIN_PRINT_PX;
 }
 
-function PhotoTile({ photo, onCaption, onRemove }) {
+function PhotoTile({ photo, onCaption, onRemove, onMoveLeft, onMoveRight, canLeft, canRight }) {
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
       <div className="relative aspect-[4/3] bg-slate-100">
@@ -54,6 +55,26 @@ function PhotoTile({ photo, onCaption, onRemove }) {
         >
           ✕
         </button>
+        <div className="absolute left-1.5 top-1.5 flex gap-1">
+          <button
+            type="button"
+            onClick={onMoveLeft}
+            disabled={!canLeft}
+            className="flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-white hover:bg-black/75 disabled:opacity-30"
+            title="Déplacer avant"
+          >
+            ‹
+          </button>
+          <button
+            type="button"
+            onClick={onMoveRight}
+            disabled={!canRight}
+            className="flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-white hover:bg-black/75 disabled:opacity-30"
+            title="Déplacer après"
+          >
+            ›
+          </button>
+        </div>
         {isLowRes(photo) && (
           <span
             className="absolute bottom-1.5 left-1.5 rounded-md bg-amber-500/90 px-2 py-0.5 text-[10px] font-semibold text-white"
@@ -86,6 +107,13 @@ function DayCard({ day, index, entry, onChange, onAddPhotos, busy }) {
   }
   function removePhoto(pi) {
     update({ photos: entry.photos.filter((_, i) => i !== pi) });
+  }
+  function movePhoto(pi, dir) {
+    const ni = pi + dir;
+    if (ni < 0 || ni >= entry.photos.length) return;
+    const arr = [...entry.photos];
+    [arr[pi], arr[ni]] = [arr[ni], arr[pi]];
+    update({ photos: arr });
   }
 
   return (
@@ -120,6 +148,10 @@ function DayCard({ day, index, entry, onChange, onAddPhotos, busy }) {
               photo={p}
               onCaption={(c) => setPhotoCaption(pi, c)}
               onRemove={() => removePhoto(pi)}
+              onMoveLeft={() => movePhoto(pi, -1)}
+              onMoveRight={() => movePhoto(pi, 1)}
+              canLeft={pi > 0}
+              canRight={pi < entry.photos.length - 1}
             />
           ))}
         </div>
@@ -459,12 +491,38 @@ export default function AlbumPage() {
     setGenerating(true);
     setError(null);
     try {
+      // Carte du voyage : on assemble une image du parcours à partir des
+      // coordonnées des étapes (mêmes fonds de carte que l'app).
+      let routeMap = null;
+      const stops = [];
+      const points = [];
+      days.forEach((d) => {
+        const c = d?.coordinates;
+        if (c && typeof c.lat === 'number' && typeof c.lng === 'number') {
+          points.push(c);
+          stops.push(d.location || '');
+        }
+      });
+      if (points.length) {
+        try {
+          routeMap = await renderRouteMapImage(points, {
+            width: 1600,
+            height: 1000,
+            accent: '#C8643C',
+          });
+        } catch {
+          routeMap = null;
+        }
+      }
+
       const blob = await pdf(
         <AlbumPdfDoc
           album={album}
           days={days}
           format={format}
           summary={trip?.itinerary?.summary || null}
+          routeMap={routeMap}
+          stops={stops}
         />
       ).toBlob();
       if (pdfUrl) URL.revokeObjectURL(pdfUrl);

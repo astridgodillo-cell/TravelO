@@ -163,7 +163,7 @@ function CoverFade({ color = '#1C2B2D' }) {
   );
 }
 
-export default function AlbumPdfDoc({ album, days = [], format = 'carre', summary = null }) {
+export default function AlbumPdfDoc({ album, days = [], format = 'carre', summary = null, routeMap = null, stops = [] }) {
   const fmt = FORMATS[format] || FORMATS.carre;
   // Page = format final + 3 mm de fond perdu sur chaque bord.
   const pageW = mm(fmt.trimW + BLEED_MM * 2);
@@ -216,6 +216,33 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
           ) : null}
         </View>
       </Page>
+
+      {/* CARTE DU VOYAGE */}
+      {routeMap && (
+        <Page size={[pageW, pageH]} style={st.page}>
+          <View style={st.header}>
+            <Text style={st.dayKicker}>Itinéraire</Text>
+            <Text style={st.dayTitle}>La carte du voyage</Text>
+          </View>
+          <View style={st.mapWrap}>
+            <Image src={routeMap} style={st.mapImg} />
+          </View>
+          {stops.filter(Boolean).length > 0 && (
+            <View style={st.stops}>
+              {stops.map((s, k) =>
+                s ? (
+                  <View key={k} style={st.stopItem}>
+                    <View style={st.stopNum}>
+                      <Text style={st.stopNumTxt}>{k + 1}</Text>
+                    </View>
+                    <Text style={st.stopLabel}>{s}</Text>
+                  </View>
+                ) : null
+              )}
+            </View>
+          )}
+        </Page>
+      )}
 
       {/* UNE PAGE PAR JOURNÉE */}
       {entries.map((e) => {
@@ -313,6 +340,15 @@ function makeStyles(pageW, pageH) {
     dayKicker: { fontFamily: 'AlbumBody', fontWeight: 700, fontSize: 8.5, letterSpacing: 2, textTransform: 'uppercase', color: PALETTE.accent, marginBottom: 5 },
     dayTitle: { fontFamily: 'AlbumDisplay', fontWeight: 600, fontSize: 22, color: PALETTE.ink, lineHeight: 1.1 },
     note: { fontFamily: 'AlbumBody', fontWeight: 300, fontSize: 10.5, lineHeight: 1.5, color: PALETTE.text, marginTop: 6 },
+
+    // Carte du voyage : la carte occupe l'espace, la liste des étapes dessous.
+    mapWrap: { flexGrow: 1, marginTop: mm(2), borderWidth: 1, borderColor: PALETTE.line, backgroundColor: '#e9e6df' },
+    mapImg: { width: '100%', height: '100%', objectFit: 'contain' },
+    stops: { flexShrink: 0, flexDirection: 'row', flexWrap: 'wrap', marginTop: mm(4) },
+    stopItem: { flexDirection: 'row', alignItems: 'center', width: '50%', marginBottom: 6, paddingRight: 8 },
+    stopNum: { width: 16, height: 16, borderRadius: 8, backgroundColor: PALETTE.accent, alignItems: 'center', justifyContent: 'center', marginRight: 8 },
+    stopNumTxt: { fontFamily: 'AlbumBody', fontWeight: 700, fontSize: 7.5, color: '#FFFFFF' },
+    stopLabel: { flex: 1, fontFamily: 'AlbumBody', fontWeight: 400, fontSize: 9.5, color: PALETTE.ink },
 
     // flexGrow:1 → la mosaïque prend toute la hauteur restante de la page.
     mosaic: { flexGrow: 1, flexDirection: 'column', marginTop: mm(2) },
