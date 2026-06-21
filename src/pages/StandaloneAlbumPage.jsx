@@ -11,7 +11,7 @@ import { renderRouteMapImage } from '../lib/staticMapImage';
 import AlbumPdfDoc from '../components/AlbumPdfDoc';
 import PdfPagesPreview from '../components/PdfPagesPreview';
 import { DayCard, CoverPicker, ThemePicker, Spinner } from './AlbumPage';
-import { FORMAT_LABELS, normalizeBg, bakePhotoEffects, getTheme, unitLabel } from '../lib/albumModel';
+import { FORMAT_LABELS, normalizeBg, bakePhotoEffects, getTheme, unitLabel, splitPhotos } from '../lib/albumModel';
 
 const emptyDay = () => ({ title: '', note: '', photos: [], bg: null, split: null });
 
@@ -306,6 +306,15 @@ export default function StandaloneAlbumPage() {
     );
   }
 
+  // Numéro de page réel (1 = couverture) de la 1re page de chaque section, pour
+  // l'indicateur « double page en vis‑à‑vis ». La carte occupe une page si elle
+  // est activée et a au moins une étape.
+  const hasMapPage = !!album.map?.enabled && (album.map.stops || []).some((s) => s.name?.trim());
+  const dayPageCounts = album.days.map((s) => splitPhotos(s.photos, s.split).filter((c) => c.length > 0).length);
+  const dayOffsets = dayPageCounts.map(
+    (_, i) => 1 + (hasMapPage ? 1 : 0) + dayPageCounts.slice(0, i).reduce((a, b) => a + b, 0) + 1
+  );
+
   return (
     <div className="mx-auto max-w-3xl">
       <div className="sticky top-0 z-20 -mx-4 mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur">
@@ -412,6 +421,7 @@ export default function StandaloneAlbumPage() {
               onFormatChange={setFormat}
               theme={getTheme(album.theme)}
               unit={album.unit}
+              pageOffset={dayOffsets[i]}
             />
           </div>
         ))}

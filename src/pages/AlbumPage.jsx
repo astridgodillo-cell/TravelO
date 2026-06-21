@@ -702,7 +702,7 @@ function PhotoTile({ photo, onCaption, onRemove, onMoveLeft, onMoveRight, canLef
   );
 }
 
-export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhoto, busy, progress = null, format = 'carre', onFormatChange = null, theme = null, unit = 'jour' }) {
+export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhoto, busy, progress = null, format = 'carre', onFormatChange = null, theme = null, unit = 'jour', pageOffset = null }) {
   const fileRef = useRef(null);
   const [bgOpen, setBgOpen] = useState(false);
   const [decoPage, setDecoPage] = useState(null);
@@ -990,16 +990,29 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
                       onPickPhoto={() => onPickBgPhoto(p)}
                     />
                     {spec?.type === 'photo' && (
-                      <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-2">
-                        <span className="text-xs text-slate-500">Étendre la photo :</span>
-                        <button type="button" onClick={() => setPageSpan(p, 1)}
-                          className={`rounded-md px-2 py-1 text-xs font-semibold ${span === 1 ? 'bg-coral-500 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
-                          1 page
-                        </button>
-                        <button type="button" onClick={() => setPageSpan(p, 2)} disabled={p + 1 >= pageCount}
-                          className={`rounded-md px-2 py-1 text-xs font-semibold disabled:opacity-40 ${span === 2 ? 'bg-coral-500 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
-                          2 pages (double page)
-                        </button>
+                      <div className="mt-2 border-t border-slate-100 pt-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-xs text-slate-500">Étendre la photo :</span>
+                          <button type="button" onClick={() => setPageSpan(p, 1)}
+                            className={`rounded-md px-2 py-1 text-xs font-semibold ${span === 1 ? 'bg-coral-500 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
+                            1 page
+                          </button>
+                          <button type="button" onClick={() => setPageSpan(p, 2)} disabled={p + 1 >= pageCount}
+                            className={`rounded-md px-2 py-1 text-xs font-semibold disabled:opacity-40 ${span === 2 ? 'bg-coral-500 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
+                            2 pages (double page)
+                          </button>
+                        </div>
+                        {span === 2 && pageOffset != null && (() => {
+                          const leftAbs = pageOffset + p;
+                          const facing = leftAbs % 2 === 0; // page 1 = couverture (à droite)
+                          return (
+                            <p className={`mt-1.5 text-xs ${facing ? 'text-emerald-600' : 'text-amber-600'}`}>
+                              {facing
+                                ? `✅ Pages ${leftAbs}–${leftAbs + 1} du livre : la photo sera bien en vis‑à‑vis (entière à l'ouverture).`
+                                : `⚠️ Pages ${leftAbs}–${leftAbs + 1} du livre : PAS en vis‑à‑vis. Ajoute ou retire une page avant pour décaler d'un cran.`}
+                            </p>
+                          );
+                        })()}
                       </div>
                     )}
                   </div>
@@ -1563,6 +1576,15 @@ export default function AlbumPage() {
   // composants qui n'ont besoin que du lieu (sélecteur de photo, etc.).
   const sections = album?.days || [];
   const days = sections.map((s) => ({ location: s.location || '' }));
+  // Numéro de page réel (1 = couverture) de la 1re page de chaque section, pour
+  // indiquer si une double page tombe bien en vis‑à‑vis. La carte du voyage
+  // occupe une page si des coordonnées existent.
+  const hasMapPage = (Array.isArray(trip?.itinerary?.days) ? trip.itinerary.days : [])
+    .some((d) => d?.coordinates && typeof d.coordinates.lat === 'number');
+  const sectionPageCounts = sections.map((s) => splitPhotos(s.photos, s.split).filter((c) => c.length > 0).length);
+  const dayOffsets = sectionPageCounts.map(
+    (_, i) => 1 + (hasMapPage ? 1 : 0) + sectionPageCounts.slice(0, i).reduce((a, b) => a + b, 0) + 1
+  );
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -1725,6 +1747,7 @@ export default function AlbumPage() {
                 onFormatChange={setFormat}
                 theme={getTheme(album.theme)}
                 unit={album.unit}
+                pageOffset={dayOffsets[i]}
               />
             </div>
           );
