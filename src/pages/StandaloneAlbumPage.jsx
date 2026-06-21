@@ -38,6 +38,7 @@ export default function StandaloneAlbumPage() {
   const [error, setError] = useState(null);
 
   const [busyDay, setBusyDay] = useState(null);
+  const [addProgress, setAddProgress] = useState(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedOnce, setSavedOnce] = useState(false);
@@ -104,12 +105,14 @@ export default function StandaloneAlbumPage() {
 
   async function addPhotos(i, files) {
     setBusyDay(i);
+    setAddProgress({ done: 0, total: files.length });
     setError(null);
     try {
       const uploaded = [];
       for (const f of files) {
         try {
           uploaded.push(await uploadAlbumPhoto(f));
+          setAddProgress({ done: uploaded.length, total: files.length });
         } catch (err) {
           throw new Error("L'envoi d'une photo a échoué. Réessaie dans un instant.", { cause: err });
         }
@@ -124,6 +127,7 @@ export default function StandaloneAlbumPage() {
       setError(err.message);
     } finally {
       setBusyDay(null);
+      setAddProgress(null);
     }
   }
 
@@ -350,6 +354,7 @@ export default function StandaloneAlbumPage() {
               entry={d}
               onChange={(entry) => updateDay(i, entry)}
               onAddPhotos={(files) => addPhotos(i, files)}
+              progress={busyDay === i ? addProgress : null}
               onPickBgPhoto={(slot) => setPickerFor({ kind: 'dayBg', i, slot })}
               busy={busyDay === i}
               format={format}

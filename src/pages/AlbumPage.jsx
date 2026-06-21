@@ -29,6 +29,16 @@ import {
   resolveBg,
 } from '../lib/albumModel';
 
+// Petit indicateur de chargement animé (réutilisé sur les boutons d'envoi).
+export function Spinner({ className = 'h-4 w-4' }) {
+  return (
+    <svg className={`animate-spin ${className}`} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+    </svg>
+  );
+}
+
 // Sélecteur de thème (ambiance appliquée à tout l'album).
 export function ThemePicker({ value, onChange }) {
   return (
@@ -408,7 +418,8 @@ export function DecoEditor({ title, aspect, background, initialItems, onChange, 
             <div className="mb-2 flex flex-wrap gap-2">
               <button onClick={addText} className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200">➕ Texte</button>
               <button onClick={() => fileRef.current?.click()} disabled={uploading}
-                className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200 disabled:opacity-50">
+                className="flex items-center gap-1.5 rounded-md bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200 disabled:opacity-60">
+                {uploading && <Spinner className="h-3.5 w-3.5" />}
                 {uploading ? 'Import…' : '🖼️ Importer une image (PNG)'}
               </button>
               <input ref={fileRef} type="file" accept="image/*" className="hidden"
@@ -690,7 +701,7 @@ function PhotoTile({ photo, onCaption, onRemove, onMoveLeft, onMoveRight, canLef
   );
 }
 
-export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhoto, busy, format = 'carre', onFormatChange = null, theme = null }) {
+export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhoto, busy, progress = null, format = 'carre', onFormatChange = null, theme = null }) {
   const fileRef = useRef(null);
   const [bgOpen, setBgOpen] = useState(false);
   const [decoPage, setDecoPage] = useState(null);
@@ -802,9 +813,18 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
         type="button"
         onClick={() => fileRef.current?.click()}
         disabled={busy}
-        className="mt-4 w-full rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+        className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-70"
       >
-        {busy ? 'Ajout des photos…' : '📷 Ajouter des photos à cette journée'}
+        {busy ? (
+          <>
+            <Spinner />
+            {progress && progress.total > 1
+              ? `Ajout des photos… ${progress.done}/${progress.total}`
+              : 'Ajout des photos…'}
+          </>
+        ) : (
+          '📷 Ajouter des photos à cette journée'
+        )}
       </button>
       <input
         ref={fileRef}
@@ -1044,8 +1064,9 @@ export function CoverPicker({ days, album, current, onPick, onClose, title = 'Ch
             type="button"
             onClick={() => fileRef.current?.click()}
             disabled={uploading}
-            className="w-full rounded-lg bg-coral-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-coral-600 disabled:opacity-50"
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-coral-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-coral-600 disabled:opacity-60"
           >
+            {uploading && <Spinner />}
             {uploading ? 'Envoi de la photo…' : '📤 Importer une autre photo'}
           </button>
           <p className="mt-2 text-center text-xs text-slate-500">
@@ -1121,6 +1142,7 @@ export default function AlbumPage() {
   const [error, setError] = useState(null);
 
   const [busyDay, setBusyDay] = useState(null); // index du jour en cours d'upload
+  const [addProgress, setAddProgress] = useState(null); // { done, total }
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedOnce, setSavedOnce] = useState(false);
@@ -1194,12 +1216,14 @@ export default function AlbumPage() {
 
   async function addPhotos(i, files) {
     setBusyDay(i);
+    setAddProgress({ done: 0, total: files.length });
     setError(null);
     try {
       const uploaded = [];
       for (const f of files) {
         try {
           uploaded.push(await uploadAlbumPhoto(f));
+          setAddProgress({ done: uploaded.length, total: files.length });
         } catch (err) {
           throw new Error(
             "L'envoi d'une photo a échoué. Si cela persiste, l'espace de stockage des photos n'est peut-être pas encore activé.",
@@ -1217,6 +1241,7 @@ export default function AlbumPage() {
       setError(err.message);
     } finally {
       setBusyDay(null);
+      setAddProgress(null);
     }
   }
 
@@ -1552,6 +1577,7 @@ export default function AlbumPage() {
             entry={album.days[i]}
             onChange={(entry) => setDayEntry(i, entry)}
             onAddPhotos={(files) => addPhotos(i, files)}
+            progress={busyDay === i ? addProgress : null}
             onPickBgPhoto={(slot) => setPickerFor({ kind: 'dayBg', i, slot })}
             busy={busyDay === i}
             format={format}
