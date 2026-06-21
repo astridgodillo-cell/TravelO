@@ -116,7 +116,9 @@ export function splitPhotos(photos, manual) {
 
 // Résout le fond d'une page donnée d'une journée :
 //   bg = { mode:'perPage'|'spread', spread:<spec>, pages:[<spec>...] }
-//   spec = { type:'none'|'color'|'photo', color?, photo?, toned? }
+//   spec = { type:'none'|'color'|'photo', color?, photo?, toned?, span? }
+// En mode 'perPage', une photo peut porter span=N : elle est alors étirée sur
+// N pages consécutives (panorama local), à partir de sa page.
 export function resolveBg(bg, pageIndex, pageCount) {
   if (!bg) return { type: 'none' };
   if (bg.full) return { type: 'photo', photo: bg, toned: true };
@@ -127,7 +129,20 @@ export function resolveBg(bg, pageIndex, pageCount) {
     }
     return s;
   }
-  return (bg.pages && bg.pages[pageIndex]) || { type: 'none' };
+  const pages = bg.pages || [];
+  // La page courante est-elle couverte par un panorama démarré plus tôt ?
+  for (let q = pageIndex; q >= 0; q -= 1) {
+    const sp = pages[q];
+    const span = sp && sp.type === 'photo' ? sp.span || 1 : 1;
+    if (span > 1) {
+      if (q + span > pageIndex) {
+        return { ...sp, spreadIndex: pageIndex - q, spreadCount: span };
+      }
+      break; // un groupe se terminait avant cette page → fond propre
+    }
+    if (q < pageIndex && sp && sp.type === 'photo') break;
+  }
+  return pages[pageIndex] || { type: 'none' };
 }
 
 // Disposition complète d'UNE page, en points (unité du PDF). Une SEULE source

@@ -741,6 +741,17 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
     pages[p] = spec;
     setBg({ ...bg, pages });
   };
+  const setPageSpan = (p, span) => setPageSpec(p, { ...getPageSpec(p), span });
+  // Pages couvertes par un panorama démarré plus tôt (côté droit/suite).
+  const coveredBy = (() => {
+    const cov = new Array(pageCount).fill(-1);
+    for (let p = 0; p < pageCount; p += 1) {
+      const sp = getPageSpec(p);
+      const span = sp?.type === 'photo' ? sp.span || 1 : 1;
+      for (let k = p + 1; k < Math.min(pageCount, p + span); k += 1) cov[k] = p;
+    }
+    return cov;
+  })();
 
   function setPhotoCaption(pi, caption) {
     const photos = entry.photos.map((p, i) =>
@@ -956,16 +967,44 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
                 />
               </div>
             ) : (
-              Array.from({ length: pageCount }).map((_, p) => (
-                <div key={p} className="rounded-lg border border-slate-200 bg-white p-2.5">
-                  <p className="mb-1.5 text-xs font-semibold text-slate-500">Page {p + 1}</p>
-                  <BgSpecEditor
-                    spec={getPageSpec(p)}
-                    onChange={(spec) => setPageSpec(p, spec)}
-                    onPickPhoto={() => onPickBgPhoto(p)}
-                  />
-                </div>
-              ))
+              Array.from({ length: pageCount }).map((_, p) => {
+                if (coveredBy[p] >= 0) {
+                  return (
+                    <div key={p} className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-2.5">
+                      <p className="text-xs text-slate-500">
+                        Page {p + 1} · ↳ côté droit du panorama de la page {coveredBy[p] + 1}
+                      </p>
+                    </div>
+                  );
+                }
+                const spec = getPageSpec(p);
+                const span = spec?.type === 'photo' ? spec.span || 1 : 1;
+                return (
+                  <div key={p} className="rounded-lg border border-slate-200 bg-white p-2.5">
+                    <p className="mb-1.5 text-xs font-semibold text-slate-500">
+                      Page {p + 1}{span > 1 ? ` & ${p + 2} (double page)` : ''}
+                    </p>
+                    <BgSpecEditor
+                      spec={spec}
+                      onChange={(s) => setPageSpec(p, s)}
+                      onPickPhoto={() => onPickBgPhoto(p)}
+                    />
+                    {spec?.type === 'photo' && (
+                      <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-2">
+                        <span className="text-xs text-slate-500">Étendre la photo :</span>
+                        <button type="button" onClick={() => setPageSpan(p, 1)}
+                          className={`rounded-md px-2 py-1 text-xs font-semibold ${span === 1 ? 'bg-coral-500 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
+                          1 page
+                        </button>
+                        <button type="button" onClick={() => setPageSpan(p, 2)} disabled={p + 1 >= pageCount}
+                          className={`rounded-md px-2 py-1 text-xs font-semibold disabled:opacity-40 ${span === 2 ? 'bg-coral-500 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
+                          2 pages (double page)
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })
             )}
           </div>
         )}
