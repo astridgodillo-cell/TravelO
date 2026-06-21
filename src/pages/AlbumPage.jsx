@@ -143,6 +143,72 @@ function DayCard({ day, index, entry, onChange, onAddPhotos, busy }) {
   );
 }
 
+// Fenêtre de choix de la photo de couverture : montre toutes les photos déjà
+// présentes dans l'album, regroupées par journée. Un clic choisit la couverture.
+function CoverPicker({ days, album, current, onPick, onClose }) {
+  const groups = days
+    .map((d, i) => ({
+      i,
+      location: d?.location || '',
+      title: album.days[i]?.title || '',
+      photos: album.days[i]?.photos || [],
+    }))
+    .filter((g) => g.photos.length > 0);
+
+  const samePhoto = (a, b) => a && b && (a.full || a.display) === (b?.full || b?.display);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4">
+      <div className="my-8 w-full max-w-3xl rounded-2xl bg-white p-5 shadow-2xl">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h3 className="font-semibold text-slate-800">Choisir la photo de couverture</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700" aria-label="Fermer">
+            ✕
+          </button>
+        </div>
+
+        {groups.length === 0 ? (
+          <p className="py-6 text-center text-sm text-slate-500">
+            Ajoute d'abord des photos à tes journées, puis reviens choisir ta couverture.
+          </p>
+        ) : (
+          <div className="max-h-[60vh] space-y-5 overflow-y-auto pr-1">
+            {groups.map((g) => (
+              <div key={g.i}>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-coral-600">
+                  Jour {g.i + 1}{g.location ? ` · ${g.location}` : ''}
+                </p>
+                <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                  {g.photos.map((p, k) => {
+                    const on = samePhoto(p, current);
+                    return (
+                      <button
+                        key={k}
+                        type="button"
+                        onClick={() => onPick(p)}
+                        className={`relative aspect-[4/3] overflow-hidden rounded-lg border-2 ${
+                          on ? 'border-coral-500 ring-2 ring-coral-200' : 'border-transparent'
+                        }`}
+                      >
+                        <img src={p.display || p.full} alt="" className="h-full w-full object-cover" />
+                        {on && (
+                          <span className="absolute right-1 top-1 rounded-full bg-coral-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                            ✓
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function AlbumPage() {
   const { id } = useParams();
   const [trip, setTrip] = useState(null);
@@ -159,6 +225,9 @@ export default function AlbumPage() {
   const [format, setFormat] = useState('carre');
   const [generating, setGenerating] = useState(false);
   const [pdfUrl, setPdfUrl] = useState(null);
+
+  // Choix de la couverture
+  const [coverPickerOpen, setCoverPickerOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -188,6 +257,7 @@ export default function AlbumPage() {
       setTrip(data);
       setAlbum({
         title: saved?.title ?? (it.summary?.title || data.title || 'Mon album'),
+        cover: saved?.cover ?? null,
         days: dayEntries,
       });
       setSavedOnce(!!saved);
@@ -239,6 +309,7 @@ export default function AlbumPage() {
         ...trip.itinerary,
         travel_album: {
           title: album.title,
+          cover: album.cover || null,
           days: album.days,
           updatedAt: new Date().toISOString(),
         },
@@ -334,6 +405,52 @@ export default function AlbumPage() {
         placeholder="Titre de l'album"
         className="w-full border-0 border-b-2 border-slate-200 pb-2 text-2xl font-bold tracking-tight text-slate-900 outline-none focus:border-coral-400 sm:text-3xl"
       />
+
+      {/* Photo de couverture */}
+      <div className="mt-4 flex items-center gap-4">
+        <div className="relative h-24 w-32 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
+          {album.cover ? (
+            <img
+              src={album.cover.display || album.cover.full}
+              alt=""
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <span className="flex h-full w-full items-center justify-center px-2 text-center text-[11px] text-slate-400">
+              Couverture automatique
+            </span>
+          )}
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-slate-700">Photo de couverture</p>
+          <p className="mt-0.5 text-xs text-slate-500">
+            {album.cover
+              ? 'Tu peux la changer ou revenir à la photo automatique.'
+              : 'Par défaut, la première photo de ton album est utilisée.'}
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setCoverPickerOpen(true)}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              🖼️ Choisir la couverture
+            </button>
+            {album.cover && (
+              <button
+                type="button"
+                onClick={() => {
+                  setAlbum((prev) => ({ ...prev, cover: null }));
+                  setDirty(true);
+                }}
+                className="rounded-lg px-3 py-1.5 text-xs font-medium text-slate-500 hover:text-slate-700"
+              >
+                Couverture automatique
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
 
       <p className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
         Remplis ton album au fil du voyage : ajoute tes photos du jour, écris un
@@ -445,6 +562,20 @@ export default function AlbumPage() {
           />
         )}
       </section>
+
+      {coverPickerOpen && (
+        <CoverPicker
+          days={days}
+          album={album}
+          current={album.cover}
+          onPick={(photo) => {
+            setAlbum((prev) => ({ ...prev, cover: photo }));
+            setDirty(true);
+            setCoverPickerOpen(false);
+          }}
+          onClose={() => setCoverPickerOpen(false)}
+        />
+      )}
     </div>
   );
 }

@@ -93,10 +93,13 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre' }) {
     ...(album?.days?.[i] || { title: '', note: '', photos: [] }),
   }));
 
-  // Couverture : première photo disponible de l'album.
-  let cover = null;
-  for (const e of entries) {
-    if (e.photos?.length) { cover = e.photos[0]; break; }
+  // Couverture : celle choisie par l'utilisateur, sinon la première photo
+  // disponible de l'album.
+  let cover = album?.cover || null;
+  if (!cover) {
+    for (const e of entries) {
+      if (e.photos?.length) { cover = e.photos[0]; break; }
+    }
   }
 
   return (
