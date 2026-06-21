@@ -17,10 +17,13 @@ const emptyDay = () => ({ title: '', note: '', photos: [], bg: null, split: null
 
 // Géocodage léger (OpenStreetMap) pour placer les étapes de la carte. Appelé
 // seulement au moment de fabriquer le PDF, et en cache dans chaque étape.
-async function geocode(name) {
+// `country` (facultatif) fiabilise fortement la recherche (ex. « Ella » seul
+// tombe ailleurs dans le monde ; « Ella, Sri Lanka » est correct).
+async function geocode(name, country) {
+  const q = country ? `${name}, ${country}` : name;
   try {
     const r = await fetch(
-      `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(name)}`,
+      `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`,
       { headers: { Accept: 'application/json' } }
     );
     const j = await r.json();
@@ -240,7 +243,7 @@ export default function StandaloneAlbumPage() {
         const updatedStops = [];
         for (const s of album.map.stops || []) {
           if (!s.name?.trim()) continue;
-          let coords = s.lat && s.lng ? { lat: s.lat, lng: s.lng } : await geocode(s.name);
+          let coords = s.lat && s.lng ? { lat: s.lat, lng: s.lng } : await geocode(s.name, album.map?.country);
           updatedStops.push({ ...s, ...(coords || {}) });
           if (coords) {
             points.push(coords);
@@ -557,6 +560,10 @@ function MapSection({ map, onChange }) {
   const [dragIndex, setDragIndex] = useState(null);
   const [overIndex, setOverIndex] = useState(null);
   const setStops = (s) => onChange({ ...map, stops: s, enabled });
+  const setCountry = (country) => onChange({ ...map, country, enabled, stops });
+  // Oublie les coordonnées mémorisées → la carte les recalcule (utile après
+  // avoir renseigné/corrigé le pays).
+  const recomputePositions = () => setStops(stops.map((s) => ({ name: s.name })));
 
   const moveStop = (from, to) => {
     if (from == null || to == null || from === to) return;
@@ -577,6 +584,29 @@ function MapSection({ map, onChange }) {
           <p className="text-sm text-slate-600">
             Liste les villes/étapes, dans l'ordre. Utilise les flèches ▲▼ (ou glisse la poignée ⠿ sur ordinateur) pour les réordonner. La carte se dessine toute seule.
           </p>
+
+          {/* Pays : fiabilise le placement des villes (ex. plusieurs « Ella »
+              dans le monde). */}
+          <div className="mt-3 flex flex-wrap items-end gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <label className="flex-1 text-xs font-medium text-slate-600">
+              Pays du voyage (recommandé)
+              <input
+                value={map?.country || ''}
+                onChange={(e) => setCountry(e.target.value)}
+                placeholder="Ex : Sri Lanka"
+                className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+              />
+            </label>
+            <button type="button" onClick={recomputePositions}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              title="Oublie les positions mémorisées et les recalcule à la prochaine création du fichier">
+              ↻ Recalculer les positions
+            </button>
+            <p className="w-full text-[11px] text-slate-500">
+              Renseigne le pays pour que les villes soient bien placées, puis « ↻ Recalculer » et refais le fichier.
+            </p>
+          </div>
+
           <div className="mt-2 space-y-2">
             {stops.map((s, i) => (
               <div
