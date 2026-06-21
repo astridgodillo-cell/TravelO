@@ -246,7 +246,14 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
 
       {/* UNE PAGE PAR JOURNÉE */}
       {entries.map((e) => {
-        const rows = buildFillLayout(e.photos, contentW, photoAvailH, mm(GAP_MM));
+        const gap = mm(GAP_MM);
+        const rows = buildFillLayout(e.photos, contentW, photoAvailH, gap);
+        // Hauteur « naturelle » de la mosaïque (sans aucun recadrage). Si elle
+        // dépasse l'espace dispo, on réduit l'ensemble proportionnellement
+        // (toujours sans recadrer) ; sinon on garde la taille et on centre.
+        const naturalTotal =
+          rows.reduce((s, r) => s + r.naturalH, 0) + gap * Math.max(0, rows.length - 1);
+        const scale = naturalTotal > 0 ? Math.min(1, photoAvailH / naturalTotal) : 1;
         return (
           <Page key={e.i} size={[pageW, pageH]} style={st.page}>
             <View style={st.header}>
@@ -258,25 +265,27 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
             </View>
 
             {rows.length > 0 && (
-              // flexGrow:1 → la mosaïque occupe TOUTE la hauteur restante.
+              // La mosaïque est centrée dans la hauteur restante ; chaque photo
+              // garde ses proportions exactes (pas de recadrage).
               <View style={st.mosaic}>
-                {rows.map((row, ri) => (
+                {rows.map((row, ri) => {
+                  const h = row.naturalH * scale;
+                  return (
                   <View
                     key={ri}
                     style={{
-                      flexGrow: row.naturalH,
-                      flexBasis: 0,
+                      height: h,
                       flexDirection: 'row',
-                      marginBottom: ri < rows.length - 1 ? mm(GAP_MM) : 0,
+                      marginBottom: ri < rows.length - 1 ? gap : 0,
                     }}
                   >
                     {row.items.map((it, ci) => (
                       <View
                         key={ci}
                         style={{
-                          flexGrow: it.ar,
-                          flexBasis: 0,
-                          marginRight: ci < row.items.length - 1 ? mm(GAP_MM) : 0,
+                          width: it.ar * h,
+                          height: h,
+                          marginRight: ci < row.items.length - 1 ? gap : 0,
                           position: 'relative',
                         }}
                       >
@@ -289,7 +298,8 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
                       </View>
                     ))}
                   </View>
-                ))}
+                  );
+                })}
               </View>
             )}
           </Page>
@@ -373,8 +383,9 @@ function makeStyles(pageW, pageH) {
     stopNumTxt: { fontFamily: 'AlbumBody', fontWeight: 700, fontSize: 7.5, color: '#FFFFFF' },
     stopLabel: { flex: 1, fontFamily: 'AlbumBody', fontWeight: 400, fontSize: 9.5, color: PALETTE.ink },
 
-    // flexGrow:1 → la mosaïque prend toute la hauteur restante de la page.
-    mosaic: { flexGrow: 1, flexDirection: 'column', marginTop: mm(2) },
+    // La mosaïque occupe la hauteur restante et est centrée (les photos
+    // gardent leurs proportions, donc un léger espace peut subsister).
+    mosaic: { flexGrow: 1, flexDirection: 'column', justifyContent: 'center', alignItems: 'center', marginTop: mm(2) },
     mosaicImg: { width: '100%', height: '100%', objectFit: 'cover' },
     capWrap: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.42)', paddingVertical: 2, paddingHorizontal: 4 },
     capTxt: { fontFamily: 'AlbumBody', fontWeight: 400, fontStyle: 'italic', fontSize: 7.5, color: '#FFFFFF' },
