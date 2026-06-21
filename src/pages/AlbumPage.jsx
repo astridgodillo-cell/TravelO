@@ -1026,18 +1026,28 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
       {/* COMPOSER LES PAGES : déplacer les photos + emojis/stickers/textes */}
       <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
         <span className="text-sm font-medium text-slate-700">✨ Composer / décorer&nbsp;:</span>
-        {Array.from({ length: pageCount }).map((_, p) => (
-          <button
-            key={p}
-            type="button"
-            onClick={() => setDecoPage(p)}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-          >
-            {pageCount > 1 ? `Page ${p + 1}` : 'Cette page'}
-            {entry.freePages?.[p] ? ' ✋' : ''}
-            {(entry.pageDeco?.[p]?.length || 0) > 0 ? ` (${entry.pageDeco[p].length})` : ''}
-          </button>
-        ))}
+        {Array.from({ length: pageCount }).map((_, p) => {
+          if (coveredBy[p] >= 0) {
+            return (
+              <span key={p} className="rounded-lg border border-dashed border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-400"
+                title="Côté droit d'une double page : non modifiable (c'est la suite de la photo de la page précédente).">
+                Page {p + 1} · ↳ verrouillée
+              </span>
+            );
+          }
+          return (
+            <button
+              key={p}
+              type="button"
+              onClick={() => setDecoPage(p)}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              {pageCount > 1 ? `Page ${p + 1}` : 'Cette page'}
+              {entry.freePages?.[p] ? ' ✋' : ''}
+              {(entry.pageDeco?.[p]?.length || 0) > 0 ? ` (${entry.pageDeco[p].length})` : ''}
+            </button>
+          );
+        })}
       </div>
 
       {decoPage != null && (
