@@ -22,6 +22,8 @@ import {
   ALBUM_THEMES,
   getTheme,
   STICKER_EMOJIS,
+  splitPhotos,
+  pageLayout,
 } from '../lib/albumModel';
 
 // Sélecteur de thème (ambiance appliquée à tout l'album).
@@ -243,15 +245,14 @@ export function EffectPicker({ photo, current, onPick, onClose }) {
   );
 }
 
-// Fenêtre pour décorer une photo : poser emojis/stickers et textes, les
-// déplacer (glisser), les redimensionner et les pivoter.
-export function DecorateModal({ photo, onChange, onClose }) {
-  const [items, setItems] = useState(() => (photo.deco || []).map((d) => ({ ...d })));
+// Éditeur de décorations réutilisable : un canevas (avec un fond fourni) sur
+// lequel on pose des emojis/stickers/textes, déplaçables (glisser),
+// redimensionnables et pivotables. Coordonnées en fractions du canevas.
+export function DecoEditor({ title, aspect, background, initialItems, onChange, onClose }) {
+  const [items, setItems] = useState(() => (initialItems || []).map((d) => ({ ...d })));
   const [sel, setSel] = useState(null);
-  const [tab, setTab] = useState('emoji');
   const canvasRef = useRef(null);
   const drag = useRef(null);
-  const ar = photo.w && photo.h ? photo.w / photo.h : 4 / 3;
 
   const commit = (next) => { setItems(next); onChange(next); };
   const update = (i, patch) => commit(items.map((it, k) => (k === i ? { ...it, ...patch } : it)));
@@ -263,35 +264,34 @@ export function DecorateModal({ photo, onChange, onClose }) {
   function pointerDown(e, i) {
     e.stopPropagation();
     setSel(i);
-    const rect = canvasRef.current.getBoundingClientRect();
-    drag.current = { i, rect };
+    drag.current = { i, rect: canvasRef.current.getBoundingClientRect() };
   }
   function pointerMove(e) {
     if (!drag.current) return;
     const { i, rect } = drag.current;
-    const xf = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
-    const yf = Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height));
-    update(i, { xf, yf });
+    update(i, {
+      xf: Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width)),
+      yf: Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height)),
+    });
   }
   const endDrag = () => { drag.current = null; };
-
   const selItem = sel != null ? items[sel] : null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-3" onMouseUp={endDrag} onMouseMove={pointerMove}>
       <div className="my-6 w-full max-w-xl rounded-2xl bg-white p-4 shadow-2xl">
         <div className="mb-2 flex items-center justify-between">
-          <h3 className="font-semibold text-slate-800">Décorer la photo</h3>
+          <h3 className="font-semibold text-slate-800">{title}</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-700">✕</button>
         </div>
 
         <div
           ref={canvasRef}
-          className="relative mx-auto w-full max-w-md overflow-hidden rounded-lg bg-slate-200 select-none"
-          style={{ aspectRatio: String(ar), containerType: 'size' }}
+          className="relative mx-auto w-full max-w-md select-none overflow-hidden rounded-lg border border-slate-200 bg-slate-200"
+          style={{ aspectRatio: String(aspect), containerType: 'size' }}
           onMouseDown={() => setSel(null)}
         >
-          <img src={photo.display || photo.full} alt="" className="absolute inset-0 h-full w-full object-cover" draggable={false} />
+          <div className="pointer-events-none absolute inset-0">{background}</div>
           {items.map((it, i) => (
             <div
               key={i}
@@ -314,7 +314,6 @@ export function DecorateModal({ photo, onChange, onClose }) {
           ))}
         </div>
 
-        {/* Réglages de l'élément sélectionné */}
         {selItem ? (
           <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
             <div className="flex items-center justify-between">
@@ -330,7 +329,7 @@ export function DecorateModal({ photo, onChange, onClose }) {
               </div>
             )}
             <label className="mt-2 block text-xs text-slate-600">Taille
-              <input type="range" min="0.05" max="0.5" step="0.01" value={selItem.scale}
+              <input type="range" min="0.05" max="0.6" step="0.01" value={selItem.scale}
                 onChange={(e) => update(sel, { scale: parseFloat(e.target.value) })} className="w-full" />
             </label>
             <label className="block text-xs text-slate-600">Rotation
@@ -342,19 +341,16 @@ export function DecorateModal({ photo, onChange, onClose }) {
           <p className="mt-3 text-center text-xs text-slate-500">Touche un élément pour le déplacer, le redimensionner ou le pivoter.</p>
         )}
 
-        {/* Ajout */}
         <div className="mt-3">
           <div className="mb-2 flex gap-2">
-            <button onClick={() => setTab('emoji')} className={`rounded-md px-3 py-1 text-xs font-semibold ${tab === 'emoji' ? 'bg-coral-500 text-white' : 'bg-slate-100 text-slate-700'}`}>Emojis & stickers</button>
+            <span className="rounded-md bg-coral-500 px-3 py-1 text-xs font-semibold text-white">Emojis & stickers</span>
             <button onClick={addText} className="rounded-md bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-200">➕ Ajouter un texte</button>
           </div>
-          {tab === 'emoji' && (
-            <div className="grid max-h-40 grid-cols-10 gap-1 overflow-y-auto rounded-lg border border-slate-200 p-2 text-xl">
-              {STICKER_EMOJIS.map((e) => (
-                <button key={e} onClick={() => addEmoji(e)} className="rounded hover:bg-slate-100">{e}</button>
-              ))}
-            </div>
-          )}
+          <div className="grid max-h-40 grid-cols-10 gap-1 overflow-y-auto rounded-lg border border-slate-200 p-2 text-xl">
+            {STICKER_EMOJIS.map((e) => (
+              <button key={e} onClick={() => addEmoji(e)} className="rounded hover:bg-slate-100">{e}</button>
+            ))}
+          </div>
         </div>
 
         <div className="mt-4 flex justify-end">
@@ -362,6 +358,58 @@ export function DecorateModal({ photo, onChange, onClose }) {
         </div>
       </div>
     </div>
+  );
+}
+
+// Décorer UNE photo (le fond du canevas est la photo).
+export function DecorateModal({ photo, onChange, onClose }) {
+  const ar = photo.w && photo.h ? photo.w / photo.h : 4 / 3;
+  const eff = getPhotoEffect(photo.effect);
+  const { imgStyle } = effectPreview(eff);
+  return (
+    <DecoEditor
+      title="Décorer la photo"
+      aspect={ar}
+      initialItems={photo.deco || []}
+      onChange={onChange}
+      onClose={onClose}
+      background={<img src={photo.display || photo.full} alt="" className="h-full w-full object-cover" style={imgStyle} draggable={false} />}
+    />
+  );
+}
+
+// Décorer LA PAGE (le fond du canevas reproduit la page : couleur du thème +
+// photos disposées comme à l'impression).
+export function PageDecorateModal({ photos, format, theme, title, note, firstPage, initialItems, onChange, onClose }) {
+  const { ratio, cells } = pageLayout(photos, format, firstPage ? title : '', firstPage ? note : '', firstPage);
+  const bg = (
+    <div className="absolute inset-0" style={{ backgroundColor: theme?.paper || '#FBF8F3' }}>
+      {photos.map((p, i) => {
+        const c = cells[i];
+        if (!c) return null;
+        const { imgStyle } = effectPreview(getPhotoEffect(p.effect));
+        return (
+          <img
+            key={i}
+            src={p.display || p.full}
+            alt=""
+            className="absolute object-cover"
+            style={{ left: `${c.xf * 100}%`, top: `${c.yf * 100}%`, width: `${c.wf * 100}%`, height: `${c.hf * 100}%`, ...imgStyle }}
+            draggable={false}
+          />
+        );
+      })}
+    </div>
+  );
+  return (
+    <DecoEditor
+      title="Décorer la page"
+      aspect={ratio}
+      initialItems={initialItems || []}
+      onChange={onChange}
+      onClose={onClose}
+      background={bg}
+    />
   );
 }
 
@@ -435,9 +483,10 @@ function PhotoTile({ photo, onCaption, onRemove, onMoveLeft, onMoveRight, canLef
   );
 }
 
-export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhoto, busy }) {
+export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhoto, busy, format = 'carre', theme = null }) {
   const fileRef = useRef(null);
   const [bgOpen, setBgOpen] = useState(false);
+  const [decoPage, setDecoPage] = useState(null);
 
   const update = (patch) => onChange({ ...entry, ...patch });
 
@@ -445,6 +494,8 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
   const total = entry.photos.length;
   const splitCounts = computeSplit(total, entry.split);
   const pageCount = splitCounts.length;
+  const chunks = splitPhotos(entry.photos, entry.split);
+  const setPageDeco = (p, items) => update({ pageDeco: { ...(entry.pageDeco || {}), [p]: items } });
   // Change le nombre de pages (réparti équitablement, toujours valide).
   const setPagesCount = (n) =>
     update({ split: balancedSplit(total, Math.max(1, Math.min(total, n))) });
@@ -686,6 +737,36 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
           </div>
         )}
       </div>
+
+      {/* DÉCORER LES PAGES (emojis/stickers/textes en dehors des photos) */}
+      <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+        <span className="text-sm font-medium text-slate-700">✨ Décorer&nbsp;:</span>
+        {Array.from({ length: pageCount }).map((_, p) => (
+          <button
+            key={p}
+            type="button"
+            onClick={() => setDecoPage(p)}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            {pageCount > 1 ? `Page ${p + 1}` : 'Cette page'}
+            {(entry.pageDeco?.[p]?.length || 0) > 0 ? ` (${entry.pageDeco[p].length})` : ''}
+          </button>
+        ))}
+      </div>
+
+      {decoPage != null && (
+        <PageDecorateModal
+          photos={chunks[decoPage] || []}
+          format={format}
+          theme={theme}
+          title={entry.title}
+          note={entry.note}
+          firstPage={decoPage === 0}
+          initialItems={entry.pageDeco?.[decoPage] || []}
+          onChange={(items) => setPageDeco(decoPage, items)}
+          onClose={() => setDecoPage(null)}
+        />
+      )}
     </section>
   );
 }
@@ -1247,6 +1328,8 @@ export default function AlbumPage() {
             onAddPhotos={(files) => addPhotos(i, files)}
             onPickBgPhoto={(slot) => setPickerFor({ kind: 'dayBg', i, slot })}
             busy={busyDay === i}
+            format={format}
+            theme={getTheme(album.theme)}
           />
         ))}
       </div>

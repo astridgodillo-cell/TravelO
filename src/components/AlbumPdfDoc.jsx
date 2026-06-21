@@ -404,19 +404,13 @@ function FramedImage({ src, frame, w, h, st }) {
   );
 }
 
-// Une photo de la mosaïque : applique l'effet (cadre + filtre « cuit » dans
-// _fx) puis pose par-dessus les décorations (emojis/stickers/textes), placées
-// en fractions de la case → fidèle à l'éditeur.
-function PdfPhoto({ photo, st, w, h }) {
-  const effect = getPhotoEffect(photo.effect);
-  const src = photo._fx || imgFull(photo);
-  const deco = photo.deco || [];
-  const framed = <FramedImage src={src} frame={effect.frame} w={w} h={h} st={st} />;
-  if (!deco.length) return framed;
+// Couche de décorations (emojis/stickers/textes) posée sur une zone de
+// dimensions w×h. Positions en fractions (0..1) de cette zone.
+function DecoLayer({ items, w, h }) {
+  if (!items || !items.length) return null;
   return (
-    <View style={{ width: '100%', height: '100%', position: 'relative' }}>
-      {framed}
-      {deco.map((it, i) => {
+    <>
+      {items.map((it, i) => {
         const size = it.scale * Math.min(w, h);
         const cx = it.xf * w;
         const cy = it.yf * h;
@@ -435,6 +429,22 @@ function PdfPhoto({ photo, st, w, h }) {
           <Image key={i} src={url} style={{ position: 'absolute', width: size, height: size, left: cx - size / 2, top: cy - size / 2, transform: `rotate(${it.rot}deg)`, transformOrigin: 'center' }} />
         );
       })}
+    </>
+  );
+}
+
+// Une photo de la mosaïque : effet (cadre + filtre « cuit ») + décorations
+// propres à la photo, en fractions de la case.
+function PdfPhoto({ photo, st, w, h }) {
+  const effect = getPhotoEffect(photo.effect);
+  const src = photo._fx || imgFull(photo);
+  const deco = photo.deco || [];
+  const framed = <FramedImage src={src} frame={effect.frame} w={w} h={h} st={st} />;
+  if (!deco.length) return framed;
+  return (
+    <View style={{ width: '100%', height: '100%', position: 'relative' }}>
+      {framed}
+      <DecoLayer items={deco} w={w} h={h} />
     </View>
   );
 }
@@ -636,6 +646,11 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
                 gap={mm(GAP_MM)}
                 st={st}
               />
+              {e.pageDeco?.[p]?.length ? (
+                <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
+                  <DecoLayer items={e.pageDeco[p]} w={pageW} h={pageH} />
+                </View>
+              ) : null}
             </Page>
           );
         });

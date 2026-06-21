@@ -32,6 +32,119 @@ export function computeSplit(total, manual) {
   return balancedSplit(total, Math.ceil(total / PHOTOS_PER_PAGE));
 }
 
+// ---- Disposition des photos (partagée éditeur ⇄ PDF) ----
+// Ces fonctions DOIVENT rester synchronisées avec AlbumPdfDoc (même algo).
+const MM = 72 / 25.4;
+const mm = (v) => v * MM;
+const BLEED_MM = 3;
+const PAD_MM = 12;
+const GAP_MM = 2;
+export const FORMAT_DIMS = {
+  carre: { trimW: 210, trimH: 210 },
+  a4paysage: { trimW: 297, trimH: 210 },
+  a4portrait: { trimW: 210, trimH: 297 },
+};
+
+function partitionRows(ars, R) {
+  const total = ars.reduce((a, b) => a + b, 0);
+  const target = total / R;
+  const rows = [];
+  let i = 0;
+  for (let r = 0; r < R; r++) {
+    const remainingRows = R - r;
+    const row = [];
+    let acc = 0;
+    while (i < ars.length && ars.length - i > remainingRows - 1) {
+      row.push(i);
+      acc += ars[i];
+      i += 1;
+      if (acc >= target && r < R - 1) break;
+    }
+    rows.push(row);
+  }
+  while (i < ars.length) rows[rows.length - 1].push(i++);
+  return rows.filter((r) => r.length);
+}
+
+function buildFillLayout(photos, contentW, availH, gap) {
+  const items = photos.map((p) => ({ ar: p.w && p.h ? p.w / p.h : 4 / 3 }));
+  const n = items.length;
+  if (!n) return [];
+  const ars = items.map((it) => it.ar);
+  let best = null;
+  for (let R = 1; R <= n; R++) {
+    const groups = partitionRows(ars, R);
+    let naturalTotal = gap * (groups.length - 1);
+    const rows = groups.map((idxs) => {
+      const sumAr = idxs.reduce((s, k) => s + ars[k], 0);
+      const w = contentW - gap * (idxs.length - 1);
+      const hh = w / sumAr;
+      naturalTotal += hh;
+      return { idxs, naturalH: hh };
+    });
+    const diff = Math.abs(naturalTotal - availH);
+    if (!best || diff < best.diff) best = { rows, diff };
+  }
+  return best.rows.map((r) => ({ naturalH: r.naturalH, ars: r.idxs.map((k) => ars[k]) }));
+}
+
+function estimateHeaderMm(title, note, firstPage, contentWmm) {
+  if (!firstPage) return 18;
+  let hh = 12;
+  if (title) {
+    const perLine = Math.max(14, Math.floor(contentWmm / 4.6));
+    hh += Math.max(1, Math.ceil((title || '').length / perLine)) * 9.5;
+  }
+  if (note) {
+    const perLine = Math.max(24, Math.floor(contentWmm / 2.0));
+    hh += 6 + Math.ceil((note || '').length / perLine) * 6;
+  }
+  return hh + 12;
+}
+
+export function splitPhotos(photos, manual) {
+  const counts = computeSplit((photos || []).length, manual);
+  const out = [];
+  let idx = 0;
+  for (const c of counts) {
+    out.push((photos || []).slice(idx, idx + c));
+    idx += c;
+  }
+  return out.length ? out : [[]];
+}
+
+// Renvoie les rectangles des photos d'UNE page, en FRACTIONS de la page (0..1),
+// afin que l'éditeur affiche les photos là où le PDF les imprimera.
+export function pageLayout(photos, format, title, note, firstPage) {
+  const dims = FORMAT_DIMS[format] || FORMAT_DIMS.carre;
+  const pageW = mm(dims.trimW + BLEED_MM * 2);
+  const pageH = mm(dims.trimH + BLEED_MM * 2);
+  const pad = mm(PAD_MM);
+  const gap = mm(GAP_MM);
+  const contentW = pageW - pad * 2;
+  const headerMm = estimateHeaderMm(title, note, firstPage, contentW / MM);
+  const availH = Math.max(mm(45), pageH - pad * 2 - mm(headerMm) - mm(4));
+  const rows = buildFillLayout(photos, contentW, availH, gap);
+  const vgaps = gap * Math.max(0, rows.length - 1);
+  const sumNatural = rows.reduce((s, r) => s + r.naturalH, 0);
+  let f = sumNatural > 0 ? (availH - vgaps) / sumNatural : 1;
+  if (!Number.isFinite(f) || f <= 0) f = 1;
+  f = Math.min(f, 1.18);
+  const cells = [];
+  let y = pad + mm(headerMm) + gap;
+  for (const row of rows) {
+    const h = row.naturalH * f;
+    let x = pad;
+    for (const ar of row.ars) {
+      const w = ar * row.naturalH;
+      cells.push({ xf: x / pageW, yf: y / pageH, wf: w / pageW, hf: h / pageH });
+      x += w + gap;
+    }
+    y += h + gap;
+  }
+  return { ratio: pageW / pageH, cells };
+}
+
 // Palette de couleurs de fond proposée : neutres/beiges en tête, puis un large
 // éventail de teintes (chaudes, froides, pastel, foncées).
 export const BG_COLORS = [
