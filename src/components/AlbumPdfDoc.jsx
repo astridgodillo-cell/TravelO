@@ -295,6 +295,20 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
           </Page>
         );
       })}
+
+      {/* PAGE DE FIN — quatrième de couverture */}
+      <Page size={[pageW, pageH]} style={st.endPage}>
+        <View style={st.endInner}>
+          <Text style={st.endKicker}>Fin du voyage</Text>
+          <Text style={st.endTitle}>{album?.title || 'Mon voyage'}</Text>
+          {dateRange ? <Text style={st.endDates}>{dateRange}</Text> : null}
+          <View style={st.endRule} />
+          <Text style={st.endQuote}>
+            « Les voyages finissent, les souvenirs restent. »
+          </Text>
+          <Text style={st.endBrand}>Album réalisé avec TravelO</Text>
+        </View>
+      </Page>
     </Document>
   );
 }
@@ -355,5 +369,15 @@ function makeStyles(pageW, pageH) {
     mosaicImg: { width: '100%', height: '100%', objectFit: 'cover' },
     capWrap: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.42)', paddingVertical: 2, paddingHorizontal: 4 },
     capTxt: { fontFamily: 'AlbumBody', fontWeight: 400, fontStyle: 'italic', fontSize: 7.5, color: '#FFFFFF' },
+
+    // Page de fin (quatrième de couverture) : fond sombre, texte centré.
+    endPage: { width: pageW, height: pageH, backgroundColor: PALETTE.ink, justifyContent: 'center', alignItems: 'center', paddingHorizontal: pad },
+    endInner: { alignItems: 'center' },
+    endKicker: { fontFamily: 'AlbumBody', fontWeight: 700, fontSize: 9, letterSpacing: 3, textTransform: 'uppercase', color: PALETTE.accent, marginBottom: 14 },
+    endTitle: { fontFamily: 'AlbumDisplay', fontWeight: 600, fontSize: 28, color: '#FFFFFF', textAlign: 'center', lineHeight: 1.1 },
+    endDates: { fontFamily: 'AlbumBody', fontWeight: 400, fontSize: 11, letterSpacing: 1, color: '#FFFFFF', opacity: 0.85, marginTop: 8 },
+    endRule: { width: mm(20), height: 2, backgroundColor: PALETTE.accent, marginVertical: 20 },
+    endQuote: { fontFamily: 'AlbumDisplay', fontWeight: 300, fontStyle: 'italic', fontSize: 14, color: '#FFFFFF', opacity: 0.92, textAlign: 'center', maxWidth: mm(120) },
+    endBrand: { fontFamily: 'AlbumBody', fontWeight: 400, fontSize: 8.5, letterSpacing: 2, textTransform: 'uppercase', color: '#FFFFFF', opacity: 0.6, marginTop: 28 },
   });
 }
