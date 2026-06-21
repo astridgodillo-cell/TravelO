@@ -9,6 +9,7 @@ import {
 } from '../lib/supabase';
 import { renderRouteMapImage } from '../lib/staticMapImage';
 import AlbumPdfDoc from '../components/AlbumPdfDoc';
+import PdfPagesPreview from '../components/PdfPagesPreview';
 import { DayCard, CoverPicker, ThemePicker } from './AlbumPage';
 import { FORMAT_LABELS, normalizeBg, bakePhotoEffects, getTheme } from '../lib/albumModel';
 
@@ -44,6 +45,7 @@ export default function StandaloneAlbumPage() {
   const [format, setFormat] = useState('carre');
   const [generating, setGenerating] = useState(false);
   const [pdfUrl, setPdfUrl] = useState(null);
+  const [pdfBlob, setPdfBlob] = useState(null);
 
   const [pickerFor, setPickerFor] = useState(null);
   const [repairing, setRepairing] = useState(false);
@@ -189,7 +191,7 @@ export default function StandaloneAlbumPage() {
       setDirty(false);
       setSavedOnce(true);
       setRepairMsg('✓ Photos vérifiées et remises à l’endroit.');
-      if (pdfUrl) { URL.revokeObjectURL(pdfUrl); setPdfUrl(null); }
+      if (pdfUrl) { URL.revokeObjectURL(pdfUrl); setPdfUrl(null); setPdfBlob(null); }
     } catch (e) {
       setRepairMsg(null);
       setError(e.message || 'La réparation a échoué.');
@@ -251,6 +253,7 @@ export default function StandaloneAlbumPage() {
       ).toBlob();
       if (pdfUrl) URL.revokeObjectURL(pdfUrl);
       setPdfUrl(URL.createObjectURL(blob));
+      setPdfBlob(blob);
     } catch (e) {
       setError(e.message || 'Erreur pendant la création du fichier.');
     } finally {
@@ -393,7 +396,7 @@ export default function StandaloneAlbumPage() {
         <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
           {Object.entries(FORMAT_LABELS).map(([key, label]) => (
             <button key={key} type="button"
-              onClick={() => { setFormat(key); if (pdfUrl) { URL.revokeObjectURL(pdfUrl); setPdfUrl(null); } }}
+              onClick={() => { setFormat(key); if (pdfUrl) { URL.revokeObjectURL(pdfUrl); setPdfUrl(null); setPdfBlob(null); } }}
               className={`rounded-xl border px-4 py-3 text-left text-sm font-medium transition ${format === key ? 'border-coral-400 bg-coral-50 text-coral-700 ring-2 ring-coral-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'}`}>
               {label}
             </button>
@@ -409,7 +412,14 @@ export default function StandaloneAlbumPage() {
           )}
           {photoCount === 0 && <span className="text-xs text-slate-500">Ajoute au moins une photo.</span>}
         </div>
-        {pdfUrl && <iframe title="Aperçu de l'album" src={pdfUrl} className="mt-4 h-[70vh] w-full rounded-xl border border-slate-200" />}
+        {pdfBlob && (
+          <div className="mt-4">
+            <p className="mb-2 text-xs text-slate-500">Aperçu (fais défiler) — c'est exactement ce qui sera imprimé.</p>
+            <div className="max-h-[75vh] overflow-y-auto overscroll-contain rounded-xl border border-slate-200 bg-slate-50 p-2 sm:p-3">
+              <PdfPagesPreview blob={pdfBlob} />
+            </div>
+          </div>
+        )}
       </section>
 
       {pickerFor && (() => {
@@ -509,7 +519,7 @@ function MapSection({ map, onChange }) {
       {enabled && (
         <div className="mt-3">
           <p className="text-sm text-slate-600">
-            Liste les villes/étapes, dans l'ordre. Glisse la poignée ⠿ pour les réordonner. La carte se dessine toute seule.
+            Liste les villes/étapes, dans l'ordre. Utilise les flèches ▲▼ (ou glisse la poignée ⠿ sur ordinateur) pour les réordonner. La carte se dessine toute seule.
           </p>
           <div className="mt-2 space-y-2">
             {stops.map((s, i) => (
@@ -529,11 +539,17 @@ function MapSection({ map, onChange }) {
                   overIndex === i && dragIndex !== null ? 'ring-2 ring-coral-300' : ''
                 } ${dragIndex === i ? 'opacity-50' : ''}`}
               >
+                <div className="flex shrink-0 flex-col">
+                  <button type="button" onClick={() => moveStop(i, i - 1)} disabled={i === 0}
+                    className="flex h-5 w-6 items-center justify-center text-slate-500 hover:text-slate-800 disabled:opacity-25" title="Monter">▲</button>
+                  <button type="button" onClick={() => moveStop(i, i + 1)} disabled={i === stops.length - 1}
+                    className="flex h-5 w-6 items-center justify-center text-slate-500 hover:text-slate-800 disabled:opacity-25" title="Descendre">▼</button>
+                </div>
                 <span
                   draggable
                   onDragStart={() => setDragIndex(i)}
                   onDragEnd={() => { setDragIndex(null); setOverIndex(null); }}
-                  className="cursor-grab select-none px-1 text-slate-400 hover:text-slate-600 active:cursor-grabbing"
+                  className="hidden cursor-grab select-none px-1 text-slate-400 hover:text-slate-600 active:cursor-grabbing sm:block"
                   title="Glisser pour déplacer"
                 >
                   ⠿

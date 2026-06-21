@@ -10,6 +10,7 @@ import {
 } from '../lib/supabase';
 import { renderRouteMapImage } from '../lib/staticMapImage';
 import AlbumPdfDoc from '../components/AlbumPdfDoc';
+import PdfPagesPreview from '../components/PdfPagesPreview';
 import {
   FORMAT_LABELS,
   PHOTOS_PER_PAGE,
@@ -292,10 +293,15 @@ export function DecoEditor({ title, aspect, background, initialItems, onChange, 
   }
   const activeCat = STICKER_CATEGORIES.find((c) => c.key === cat) || STICKER_CATEGORIES[0];
 
+  // Glisser au doigt OU à la souris : on utilise les évènements « pointer »
+  // (souris + tactile) et on capture le pointeur sur le canevas pour suivre le
+  // déplacement même si le doigt sort de l'élément.
   function pointerDown(e, i) {
     e.stopPropagation();
+    e.preventDefault();
     setSel(i);
     drag.current = { i, rect: canvasRef.current.getBoundingClientRect() };
+    try { canvasRef.current.setPointerCapture(e.pointerId); } catch { /* ignore */ }
   }
   function pointerMove(e) {
     if (!drag.current) return;
@@ -309,27 +315,30 @@ export function DecoEditor({ title, aspect, background, initialItems, onChange, 
   const selItem = sel != null ? items[sel] : null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-3" onMouseUp={endDrag} onMouseMove={pointerMove}>
-      <div className="my-6 w-full max-w-xl rounded-2xl bg-white p-4 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-contain bg-black/60 p-3">
+      <div className="my-6 w-full max-w-xl rounded-2xl bg-white p-3 shadow-2xl sm:p-4">
         <div className="mb-2 flex items-center justify-between">
           <h3 className="font-semibold text-slate-800">{title}</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-700">✕</button>
+          <button onClick={onClose} className="-m-1 p-1 text-2xl leading-none text-slate-400 hover:text-slate-700">✕</button>
         </div>
 
         {toolbar}
 
         <div
           ref={canvasRef}
-          className="relative mx-auto w-full max-w-md select-none overflow-hidden rounded-lg border border-slate-200 bg-slate-200"
+          className="relative mx-auto w-full max-w-md select-none touch-none overflow-hidden rounded-lg border border-slate-200 bg-slate-200"
           style={{ aspectRatio: String(aspect), containerType: 'size' }}
-          onMouseDown={() => setSel(null)}
+          onPointerDown={() => setSel(null)}
+          onPointerMove={pointerMove}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
         >
           <div className="pointer-events-none absolute inset-0">{background}</div>
           {items.map((it, i) => (
             <div
               key={i}
-              onMouseDown={(e) => pointerDown(e, i)}
-              className={`absolute cursor-move ${sel === i ? 'outline outline-2 outline-coral-400' : ''}`}
+              onPointerDown={(e) => pointerDown(e, i)}
+              className={`absolute cursor-move touch-none ${sel === i ? 'outline outline-2 outline-coral-400' : ''}`}
               style={{ left: `${it.xf * 100}%`, top: `${it.yf * 100}%`, transform: `translate(-50%,-50%) rotate(${it.rot}deg)` }}
             >
               <DecoItemView it={it} />
@@ -383,9 +392,9 @@ export function DecoEditor({ title, aspect, background, initialItems, onChange, 
               </button>
             ))}
           </div>
-          <div className="grid max-h-40 grid-cols-10 gap-1 overflow-y-auto rounded-lg border border-slate-200 p-2 text-xl">
+          <div className="grid max-h-44 grid-cols-8 gap-1 overflow-y-auto rounded-lg border border-slate-200 p-2 text-2xl sm:grid-cols-10 sm:text-xl">
             {activeCat.emojis.map((e, idx) => (
-              <button key={e + idx} onClick={() => addEmoji(e)} className="rounded hover:bg-slate-100">{e}</button>
+              <button key={e + idx} onClick={() => addEmoji(e)} className="rounded py-1 hover:bg-slate-100 active:bg-slate-200">{e}</button>
             ))}
           </div>
         </div>
@@ -1026,6 +1035,7 @@ export default function AlbumPage() {
   const [format, setFormat] = useState('carre');
   const [generating, setGenerating] = useState(false);
   const [pdfUrl, setPdfUrl] = useState(null);
+  const [pdfBlob, setPdfBlob] = useState(null);
 
   // Sélecteur de photo : 'cover' (couverture), 'end' (page de fin) ou null.
   const [pickerFor, setPickerFor] = useState(null);
@@ -1223,6 +1233,7 @@ export default function AlbumPage() {
       if (pdfUrl) {
         URL.revokeObjectURL(pdfUrl);
         setPdfUrl(null);
+        setPdfBlob(null);
       }
     } catch (e) {
       setRepairMsg(null);
@@ -1291,6 +1302,7 @@ export default function AlbumPage() {
       ).toBlob();
       if (pdfUrl) URL.revokeObjectURL(pdfUrl);
       setPdfUrl(URL.createObjectURL(blob));
+      setPdfBlob(blob);
     } catch (e) {
       setError(
         (e.message || 'Erreur pendant la création du fichier.') +
@@ -1601,12 +1613,13 @@ export default function AlbumPage() {
           )}
         </div>
 
-        {pdfUrl && (
-          <iframe
-            title="Aperçu de l'album"
-            src={pdfUrl}
-            className="mt-4 h-[70vh] w-full rounded-xl border border-slate-200"
-          />
+        {pdfBlob && (
+          <div className="mt-4">
+            <p className="mb-2 text-xs text-slate-500">Aperçu (fais défiler) — c'est exactement ce qui sera imprimé.</p>
+            <div className="max-h-[75vh] overflow-y-auto overscroll-contain rounded-xl border border-slate-200 bg-slate-50 p-2 sm:p-3">
+              <PdfPagesPreview blob={pdfBlob} />
+            </div>
+          </div>
         )}
       </section>
 
