@@ -66,6 +66,41 @@ const PALETTE = {
 
 const imgFull = (p) => p?.full || p?.display || '';
 
+const PAD_MM = 12; // marge depuis le bord de page (3 mm de fond perdu + 9 mm)
+const GAP_MM = 2; // espace entre les photos de la mosaïque
+
+// Mise en page « mosaïque justifiée » : on remplit des rangées de la largeur du
+// contenu, chaque photo conservant ses proportions réelles (paysage = large,
+// portrait = haute). Résultat : tout s'emboîte comme un puzzle, sans aucune
+// déformation. On borne la hauteur des rangées pour ne pas avoir de pavé géant.
+function justifyRows(photos, contentW, targetH, maxH, gap) {
+  const items = photos.map((p) => ({
+    photo: p,
+    ar: p.w && p.h ? p.w / p.h : 4 / 3,
+  }));
+  const rows = [];
+  let row = [];
+  let arSum = 0;
+  const flush = (last) => {
+    if (!row.length) return;
+    const avail = contentW - gap * (row.length - 1);
+    let h = avail / arSum;
+    if (last && h > targetH) h = targetH; // dernière rangée : on ne l'étire pas
+    if (h > maxH) h = maxH; // sécurité
+    rows.push({ h, items: row.map((it) => ({ ...it, w: it.ar * h })) });
+    row = [];
+    arSum = 0;
+  };
+  for (const it of items) {
+    row.push(it);
+    arSum += it.ar;
+    const avail = contentW - gap * (row.length - 1);
+    if (avail / arSum <= targetH) flush(false);
+  }
+  flush(true);
+  return rows;
+}
+
 function CoverFade({ color = '#1C2B2D' }) {
   return (
     <Svg style={{ position: 'absolute', bottom: 0, left: 0, width: '100%', height: '60%' }}>
@@ -86,6 +121,7 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre' }) {
   // Page = format final + 3 mm de fond perdu sur chaque bord.
   const pageW = mm(fmt.trimW + BLEED_MM * 2);
   const pageH = mm(fmt.trimH + BLEED_MM * 2);
+  const contentW = pageW - mm(PAD_MM) * 2;
   const st = makeStyles(pageW, pageH);
 
   const entries = days.map((d, i) => ({
@@ -122,7 +158,7 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre' }) {
       {/* UNE PAGE PAR JOURNÉE */}
       {entries.map((e) => {
         const photos = (e.photos || []).filter((p) => imgFull(p));
-        const single = photos.length === 1;
+        const rows = justifyRows(photos, contentW, mm(48), mm(82), mm(GAP_MM));
         return (
           <Page key={e.i} size={[pageW, pageH]} style={st.page} wrap>
             <View style={st.header}>
@@ -133,21 +169,32 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre' }) {
               {e.note ? <Text style={st.note}>{e.note}</Text> : null}
             </View>
 
-            {photos.length > 0 && (
-              <View style={st.grid}>
-                {photos.map((p, k) => (
+            {rows.length > 0 && (
+              <View style={st.mosaic}>
+                {rows.map((row, ri) => (
                   <View
-                    key={k}
-                    style={single ? st.cellFull : st.cellHalf}
+                    key={ri}
+                    style={[st.row, { marginBottom: mm(GAP_MM) }]}
                     wrap={false}
                   >
-                    <Image
-                      src={imgFull(p)}
-                      style={single ? st.photoFull : st.photoHalf}
-                    />
-                    {p.caption ? (
-                      <Text style={st.caption}>{p.caption}</Text>
-                    ) : null}
+                    {row.items.map((it, ci) => (
+                      <View
+                        key={ci}
+                        style={{
+                          width: it.w,
+                          height: row.h,
+                          marginRight: ci < row.items.length - 1 ? mm(GAP_MM) : 0,
+                          position: 'relative',
+                        }}
+                      >
+                        <Image src={imgFull(it.photo)} style={st.mosaicImg} />
+                        {it.photo.caption ? (
+                          <View style={st.capWrap}>
+                            <Text style={st.capTxt}>{it.photo.caption}</Text>
+                          </View>
+                        ) : null}
+                      </View>
+                    ))}
                   </View>
                 ))}
               </View>
@@ -193,12 +240,11 @@ function makeStyles(pageW, pageH) {
     dayTitle: { fontFamily: 'AlbumDisplay', fontWeight: 600, fontSize: 22, color: PALETTE.ink, lineHeight: 1.1 },
     note: { fontFamily: 'AlbumBody', fontWeight: 300, fontSize: 10.5, lineHeight: 1.55, color: PALETTE.text, marginTop: 7 },
 
-    grid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: mm(2) },
-    cellFull: { width: '100%', marginBottom: mm(4) },
-    cellHalf: { width: '50%', padding: mm(1.5) },
-    photoFull: { width: '100%', height: mm(120), objectFit: 'cover' },
-    photoHalf: { width: '100%', height: mm(62), objectFit: 'cover' },
-    caption: { fontFamily: 'AlbumBody', fontWeight: 400, fontStyle: 'italic', fontSize: 8.5, color: PALETTE.soft, marginTop: 4 },
+    mosaic: { marginTop: mm(2) },
+    row: { flexDirection: 'row', alignItems: 'flex-start' },
+    mosaicImg: { width: '100%', height: '100%', objectFit: 'cover' },
+    capWrap: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.42)', paddingVertical: 2, paddingHorizontal: 4 },
+    capTxt: { fontFamily: 'AlbumBody', fontWeight: 400, fontStyle: 'italic', fontSize: 7.5, color: '#FFFFFF' },
 
     pageNum: { position: 'absolute', bottom: mm(5), left: 0, right: 0, textAlign: 'center', fontFamily: 'AlbumBody', fontSize: 7.5, color: PALETTE.soft },
   });

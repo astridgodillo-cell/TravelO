@@ -332,11 +332,14 @@ export async function externalizeImageUrl(url) {
 // On réutilise le bucket existant « brochure-photos » (déjà public), donc
 // aucune nouvelle configuration côté Supabase n'est nécessaire.
 
-// Réduit une image à une largeur/hauteur max et renvoie un Blob JPEG + ses
-// dimensions. Sert à fabriquer la version « légère » affichée à l'écran,
-// pour ne pas charger des photos de téléphone de 5–10 Mo dans le navigateur.
-async function downscaleImage(file, maxDim = 1600, quality = 0.82) {
-  const bitmap = await createImageBitmap(file);
+// Redessine une image (réduite à maxDim si besoin) sur un canvas en
+// APPLIQUANT son orientation EXIF, puis renvoie un Blob JPEG + ses dimensions
+// réelles (après rotation). Indispensable pour les photos de téléphone prises
+// en mode portrait : sinon elles s'affichent couchées et déformées.
+async function renderOriented(file, maxDim, quality) {
+  // imageOrientation: 'from-image' → la rotation enregistrée par l'appareil
+  // est appliquée, et bitmap.width/height reflètent l'image telle qu'on la voit.
+  const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
   const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
   const w = Math.max(1, Math.round(bitmap.width * scale));
   const h = Math.max(1, Math.round(bitmap.height * scale));
@@ -367,37 +370,45 @@ async function uploadToBrochureBucket(fileOrBlob, suffix = '') {
   return data.publicUrl;
 }
 
-// Envoie une photo d'album en DEUX résolutions :
-//   - full    : l'image d'origine (haute définition, conservée pour
-//               l'impression à 300 DPI sans perte de qualité visible) ;
-//   - display : une version allégée (max 1600 px) pour l'affichage web.
-// Renvoie aussi les dimensions d'origine en pixels (w/h), utiles pour
-// vérifier qu'une photo est assez grande pour l'impression.
+// Envoie une photo d'album en DEUX résolutions, orientation EXIF appliquée :
+//   - full    : haute définition (jusqu'à 3500 px), conservée pour
+//               l'impression à 300 DPI ;
+//   - display : version allégée (max 1600 px) pour l'affichage web.
+// On réencode les deux à partir d'un canvas pour « graver » la rotation : ainsi
+// les photos portrait ne sont plus couchées dans le PDF (qui n'applique pas
+// l'orientation EXIF). Renvoie aussi w/h (dimensions réelles, après rotation),
+// utilisés pour vérifier la résolution et caler la mise en page mosaïque.
 export async function uploadAlbumPhoto(file) {
-  let origW = null;
-  let origH = null;
+  // Version haute définition (orientation gravée). Repli sur le fichier brut
+  // si le canvas échoue (navigateur ancien, format exotique…).
+  let fullBlob = file;
+  let w = null;
+  let h = null;
   try {
-    const bmp = await createImageBitmap(file);
-    origW = bmp.width;
-    origH = bmp.height;
-    bmp.close?.();
+    const big = await renderOriented(file, 3500, 0.92);
+    if (big.blob) {
+      fullBlob = big.blob;
+      w = big.w;
+      h = big.h;
+    }
   } catch {
-    /* dimensions inconnues, on continue */
+    /* repli : fichier d'origine, dimensions inconnues */
   }
 
-  let displayBlob = file;
+  // Version d'affichage (orientation gravée également).
+  let displayBlob = fullBlob;
   try {
-    const ds = await downscaleImage(file, 1600, 0.82);
+    const ds = await renderOriented(file, 1600, 0.82);
     if (ds.blob) displayBlob = ds.blob;
   } catch {
-    /* repli : on affichera l'image pleine résolution */
+    /* repli : on affichera la version pleine résolution */
   }
 
   const [full, display] = await Promise.all([
-    uploadToBrochureBucket(file, '-full'),
+    uploadToBrochureBucket(fullBlob, '-full'),
     uploadToBrochureBucket(displayBlob, '-disp'),
   ]);
-  return { full, display, w: origW, h: origH };
+  return { full, display, w, h };
 }
 
 // ----- PARTAGE DE LISTES (entre utilisateurs, en temps réel) -----
