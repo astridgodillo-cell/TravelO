@@ -16,7 +16,7 @@
  */
 import {
   Document, Page, View, Text, Image, StyleSheet, Font,
-  Svg, Rect, Defs, LinearGradient, Stop,
+  Svg, Rect, Circle, Defs, LinearGradient, Stop,
 } from '@react-pdf/renderer';
 import { getPhotoEffect } from '../lib/albumModel';
 
@@ -265,29 +265,106 @@ function PageBackground({ spec, pageW, pageH, st }) {
   return null;
 }
 
-// Cadre décoratif d'une photo dans le PDF (selon l'effet choisi).
-function pdfFrame(frame) {
-  if (frame === 'postcard') return { backgroundColor: '#FFFFFF', padding: 4, borderWidth: 0.7, borderColor: '#E2DDD0' };
-  if (frame === 'polaroid') return { backgroundColor: '#FFFFFF', paddingTop: 4, paddingHorizontal: 4, paddingBottom: 16 };
-  if (frame === 'stamp') return { backgroundColor: '#FFFFFF', padding: 5, borderWidth: 1.4, borderColor: '#B9B2A3', borderStyle: 'dashed' };
-  if (frame === 'parchment') return { backgroundColor: '#EFE2C4', padding: 5, borderWidth: 0.8, borderColor: '#CDBD97' };
-  return null;
+const COVER_IMG = { width: '100%', height: '100%', objectFit: 'cover' };
+
+// Cadres « simples » (fond + marge + éventuelle bordure) → style du conteneur.
+function simpleFrameStyle(frame, w, h) {
+  const pad = Math.max(4, Math.min(w, h) * 0.05);
+  switch (frame) {
+    case 'border': return { backgroundColor: '#FFFFFF', padding: pad };
+    case 'postcard': return { backgroundColor: '#FFFFFF', padding: pad, borderWidth: 0.7, borderColor: '#E2DDD0' };
+    case 'polaroid': return { backgroundColor: '#FFFFFF', paddingTop: pad, paddingHorizontal: pad, paddingBottom: pad * 3 };
+    case 'wood': return { backgroundColor: '#7C4A21', padding: Math.max(6, Math.min(w, h) * 0.06) };
+    case 'gold': return { backgroundColor: '#C9A227', padding: pad };
+    case 'parchment': return { backgroundColor: '#EFE2C4', padding: pad, borderWidth: 0.8, borderColor: '#CDBD97' };
+    default: return null;
+  }
 }
 
-// Une photo de la mosaïque : applique le cadre décoratif et utilise la version
-// filtrée (_fx) si un filtre couleur a été « cuit » dans l'image.
-function PdfPhoto({ photo, st }) {
+// Timbre : bordure blanche + trous de perforation (gris) le long des 4 bords.
+function StampFrame({ src, w, h }) {
+  const b = Math.max(6, Math.min(w, h) * 0.07); // épaisseur du bord blanc
+  const r = b * 0.32;
+  const stepX = Math.max(8, w / Math.round(w / (r * 3)));
+  const stepY = Math.max(8, h / Math.round(h / (r * 3)));
+  const holes = [];
+  for (let x = stepX / 2; x < w; x += stepX) {
+    holes.push(['t' + x, x, b / 2], ['b' + x, x, h - b / 2]);
+  }
+  for (let y = stepY / 2; y < h; y += stepY) {
+    holes.push(['l' + y, b / 2, y, true], ['r' + y, w - b / 2, y, true]);
+  }
+  return (
+    <View style={{ width: '100%', height: '100%', backgroundColor: '#FFFFFF', position: 'relative' }}>
+      <View style={{ position: 'absolute', top: b, left: b, right: b, bottom: b }}>
+        <Image src={src} style={COVER_IMG} />
+      </View>
+      <Svg style={{ position: 'absolute', top: 0, left: 0 }} width={w} height={h}>
+        {holes.map(([k, cx, cy]) => (
+          <Circle key={k} cx={cx} cy={cy} r={r} fill="#D9D4C8" />
+        ))}
+      </Svg>
+    </View>
+  );
+}
+
+// Pellicule : bandes noires haut/bas avec perforations blanches (style 35 mm).
+function FilmFrame({ src, w, h }) {
+  const strip = Math.max(10, h * 0.12);
+  const hole = strip * 0.42;
+  const stepX = Math.max(10, w / Math.round(w / (hole * 1.9)));
+  const holes = [];
+  for (let x = stepX / 2 - hole / 2; x < w - hole; x += stepX) {
+    holes.push(['t' + x, x], ['b' + x, x]);
+  }
+  return (
+    <View style={{ width: '100%', height: '100%', backgroundColor: '#141414', position: 'relative' }}>
+      <View style={{ position: 'absolute', top: strip, left: 4, right: 4, bottom: strip }}>
+        <Image src={src} style={COVER_IMG} />
+      </View>
+      <Svg style={{ position: 'absolute', top: 0, left: 0 }} width={w} height={h}>
+        {holes.map(([k, x], i) => (
+          <Rect
+            key={k}
+            x={x}
+            y={i % 2 === 0 ? (strip - hole) / 2 : h - strip + (strip - hole) / 2}
+            width={hole}
+            height={hole}
+            rx={hole * 0.18}
+            fill="#FFFFFF"
+          />
+        ))}
+      </Svg>
+    </View>
+  );
+}
+
+// Une photo de la mosaïque : applique l'effet choisi (cadre + filtre couleur
+// déjà « cuit » dans _fx) en utilisant les dimensions réelles de la case.
+function PdfPhoto({ photo, st, w, h }) {
   const effect = getPhotoEffect(photo.effect);
   const src = photo._fx || imgFull(photo);
-  const frame = pdfFrame(effect.frame);
-  if (frame) {
+  const frame = effect.frame;
+  if (!frame) return <Image src={src} style={st.mosaicImg} />;
+  if (frame === 'stamp') return <StampFrame src={src} w={w} h={h} />;
+  if (frame === 'film') return <FilmFrame src={src} w={w} h={h} />;
+  if (frame === 'rounded') {
+    const rad = Math.min(w, h) * 0.06;
     return (
-      <View style={{ width: '100%', height: '100%', ...frame }}>
-        <Image src={src} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      <View style={{ width: '100%', height: '100%', borderRadius: rad, overflow: 'hidden' }}>
+        <Image src={src} style={COVER_IMG} />
       </View>
     );
   }
-  return <Image src={src} style={st.mosaicImg} />;
+  if (frame === 'thin') {
+    return <Image src={src} style={{ ...COVER_IMG, borderWidth: 1.2, borderColor: '#111111' }} />;
+  }
+  const fs = simpleFrameStyle(frame, w, h);
+  return (
+    <View style={{ width: '100%', height: '100%', ...fs }}>
+      <Image src={src} style={COVER_IMG} />
+    </View>
+  );
 }
 
 // Mosaïque d'une page : TOUTES les tailles sont calculées en points (jamais en
@@ -313,24 +390,27 @@ function Mosaic({ photos, contentW, availH, gap, st }) {
             key={ri}
             style={{ height: h, flexDirection: 'row', marginBottom: ri < rows.length - 1 ? gap : 0 }}
           >
-            {row.items.map((it, ci) => (
+            {row.items.map((it, ci) => {
+              const cw = it.ar * row.naturalH;
+              return (
               <View
                 key={ci}
                 style={{
-                  width: it.ar * row.naturalH, // largeur (points) : remplit la ligne
+                  width: cw, // largeur (points) : remplit la ligne
                   height: h,
                   marginRight: ci < row.items.length - 1 ? gap : 0,
                   position: 'relative',
                 }}
               >
-                <PdfPhoto photo={it.photo} st={st} />
+                <PdfPhoto photo={it.photo} st={st} w={cw} h={h} />
                 {it.photo.caption ? (
                   <View style={st.capWrap}>
                     <Text style={st.capTxt}>{it.photo.caption}</Text>
                   </View>
                 ) : null}
               </View>
-            ))}
+              );
+            })}
           </View>
         );
       })}

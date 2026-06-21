@@ -139,16 +139,78 @@ function isLowRes(photo) {
   return longEdge > 0 && longEdge < MIN_PRINT_PX;
 }
 
-function effectPreview(effect) {
-  // Aperçu (HTML) du filtre + cadre dans l'éditeur.
-  const style = {};
+function effectPreview(effect, radiusPx = 10) {
+  // Aperçu (HTML) du filtre + cadre dans l'éditeur et le sélecteur.
+  const imgStyle = {};
   const wrap = {};
-  if (effect.css) style.filter = effect.css;
-  if (effect.frame === 'postcard') Object.assign(wrap, { padding: '6%', background: '#fff', border: '1px solid #e2ddd0' });
-  if (effect.frame === 'polaroid') Object.assign(wrap, { padding: '5% 5% 16% 5%', background: '#fff', boxShadow: 'inset 0 0 0 1px #eee' });
-  if (effect.frame === 'stamp') Object.assign(wrap, { padding: '6%', background: '#fff', border: '2px dashed #b9b2a3' });
-  if (effect.frame === 'parchment') Object.assign(wrap, { padding: '6%', background: '#efe2c4', border: '1px solid #cdbd97' });
-  return { imgStyle: style, wrapStyle: wrap };
+  if (effect.css) imgStyle.filter = effect.css;
+  switch (effect.frame) {
+    case 'border': Object.assign(wrap, { padding: '5%', background: '#fff' }); break;
+    case 'postcard': Object.assign(wrap, { padding: '5%', background: '#fff', border: '1px solid #e2ddd0' }); break;
+    case 'polaroid': Object.assign(wrap, { padding: '5% 5% 16% 5%', background: '#fff' }); break;
+    case 'rounded': imgStyle.borderRadius = radiusPx; break;
+    case 'thin': imgStyle.border = '2px solid #111'; break;
+    case 'wood': Object.assign(wrap, { padding: '6%', background: 'linear-gradient(135deg,#a06a33,#6e4423)' }); break;
+    case 'gold': Object.assign(wrap, { padding: '5%', background: 'linear-gradient(135deg,#e7c66a,#b8901f)' }); break;
+    case 'stamp': Object.assign(wrap, { padding: '7%', background: '#fff', border: '2px dashed #b9b2a3' }); break;
+    case 'film': Object.assign(wrap, { padding: '12% 5%', background: '#141414' }); break;
+    case 'parchment': Object.assign(wrap, { padding: '6%', background: '#efe2c4', border: '1px solid #cdbd97' }); break;
+    default: break;
+  }
+  return { imgStyle, wrapStyle: wrap };
+}
+
+// Fenêtre de choix d'effet : montre LA photo avec chaque effet appliqué.
+export function EffectPicker({ photo, current, onPick, onClose }) {
+  const src = photo.display || photo.full;
+  const groups = [
+    ['Filtres de couleur', PHOTO_EFFECTS.filter((e) => e.cat === 'filtre')],
+    ['Cadres', PHOTO_EFFECTS.filter((e) => e.cat === 'cadre')],
+  ];
+  const Tile = ({ e }) => {
+    const { imgStyle, wrapStyle } = effectPreview(e, 8);
+    return (
+      <button
+        type="button"
+        onClick={() => { onPick(e.id); onClose(); }}
+        className={`overflow-hidden rounded-xl border-2 ${current === e.id ? 'border-coral-500' : 'border-transparent'}`}
+      >
+        <div className="flex aspect-[4/3] w-full items-center justify-center overflow-hidden bg-slate-100" style={wrapStyle}>
+          <img src={src} alt="" className="h-full w-full object-cover" style={imgStyle} />
+        </div>
+        <div className="truncate px-1 py-1 text-center text-[11px] font-medium text-slate-700">{e.label}</div>
+      </button>
+    );
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4">
+      <div className="my-8 w-full max-w-2xl rounded-2xl bg-white p-5 shadow-2xl">
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="font-semibold text-slate-800">Effet de la photo</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-700">✕</button>
+        </div>
+        <div className="max-h-[70vh] space-y-4 overflow-y-auto pr-1">
+          <div>
+            <button
+              type="button"
+              onClick={() => { onPick('none'); onClose(); }}
+              className={`mb-1 w-full rounded-lg border px-3 py-2 text-sm font-medium ${current === 'none' ? 'border-coral-400 bg-coral-50 text-coral-700' : 'border-slate-200 text-slate-700 hover:bg-slate-50'}`}
+            >
+              Aucun effet (photo d'origine)
+            </button>
+          </div>
+          {groups.map(([label, list]) => (
+            <div key={label}>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                {list.map((e) => <Tile key={e.id} e={e} />)}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function PhotoTile({ photo, onCaption, onRemove, onMoveLeft, onMoveRight, canLeft, canRight, onEffect }) {
@@ -159,12 +221,7 @@ function PhotoTile({ photo, onCaption, onRemove, onMoveLeft, onMoveRight, canLef
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
       <div className="relative aspect-[4/3] bg-slate-100">
         <div className="flex h-full w-full items-center justify-center overflow-hidden" style={wrapStyle}>
-          <img
-            src={photo.display || photo.full}
-            alt=""
-            className="h-full w-full object-cover"
-            style={imgStyle}
-          />
+          <img src={photo.display || photo.full} alt="" className="h-full w-full object-cover" style={imgStyle} />
         </div>
         <button
           type="button"
@@ -175,60 +232,22 @@ function PhotoTile({ photo, onCaption, onRemove, onMoveLeft, onMoveRight, canLef
           ✕
         </button>
         <div className="absolute left-1.5 top-1.5 flex gap-1">
-          <button
-            type="button"
-            onClick={onMoveLeft}
-            disabled={!canLeft}
-            className="flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-white hover:bg-black/75 disabled:opacity-30"
-            title="Déplacer avant"
-          >
-            ‹
-          </button>
-          <button
-            type="button"
-            onClick={onMoveRight}
-            disabled={!canRight}
-            className="flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-white hover:bg-black/75 disabled:opacity-30"
-            title="Déplacer après"
-          >
-            ›
-          </button>
+          <button type="button" onClick={onMoveLeft} disabled={!canLeft}
+            className="flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-white hover:bg-black/75 disabled:opacity-30" title="Déplacer avant">‹</button>
+          <button type="button" onClick={onMoveRight} disabled={!canRight}
+            className="flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-white hover:bg-black/75 disabled:opacity-30" title="Déplacer après">›</button>
         </div>
-        {/* Choix de l'effet */}
         <button
           type="button"
-          onClick={() => setFxOpen((o) => !o)}
+          onClick={() => setFxOpen(true)}
           className="absolute bottom-1.5 right-1.5 flex items-center gap-1 rounded-full bg-black/55 px-2 py-1 text-[10px] font-semibold text-white hover:bg-black/75"
           title="Effet / filtre"
         >
           🎨 {effect.id === 'none' ? 'Effet' : effect.label}
         </button>
-        {fxOpen && (
-          <>
-            <div className="fixed inset-0 z-30" onClick={() => setFxOpen(false)} />
-            <div className="absolute bottom-9 right-1.5 z-40 grid w-44 grid-cols-2 gap-1 rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
-              {PHOTO_EFFECTS.map((e) => (
-                <button
-                  key={e.id}
-                  type="button"
-                  onClick={() => { onEffect(e.id); setFxOpen(false); }}
-                  className={`rounded-md px-2 py-1 text-[11px] font-medium ${
-                    effect.id === e.id ? 'bg-coral-500 text-white' : 'bg-slate-50 text-slate-700 hover:bg-slate-100'
-                  }`}
-                >
-                  {e.label}
-                </button>
-              ))}
-            </div>
-          </>
-        )}
         {isLowRes(photo) && (
-          <span
-            className="absolute bottom-1.5 left-1.5 rounded-md bg-amber-500/90 px-2 py-0.5 text-[10px] font-semibold text-white"
-            title="Cette photo est un peu petite : elle peut sembler floue si elle est imprimée en grand."
-          >
-            ⚠︎ petite
-          </span>
+          <span className="absolute bottom-1.5 left-1.5 rounded-md bg-amber-500/90 px-2 py-0.5 text-[10px] font-semibold text-white"
+            title="Photo un peu petite : risque de flou à l'impression en grand.">⚠︎ petite</span>
         )}
       </div>
       <input
@@ -237,6 +256,9 @@ function PhotoTile({ photo, onCaption, onRemove, onMoveLeft, onMoveRight, canLef
         placeholder="Légende sous la photo"
         className="w-full border-t border-slate-100 px-2.5 py-2 text-xs text-slate-700 outline-none"
       />
+      {fxOpen && (
+        <EffectPicker photo={photo} current={effect.id} onPick={onEffect} onClose={() => setFxOpen(false)} />
+      )}
     </div>
   );
 }

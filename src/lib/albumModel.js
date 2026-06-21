@@ -61,19 +61,35 @@ export function normalizeBg(bg) {
 }
 
 // Effets/filtres applicables à une photo.
+//  - cat   : 'filtre' (couleur) ou 'cadre' (décoratif) — pour le rangement ;
 //  - css   : filtre couleur (syntaxe CSS, réutilisée pour le canvas) ;
-//  - frame : cadre décoratif dessiné dans le PDF ('postcard'|'polaroid'|'stamp'|'parchment').
+//  - frame : cadre dessiné dans le PDF.
 export const PHOTO_EFFECTS = [
-  { id: 'none', label: 'Aucun', css: '', frame: null },
-  { id: 'sepia', label: 'Sépia', css: 'sepia(0.75)', frame: null },
-  { id: 'noir', label: 'Noir & blanc', css: 'grayscale(1)', frame: null },
-  { id: 'vintage', label: 'Vintage', css: 'sepia(0.4) contrast(1.12) saturate(1.25)', frame: null },
-  { id: 'froid', label: 'Froid', css: 'saturate(1.1) hue-rotate(-12deg) brightness(1.03)', frame: null },
-  { id: 'chaud', label: 'Chaud', css: 'sepia(0.25) saturate(1.3) brightness(1.03)', frame: null },
-  { id: 'postcard', label: 'Carte postale', css: '', frame: 'postcard' },
-  { id: 'polaroid', label: 'Polaroïd', css: '', frame: 'polaroid' },
-  { id: 'stamp', label: 'Timbre', css: '', frame: 'stamp' },
-  { id: 'parchemin', label: 'Parchemin', css: 'sepia(0.6) contrast(0.95) brightness(1.05)', frame: 'parchment' },
+  { id: 'none', label: 'Aucun', cat: '', css: '', frame: null },
+  // Filtres couleur
+  { id: 'noir', label: 'Noir & blanc', cat: 'filtre', css: 'grayscale(1)', frame: null },
+  { id: 'sepia', label: 'Sépia', cat: 'filtre', css: 'sepia(0.75)', frame: null },
+  { id: 'vintage', label: 'Vintage', cat: 'filtre', css: 'sepia(0.4) contrast(1.12) saturate(1.25)', frame: null },
+  { id: 'argentique', label: 'Argentique', cat: 'filtre', css: 'grayscale(0.25) sepia(0.25) contrast(1.15)', frame: null },
+  { id: 'eclatant', label: 'Éclatant', cat: 'filtre', css: 'saturate(1.6) contrast(1.05)', frame: null },
+  { id: 'pastel', label: 'Pastel', cat: 'filtre', css: 'saturate(0.7) brightness(1.08)', frame: null },
+  { id: 'delave', label: 'Délavé', cat: 'filtre', css: 'contrast(0.85) brightness(1.12) saturate(0.85)', frame: null },
+  { id: 'dramatique', label: 'Dramatique', cat: 'filtre', css: 'contrast(1.35) saturate(1.1) brightness(0.95)', frame: null },
+  { id: 'lumineux', label: 'Lumineux', cat: 'filtre', css: 'brightness(1.12) contrast(1.05)', frame: null },
+  { id: 'chaud', label: 'Chaud', cat: 'filtre', css: 'sepia(0.25) saturate(1.3) brightness(1.03)', frame: null },
+  { id: 'froid', label: 'Froid', cat: 'filtre', css: 'saturate(1.1) hue-rotate(-15deg) brightness(1.03)', frame: null },
+  { id: 'dore', label: 'Doré', cat: 'filtre', css: 'sepia(0.5) saturate(1.4) brightness(1.05)', frame: null },
+  // Cadres décoratifs
+  { id: 'bordure', label: 'Bordure blanche', cat: 'cadre', css: '', frame: 'border' },
+  { id: 'postcard', label: 'Carte postale', cat: 'cadre', css: '', frame: 'postcard' },
+  { id: 'polaroid', label: 'Polaroïd', cat: 'cadre', css: '', frame: 'polaroid' },
+  { id: 'arrondi', label: 'Coins arrondis', cat: 'cadre', css: '', frame: 'rounded' },
+  { id: 'noircadre', label: 'Cadre fin noir', cat: 'cadre', css: '', frame: 'thin' },
+  { id: 'bois', label: 'Cadre bois', cat: 'cadre', css: '', frame: 'wood' },
+  { id: 'or', label: 'Cadre doré', cat: 'cadre', css: '', frame: 'gold' },
+  { id: 'stamp', label: 'Timbre', cat: 'cadre', css: '', frame: 'stamp' },
+  { id: 'film', label: 'Pellicule', cat: 'cadre', css: '', frame: 'film' },
+  { id: 'parchemin', label: 'Parchemin', cat: 'cadre', css: 'sepia(0.6) contrast(0.95) brightness(1.05)', frame: 'parchment' },
 ];
 
 export function getPhotoEffect(id) {
