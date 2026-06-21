@@ -488,11 +488,16 @@ export async function repairAlbumPhoto(photo) {
 export async function listAlbums() {
   const user = await getCurrentUser();
   if (!user) return { data: [], error: null };
-  return supabase
+  // RLS renvoie à la fois mes albums et ceux qu'on a partagés avec moi
+  // (et que j'ai acceptés). On marque les albums partagés pour l'affichage.
+  const res = await supabase
     .from('albums')
-    .select('id, title, content, created_at, updated_at')
-    .eq('user_id', user.id)
+    .select('id, user_id, title, content, created_at, updated_at')
     .order('updated_at', { ascending: false });
+  if (res.data) {
+    res.data = res.data.map((a) => ({ ...a, _shared: a.user_id !== user.id }));
+  }
+  return res;
 }
 
 export async function getAlbum(id) {
@@ -520,6 +525,56 @@ export async function updateAlbum(id, patch) {
 
 export async function deleteAlbum(id) {
   return supabase.from('albums').delete().eq('id', id);
+}
+
+// ----- PARTAGE D'ALBUMS (autonomes), calqué sur le partage de listes -----
+
+export async function shareAlbumByEmail(albumId, email) {
+  return supabase.rpc('share_album_by_email', {
+    p_album_id: albumId,
+    p_email: email,
+  });
+}
+
+export async function getIncomingPendingAlbumShares() {
+  const user = await getCurrentUser();
+  if (!user) return { data: [], error: null };
+  return supabase
+    .from('album_shares')
+    .select('*')
+    .eq('recipient_id', user.id)
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false });
+}
+
+export async function respondToAlbumShare(shareId, accept) {
+  return supabase
+    .from('album_shares')
+    .update({
+      status: accept ? 'accepted' : 'refused',
+      responded_at: new Date().toISOString(),
+    })
+    .eq('id', shareId)
+    .select()
+    .single();
+}
+
+export async function listSharesForAlbum(albumId) {
+  return supabase
+    .from('album_shares')
+    .select('*')
+    .eq('album_id', albumId)
+    .order('created_at', { ascending: false });
+}
+
+export async function getMyOutgoingAlbumShares() {
+  const user = await getCurrentUser();
+  if (!user) return { data: [], error: null };
+  return supabase.from('album_shares').select('*').eq('owner_id', user.id);
+}
+
+export async function deleteAlbumShare(shareId) {
+  return supabase.from('album_shares').delete().eq('id', shareId);
 }
 
 // ----- PARTAGE DE LISTES (entre utilisateurs, en temps réel) -----

@@ -6,6 +6,8 @@ import {
   respondToShare,
   getIncomingPendingItineraryShares,
   respondToItineraryShare,
+  getIncomingPendingAlbumShares,
+  respondToAlbumShare,
 } from '../lib/supabase';
 
 // Affiché globalement (au-dessus de toute l'appli) pour l'utilisateur connecté.
@@ -21,32 +23,28 @@ export default function ShareNotifications() {
   const [response, setResponse] = useState(null); // réponse reçue (initiateur)
   const [busy, setBusy] = useState(false);
 
-  const wordFor = (kind) => (kind === 'itinerary' ? 'le voyage' : 'la liste');
+  const wordFor = (kind) =>
+    kind === 'itinerary' ? 'le voyage' : kind === 'album' ? "l'album" : 'la liste';
 
   // Charge les invitations en attente (listes + itinéraires) à l'ouverture.
   useEffect(() => {
-    if (!user?.id) {
-      setIncoming([]);
-      return;
-    }
     let active = true;
-    Promise.all([
-      getIncomingPendingShares(),
-      getIncomingPendingItineraryShares(),
-    ]).then(([lists, itins]) => {
+    (async () => {
+      if (!user?.id) {
+        if (active) setIncoming([]);
+        return;
+      }
+      const [lists, itins, albums] = await Promise.all([
+        getIncomingPendingShares(),
+        getIncomingPendingItineraryShares(),
+        getIncomingPendingAlbumShares(),
+      ]);
       if (!active) return;
-      const a = (lists.data || []).map((r) => ({
-        ...r,
-        kind: 'list',
-        name: r.list_name,
-      }));
-      const b = (itins.data || []).map((r) => ({
-        ...r,
-        kind: 'itinerary',
-        name: r.title,
-      }));
-      setIncoming([...a, ...b]);
-    });
+      const a = (lists.data || []).map((r) => ({ ...r, kind: 'list', name: r.list_name }));
+      const b = (itins.data || []).map((r) => ({ ...r, kind: 'itinerary', name: r.title }));
+      const c = (albums.data || []).map((r) => ({ ...r, kind: 'album', name: r.album_title }));
+      setIncoming([...a, ...b, ...c]);
+    })();
     return () => {
       active = false;
     };
@@ -101,11 +99,36 @@ export default function ShareNotifications() {
         },
         (payload) => showResponse(payload.new, 'itinerary')
       )
+      // Invitations d'ALBUMS reçues
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'album_shares',
+          filter: `recipient_id=eq.${user.id}`,
+        },
+        (payload) => addIncoming(payload.new, 'album')
+      )
+      // Réponses à mes propositions d'ALBUMS
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'album_shares',
+          filter: `owner_id=eq.${user.id}`,
+        },
+        (payload) => showResponse(payload.new, 'album')
+      )
       .subscribe();
+
+    const nameOf = (row, kind) =>
+      kind === 'itinerary' ? row.title : kind === 'album' ? row.album_title : row.list_name;
 
     function addIncoming(row, kind) {
       if (row?.status !== 'pending') return;
-      const name = kind === 'itinerary' ? row.title : row.list_name;
+      const name = nameOf(row, kind);
       setIncoming((prev) =>
         prev.some((s) => s.id === row.id)
           ? prev
@@ -114,8 +137,7 @@ export default function ShareNotifications() {
     }
     function showResponse(row, kind) {
       if (row?.status === 'accepted' || row?.status === 'refused') {
-        const name = kind === 'itinerary' ? row.title : row.list_name;
-        setResponse({ ...row, kind, name });
+        setResponse({ ...row, kind, name: nameOf(row, kind) });
       }
     }
 
@@ -129,7 +151,9 @@ export default function ShareNotifications() {
     const { error } =
       share.kind === 'itinerary'
         ? await respondToItineraryShare(share.id, accept)
-        : await respondToShare(share.id, accept);
+        : share.kind === 'album'
+          ? await respondToAlbumShare(share.id, accept)
+          : await respondToShare(share.id, accept);
     setBusy(false);
     if (error) {
       alert(error.message);
@@ -137,13 +161,13 @@ export default function ShareNotifications() {
     }
     setIncoming((prev) => prev.filter((s) => s.id !== share.id));
     // Prévient les pages concernées de se rafraîchir.
-    window.dispatchEvent(
-      new CustomEvent(
-        share.kind === 'itinerary'
-          ? 'travelo:itineraries-refresh'
-          : 'travelo:lists-refresh'
-      )
-    );
+    const evt =
+      share.kind === 'itinerary'
+        ? 'travelo:itineraries-refresh'
+        : share.kind === 'album'
+          ? 'travelo:albums-refresh'
+          : 'travelo:lists-refresh';
+    window.dispatchEvent(new CustomEvent(evt));
   }
 
   if (!user) return null;
@@ -158,7 +182,9 @@ export default function ShareNotifications() {
           <h2 className="text-lg font-semibold text-slate-900">
             {current.kind === 'itinerary'
               ? '🧳 Partage de voyage'
-              : '📋 Partage de liste'}
+              : current.kind === 'album'
+                ? '📷 Partage d’album'
+                : '📋 Partage de liste'}
           </h2>
           <p className="mt-2 text-slate-600">
             <span className="font-medium text-slate-900">
