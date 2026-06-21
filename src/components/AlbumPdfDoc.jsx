@@ -52,6 +52,7 @@ const BLEED_MM = 3; // fond perdu sur chaque bord
 const FORMATS = {
   carre: { trimW: 210, trimH: 210, label: 'Livre carré 21 × 21 cm' },
   a4paysage: { trimW: 297, trimH: 210, label: 'A4 paysage 29,7 × 21 cm' },
+  a4portrait: { trimW: 210, trimH: 297, label: 'A4 portrait 21 × 29,7 cm' },
 };
 
 const PALETTE = {

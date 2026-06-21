@@ -7,6 +7,7 @@ import AlbumPdfDoc from '../components/AlbumPdfDoc';
 const FORMAT_LABELS = {
   carre: 'Livre carré 21 × 21 cm',
   a4paysage: 'A4 paysage 29,7 × 21 cm',
+  a4portrait: 'A4 portrait 21 × 29,7 cm',
 };
 
 // Album de voyage — mode « pendant le voyage » (carnet de bord).
@@ -146,6 +147,28 @@ function DayCard({ day, index, entry, onChange, onAddPhotos, busy }) {
 // Fenêtre de choix de la photo de couverture : montre toutes les photos déjà
 // présentes dans l'album, regroupées par journée. Un clic choisit la couverture.
 function CoverPicker({ days, album, current, onPick, onClose }) {
+  const fileRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState(null);
+
+  async function handleFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const photo = await uploadAlbumPhoto(file);
+      onPick({ ...photo, caption: '' });
+    } catch {
+      setUploadError(
+        "L'envoi de la photo a échoué. Réessaie dans un instant."
+      );
+    } finally {
+      setUploading(false);
+    }
+  }
+
   const groups = days
     .map((d, i) => ({
       i,
@@ -167,12 +190,42 @@ function CoverPicker({ days, album, current, onPick, onClose }) {
           </button>
         </div>
 
+        <div className="mb-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3">
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+            className="w-full rounded-lg bg-coral-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-coral-600 disabled:opacity-50"
+          >
+            {uploading ? 'Envoi de la photo…' : '📤 Importer une autre photo en couverture'}
+          </button>
+          <p className="mt-2 text-center text-xs text-slate-500">
+            Choisis une photo depuis ton appareil : elle sera utilisée en couverture,
+            sans être ajoutée à une journée.
+          </p>
+          {uploadError && (
+            <p className="mt-2 text-center text-xs text-red-600">{uploadError}</p>
+          )}
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleFile}
+          />
+        </div>
+
         {groups.length === 0 ? (
           <p className="py-6 text-center text-sm text-slate-500">
-            Ajoute d'abord des photos à tes journées, puis reviens choisir ta couverture.
+            Tu peux importer une photo ci-dessus, ou ajouter des photos à tes
+            journées puis revenir en choisir une ici.
           </p>
         ) : (
-          <div className="max-h-[60vh] space-y-5 overflow-y-auto pr-1">
+          <>
+            <p className="mb-2 text-xs font-medium text-slate-500">
+              …ou choisis une photo déjà présente dans ton album :
+            </p>
+            <div className="max-h-[50vh] space-y-5 overflow-y-auto pr-1">
             {groups.map((g) => (
               <div key={g.i}>
                 <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-coral-600">
@@ -202,7 +255,8 @@ function CoverPicker({ days, album, current, onPick, onClose }) {
                 </div>
               </div>
             ))}
-          </div>
+            </div>
+          </>
         )}
       </div>
     </div>
@@ -497,7 +551,7 @@ export default function AlbumPage() {
 
         <div className="mt-4">
           <p className="mb-2 text-sm font-medium text-slate-700">Choisis le format :</p>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             {Object.entries(FORMAT_LABELS).map(([key, label]) => (
               <button
                 key={key}
@@ -519,7 +573,9 @@ export default function AlbumPage() {
                 <span className="mt-0.5 block text-xs font-normal text-slate-500">
                   {key === 'carre'
                     ? 'Le format classique des livres photo, carré.'
-                    : 'Format paysage allongé, comme une feuille A4 couchée.'}
+                    : key === 'a4paysage'
+                      ? 'Format allongé, comme une feuille A4 couchée.'
+                      : 'Format vertical, comme une feuille A4 debout.'}
                 </span>
               </button>
             ))}
