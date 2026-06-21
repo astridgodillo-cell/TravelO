@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { pdf } from '@react-pdf/renderer';
 import { getItinerary, updateItinerary, uploadAlbumPhoto } from '../lib/supabase';
+import AlbumPdfDoc from '../components/AlbumPdfDoc';
+
+const FORMAT_LABELS = {
+  carre: 'Livre carré 21 × 21 cm',
+  a4paysage: 'A4 paysage 29,7 × 21 cm',
+};
 
 // Album de voyage — mode « pendant le voyage » (carnet de bord).
 // Route : /itineraire/:id/album
@@ -148,6 +155,11 @@ export default function AlbumPage() {
   const [saving, setSaving] = useState(false);
   const [savedOnce, setSavedOnce] = useState(false);
 
+  // Export imprimable
+  const [format, setFormat] = useState('carre');
+  const [generating, setGenerating] = useState(false);
+  const [pdfUrl, setPdfUrl] = useState(null);
+
   useEffect(() => {
     let active = true;
     getItinerary(id).then(({ data, error: e }) => {
@@ -243,6 +255,34 @@ export default function AlbumPage() {
     }
   }
 
+  const photoCount = album
+    ? Object.values(album.days).reduce((n, e) => n + (e.photos?.length || 0), 0)
+    : 0;
+
+  async function generatePdf() {
+    if (!album) return;
+    setGenerating(true);
+    setError(null);
+    try {
+      const blob = await pdf(
+        <AlbumPdfDoc album={album} days={days} format={format} />
+      ).toBlob();
+      if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+      setPdfUrl(URL.createObjectURL(blob));
+    } catch (e) {
+      setError(
+        (e.message || 'Erreur pendant la création du fichier.') +
+          ' — Réessaie, et vérifie que tes photos se sont bien chargées.'
+      );
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  const fileName = `album-${(album?.title || 'voyage')
+    .replace(/[^a-z0-9]+/gi, '-')
+    .toLowerCase()}-${format}.pdf`;
+
   if (loading) {
     return (
       <div className="mx-auto max-w-3xl p-8 text-center text-slate-500">
@@ -326,6 +366,85 @@ export default function AlbumPage() {
           Ce voyage n'a pas encore de journées à illustrer.
         </p>
       )}
+
+      {/* EXPORT IMPRIMABLE */}
+      <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+        <h2 className="text-lg font-semibold text-slate-900">
+          Préparer l'album pour l'impression
+        </h2>
+        <p className="mt-1 text-sm text-slate-600">
+          On fabrique un fichier PDF prêt à envoyer à un imprimeur. Les photos
+          sont utilisées en pleine qualité, et un petit débord est ajouté autour
+          des pages pour la découpe.
+        </p>
+
+        <div className="mt-4">
+          <p className="mb-2 text-sm font-medium text-slate-700">Choisis le format :</p>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {Object.entries(FORMAT_LABELS).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => {
+                  setFormat(key);
+                  if (pdfUrl) {
+                    URL.revokeObjectURL(pdfUrl);
+                    setPdfUrl(null);
+                  }
+                }}
+                className={`rounded-xl border px-4 py-3 text-left text-sm font-medium transition ${
+                  format === key
+                    ? 'border-coral-400 bg-coral-50 text-coral-700 ring-2 ring-coral-200'
+                    : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                }`}
+              >
+                <span className="block">{label}</span>
+                <span className="mt-0.5 block text-xs font-normal text-slate-500">
+                  {key === 'carre'
+                    ? 'Le format classique des livres photo, carré.'
+                    : 'Format paysage allongé, comme une feuille A4 couchée.'}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <button
+            onClick={generatePdf}
+            disabled={generating || photoCount === 0}
+            className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {generating
+              ? 'Création du fichier…'
+              : pdfUrl
+                ? '🔄 Refaire le fichier'
+                : '📄 Créer le fichier à imprimer'}
+          </button>
+          {pdfUrl && (
+            <a
+              href={pdfUrl}
+              download={fileName}
+              className="rounded-lg border border-brand-600 px-4 py-2 text-sm font-semibold text-brand-700 shadow-sm"
+            >
+              ⬇️ Télécharger
+            </a>
+          )}
+          {photoCount === 0 && (
+            <span className="text-xs text-slate-500">
+              Ajoute au moins une photo pour créer le fichier.
+            </span>
+          )}
+        </div>
+
+        {pdfUrl && (
+          <iframe
+            title="Aperçu de l'album"
+            src={pdfUrl}
+            className="mt-4 h-[70vh] w-full rounded-xl border border-slate-200"
+          />
+        )}
+      </section>
     </div>
   );
 }
