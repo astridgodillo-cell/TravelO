@@ -19,7 +19,36 @@ import {
   PHOTO_EFFECTS,
   getPhotoEffect,
   bakePhotoEffects,
+  ALBUM_THEMES,
+  getTheme,
 } from '../lib/albumModel';
+
+// Sélecteur de thème (ambiance appliquée à tout l'album).
+export function ThemePicker({ value, onChange }) {
+  return (
+    <div className="mt-4">
+      <p className="mb-2 text-sm font-medium text-slate-700">Thème de l'album</p>
+      <div className="flex flex-wrap gap-2">
+        {ALBUM_THEMES.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => onChange(t.id)}
+            className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium ${
+              value === t.id ? 'border-coral-400 ring-2 ring-coral-200' : 'border-slate-200 hover:border-slate-300'
+            }`}
+            title={t.label}
+          >
+            <span className="flex h-5 w-8 items-center justify-end overflow-hidden rounded border border-slate-200" style={{ backgroundColor: t.paper }}>
+              <span className="mr-0.5 h-2.5 w-2.5 rounded-full" style={{ backgroundColor: t.accent }} />
+            </span>
+            {t.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 // Réglage d'un fond (aucun / couleur / photo + atténuée ou pleines couleurs).
 export function BgSpecEditor({ spec, onChange, onPickPhoto }) {
@@ -694,6 +723,7 @@ export default function AlbumPage() {
         cover: saved?.cover ?? null,
         endNote: saved?.endNote ?? '',
         endPhoto: saved?.endPhoto ?? null,
+        theme: saved?.theme ?? 'classique',
         days: dayEntries,
       });
       setSavedOnce(!!saved);
@@ -749,6 +779,7 @@ export default function AlbumPage() {
           cover: album.cover || null,
           endNote: album.endNote || '',
           endPhoto: album.endPhoto || null,
+          theme: album.theme || 'classique',
           days: album.days,
           updatedAt: new Date().toISOString(),
         },
@@ -828,6 +859,7 @@ export default function AlbumPage() {
           cover: nextAlbum.cover || null,
           endNote: nextAlbum.endNote || '',
           endPhoto: nextAlbum.endPhoto || null,
+          theme: nextAlbum.theme || 'classique',
           days: nextAlbum.days,
           updatedAt: new Date().toISOString(),
         },
@@ -905,6 +937,7 @@ export default function AlbumPage() {
           stops={stops}
           endNote={album.endNote}
           endPhoto={album.endPhoto}
+          theme={getTheme(album.theme)}
         />
       ).toBlob();
       if (pdfUrl) URL.revokeObjectURL(pdfUrl);
@@ -973,6 +1006,11 @@ export default function AlbumPage() {
         }}
         placeholder="Titre de l'album"
         className="w-full border-0 border-b-2 border-slate-200 pb-2 text-2xl font-bold tracking-tight text-slate-900 outline-none focus:border-coral-400 sm:text-3xl"
+      />
+
+      <ThemePicker
+        value={album.theme || 'classique'}
+        onChange={(t) => { setAlbum((prev) => ({ ...prev, theme: t })); setDirty(true); }}
       />
 
       {/* Photo de couverture */}

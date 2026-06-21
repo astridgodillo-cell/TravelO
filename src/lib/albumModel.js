@@ -96,6 +96,24 @@ export function getPhotoEffect(id) {
   return PHOTO_EFFECTS.find((e) => e.id === id) || PHOTO_EFFECTS[0];
 }
 
+// Thèmes d'album : ambiance appliquée à tout l'album (fond + couleur d'accent +
+// motif décoratif léger sur les pages qui n'ont pas leur propre fond).
+//   pattern : 'none' | 'dots' | 'grid' | 'diagonal' | 'confetti'
+export const ALBUM_THEMES = [
+  { id: 'classique', label: 'Classique', paper: '#FBF8F3', ink: '#1C2B2D', accent: '#C8643C', pattern: 'none' },
+  { id: 'kraft', label: 'Kraft', paper: '#DAC6A6', ink: '#43331F', accent: '#9C6B3F', pattern: 'none' },
+  { id: 'pois', label: 'Pois', paper: '#FCF7F0', ink: '#26303A', accent: '#2A9D8F', pattern: 'dots', patternColor: '#E7DDCB' },
+  { id: 'quadrille', label: 'Quadrillé', paper: '#FBFBF8', ink: '#2B2B2B', accent: '#3D6B9E', pattern: 'grid', patternColor: '#E6E6DF' },
+  { id: 'marine', label: 'Marine', paper: '#EEF3F8', ink: '#16263B', accent: '#27496B', pattern: 'diagonal', patternColor: '#DAE5F0' },
+  { id: 'tropical', label: 'Tropical', paper: '#F1FAF3', ink: '#14342B', accent: '#E0683C', pattern: 'dots', patternColor: '#D5EAD7' },
+  { id: 'rose', label: 'Poudré', paper: '#FDF3F1', ink: '#3A2630', accent: '#D86C8E', pattern: 'dots', patternColor: '#F3DDDD' },
+  { id: 'confetti', label: 'Confetti', paper: '#FFFDF6', ink: '#2A2A33', accent: '#EC4899', pattern: 'confetti', patternColor: '#F3C969' },
+];
+
+export function getTheme(id) {
+  return ALBUM_THEMES.find((t) => t.id === id) || ALBUM_THEMES[0];
+}
+
 // Pour le PDF : renvoie une copie des photos où celles ayant un filtre couleur
 // reçoivent une version filtrée (_fx, data URL). Les cadres décoratifs, eux,
 // sont dessinés directement dans le PDF (pas besoin de retoucher l'image).

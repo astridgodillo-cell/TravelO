@@ -9,8 +9,8 @@ import {
 } from '../lib/supabase';
 import { renderRouteMapImage } from '../lib/staticMapImage';
 import AlbumPdfDoc from '../components/AlbumPdfDoc';
-import { DayCard, CoverPicker } from './AlbumPage';
-import { FORMAT_LABELS, normalizeBg, bakePhotoEffects } from '../lib/albumModel';
+import { DayCard, CoverPicker, ThemePicker } from './AlbumPage';
+import { FORMAT_LABELS, normalizeBg, bakePhotoEffects, getTheme } from '../lib/albumModel';
 
 const emptyDay = () => ({ title: '', note: '', photos: [], bg: null, split: null });
 
@@ -66,6 +66,7 @@ export default function StandaloneAlbumPage() {
         cover: c.cover ?? null,
         endNote: c.endNote ?? '',
         endPhoto: c.endPhoto ?? null,
+        theme: c.theme ?? 'classique',
         days: Array.isArray(c.days) && c.days.length ? c.days : [emptyDay()],
         map: c.map ?? { enabled: false, stops: [] },
       });
@@ -132,6 +133,7 @@ export default function StandaloneAlbumPage() {
       cover: a.cover || null,
       endNote: a.endNote || '',
       endPhoto: a.endPhoto || null,
+      theme: a.theme || 'classique',
       days: a.days,
       map: a.map || { enabled: false, stops: [] },
     };
@@ -244,6 +246,7 @@ export default function StandaloneAlbumPage() {
           stops={stops}
           endNote={album.endNote}
           endPhoto={album.endPhoto}
+          theme={getTheme(album.theme)}
         />
       ).toBlob();
       if (pdfUrl) URL.revokeObjectURL(pdfUrl);
@@ -302,6 +305,8 @@ export default function StandaloneAlbumPage() {
             className="rounded-md border border-slate-300 px-2 py-1 text-sm" />
         </label>
       </div>
+
+      <ThemePicker value={album.theme || 'classique'} onChange={(t) => patch({ theme: t })} />
 
       {/* Couverture */}
       <CoverThumb

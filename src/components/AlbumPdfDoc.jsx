@@ -339,6 +339,46 @@ function FilmFrame({ src, w, h }) {
   );
 }
 
+// Motif décoratif léger d'un thème, dessiné en fond de page (derrière le
+// contenu). Posé seulement quand la page n'a pas son propre fond.
+function PagePattern({ theme, pageW, pageH }) {
+  const kind = theme?.pattern;
+  if (!kind || kind === 'none') return null;
+  const c = theme.patternColor || '#E7DDCB';
+  const els = [];
+  if (kind === 'dots') {
+    const step = 34;
+    for (let x = step / 2; x < pageW; x += step)
+      for (let y = step / 2; y < pageH; y += step)
+        els.push(<Circle key={`${x}-${y}`} cx={x} cy={y} r={2.1} fill={c} />);
+  } else if (kind === 'grid') {
+    const step = 30;
+    for (let x = step; x < pageW; x += step) els.push(<Rect key={`v${x}`} x={x} y={0} width={0.6} height={pageH} fill={c} />);
+    for (let y = step; y < pageH; y += step) els.push(<Rect key={`h${y}`} x={0} y={y} width={pageW} height={0.6} fill={c} />);
+  } else if (kind === 'diagonal') {
+    const step = 26;
+    for (let d = -pageH; d < pageW; d += step)
+      els.push(<Rect key={`d${d}`} x={d} y={0} width={0.8} height={pageH * 1.5} fill={c} transform={`rotate(20 ${d} 0)`} />);
+  } else if (kind === 'confetti') {
+    const accent = theme.accent || '#EC4899';
+    const cols = [c, accent, '#7FB3D5'];
+    const step = 46;
+    let i = 0;
+    for (let x = step / 2; x < pageW; x += step)
+      for (let y = step / 2; y < pageH; y += step) {
+        i += 1;
+        const col = cols[i % cols.length];
+        if (i % 3 === 0) els.push(<Circle key={`c${x}-${y}`} cx={x} cy={y} r={2.4} fill={col} />);
+        else els.push(<Rect key={`r${x}-${y}`} x={x} y={y} width={4} height={4} rx={1} fill={col} transform={`rotate(35 ${x} ${y})`} />);
+      }
+  }
+  return (
+    <Svg style={{ position: 'absolute', top: 0, left: 0 }} width={pageW} height={pageH}>
+      {els}
+    </Svg>
+  );
+}
+
 // Une photo de la mosaïque : applique l'effet choisi (cadre + filtre couleur
 // déjà « cuit » dans _fx) en utilisant les dimensions réelles de la case.
 function PdfPhoto({ photo, st, w, h }) {
@@ -433,13 +473,18 @@ function CoverFade({ color = '#1C2B2D' }) {
   );
 }
 
-export default function AlbumPdfDoc({ album, days = [], format = 'carre', summary = null, routeMap = null, stops = [], endNote = '', endPhoto = null }) {
+export default function AlbumPdfDoc({ album, days = [], format = 'carre', summary = null, routeMap = null, stops = [], endNote = '', endPhoto = null, theme = null }) {
   const fmt = FORMATS[format] || FORMATS.carre;
   // Page = format final + 3 mm de fond perdu sur chaque bord.
   const pageW = mm(fmt.trimW + BLEED_MM * 2);
   const pageH = mm(fmt.trimH + BLEED_MM * 2);
   const contentW = pageW - mm(PAD_MM) * 2;
-  const st = makeStyles(pageW, pageH);
+  // Palette effective : thème éventuel par-dessus la palette par défaut.
+  const P = {
+    ...PALETTE,
+    ...(theme ? { paper: theme.paper, ink: theme.ink, accent: theme.accent } : {}),
+  };
+  const st = makeStyles(pageW, pageH, P);
 
   const dateRange = fmtDateRange(summary);
 
@@ -473,7 +518,7 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
             <Image src={imgFull(cover)} style={st.coverImg} />
           </View>
         )}
-        <CoverFade color={PALETTE.ink} />
+        <CoverFade color={P.ink} />
         <View style={st.coverContent}>
           <Text style={st.coverKicker}>Album de voyage</Text>
           <Text style={st.coverTitle}>{album?.title || 'Mon voyage'}</Text>
@@ -542,6 +587,7 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
           );
           return (
             <Page key={`${e.i}-${p}`} size={[pageW, pageH]} style={st.page}>
+              {spec.type === 'none' && <PagePattern theme={theme} pageW={pageW} pageH={pageH} />}
               <PageBackground spec={spec} pageW={pageW} pageH={pageH} st={st} />
               <View style={onPlate ? st.headerPlate : st.header}>
                 <Text style={st.dayKicker}>
@@ -589,7 +635,7 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
   );
 }
 
-function makeStyles(pageW, pageH) {
+function makeStyles(pageW, pageH, P = PALETTE) {
   // Marge de sécurité depuis le BORD DE PAGE : 3 mm de fond perdu + 9 mm pour
   // que le texte ne soit jamais coupé à la découpe = 12 mm.
   const pad = mm(12);
@@ -601,13 +647,13 @@ function makeStyles(pageW, pageH) {
       paddingTop: pad,
       paddingBottom: pad,
       paddingHorizontal: pad,
-      backgroundColor: PALETTE.paper,
+      backgroundColor: P.paper,
       fontFamily: 'AlbumBody',
-      color: PALETTE.text,
+      color: P.text,
       overflow: 'hidden',
     },
 
-    coverPage: { position: 'relative', width: pageW, height: pageH, backgroundColor: PALETTE.ink },
+    coverPage: { position: 'relative', width: pageW, height: pageH, backgroundColor: P.ink },
     coverImgWrap: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
     coverImg: { width: '100%', height: '100%', objectFit: 'cover' },
     // Plaque sombre semi-transparente derrière le texte : garantit que le titre
@@ -624,7 +670,7 @@ function makeStyles(pageW, pageH) {
     },
     coverKicker: { fontFamily: 'AlbumBody', fontWeight: 700, fontSize: 9, letterSpacing: 3, textTransform: 'uppercase', color: '#FFFFFF', marginBottom: 8, opacity: 0.9 },
     coverTitle: { fontFamily: 'AlbumDisplay', fontWeight: 600, fontSize: 38, lineHeight: 1.05, color: '#FFFFFF' },
-    coverRule: { width: mm(16), height: 2, backgroundColor: PALETTE.accent, marginTop: 12, marginBottom: 10 },
+    coverRule: { width: mm(16), height: 2, backgroundColor: P.accent, marginTop: 12, marginBottom: 10 },
     coverDates: { fontFamily: 'AlbumBody', fontWeight: 400, fontSize: 11, letterSpacing: 1, color: '#FFFFFF', opacity: 0.95 },
 
     // Fond de page (photo) + voile clair par-dessus.
@@ -634,18 +680,18 @@ function makeStyles(pageW, pageH) {
     header: { flexShrink: 0, marginBottom: mm(4) },
     // En-tête posé sur une plaque claire (quand la page a un fond coloré/photo).
     headerPlate: { flexShrink: 0, alignSelf: 'flex-start', maxWidth: '100%', backgroundColor: 'rgba(251,248,243,0.85)', borderRadius: 6, paddingVertical: 9, paddingHorizontal: 13, marginBottom: mm(4) },
-    dayKicker: { fontFamily: 'AlbumBody', fontWeight: 700, fontSize: 8.5, letterSpacing: 2, textTransform: 'uppercase', color: PALETTE.accent, marginBottom: 5 },
-    dayTitle: { fontFamily: 'AlbumDisplay', fontWeight: 600, fontSize: 22, color: PALETTE.ink, lineHeight: 1.1 },
-    note: { fontFamily: 'AlbumBody', fontWeight: 300, fontSize: 10.5, lineHeight: 1.5, color: PALETTE.text, marginTop: 6 },
+    dayKicker: { fontFamily: 'AlbumBody', fontWeight: 700, fontSize: 8.5, letterSpacing: 2, textTransform: 'uppercase', color: P.accent, marginBottom: 5 },
+    dayTitle: { fontFamily: 'AlbumDisplay', fontWeight: 600, fontSize: 22, color: P.ink, lineHeight: 1.1 },
+    note: { fontFamily: 'AlbumBody', fontWeight: 300, fontSize: 10.5, lineHeight: 1.5, color: P.text, marginTop: 6 },
 
     // Carte du voyage : la carte occupe l'espace, la liste des étapes dessous.
-    mapWrap: { flexShrink: 0, marginTop: mm(2), borderWidth: 1, borderColor: PALETTE.line, backgroundColor: '#e9e6df' },
+    mapWrap: { flexShrink: 0, marginTop: mm(2), borderWidth: 1, borderColor: P.line, backgroundColor: '#e9e6df' },
     mapImg: { width: '100%', height: '100%', objectFit: 'contain' },
     stops: { flexShrink: 0, flexDirection: 'row', flexWrap: 'wrap', marginTop: mm(4) },
     stopItem: { flexDirection: 'row', alignItems: 'center', width: '50%', marginBottom: 6, paddingRight: 8 },
-    stopNum: { width: 16, height: 16, borderRadius: 8, backgroundColor: PALETTE.accent, alignItems: 'center', justifyContent: 'center', marginRight: 8 },
+    stopNum: { width: 16, height: 16, borderRadius: 8, backgroundColor: P.accent, alignItems: 'center', justifyContent: 'center', marginRight: 8 },
     stopNumTxt: { fontFamily: 'AlbumBody', fontWeight: 700, fontSize: 7.5, color: '#FFFFFF' },
-    stopLabel: { flex: 1, fontFamily: 'AlbumBody', fontWeight: 400, fontSize: 9.5, color: PALETTE.ink },
+    stopLabel: { flex: 1, fontFamily: 'AlbumBody', fontWeight: 400, fontSize: 9.5, color: P.ink },
 
     // La mosaïque occupe la hauteur restante et est centrée (les photos
     // gardent leurs proportions, donc un léger espace peut subsister).
@@ -657,14 +703,14 @@ function makeStyles(pageW, pageH) {
     capTxt: { fontFamily: 'AlbumBody', fontWeight: 400, fontStyle: 'italic', fontSize: 10, textAlign: 'center', color: '#FFFFFF' },
 
     // Page de fin (quatrième de couverture) : fond sombre, texte centré.
-    endPage: { position: 'relative', width: pageW, height: pageH, backgroundColor: PALETTE.ink, justifyContent: 'center', alignItems: 'center', paddingHorizontal: pad },
+    endPage: { position: 'relative', width: pageW, height: pageH, backgroundColor: P.ink, justifyContent: 'center', alignItems: 'center', paddingHorizontal: pad },
     endImgWrap: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
     endScrim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15,22,22,0.58)' },
     endInner: { alignItems: 'center' },
-    endKicker: { fontFamily: 'AlbumBody', fontWeight: 700, fontSize: 9, letterSpacing: 3, textTransform: 'uppercase', color: PALETTE.accent, marginBottom: 14 },
+    endKicker: { fontFamily: 'AlbumBody', fontWeight: 700, fontSize: 9, letterSpacing: 3, textTransform: 'uppercase', color: P.accent, marginBottom: 14 },
     endTitle: { fontFamily: 'AlbumDisplay', fontWeight: 600, fontSize: 28, color: '#FFFFFF', textAlign: 'center', lineHeight: 1.1 },
     endDates: { fontFamily: 'AlbumBody', fontWeight: 400, fontSize: 11, letterSpacing: 1, color: '#FFFFFF', opacity: 0.85, marginTop: 8 },
-    endRule: { width: mm(20), height: 2, backgroundColor: PALETTE.accent, marginVertical: 20 },
+    endRule: { width: mm(20), height: 2, backgroundColor: P.accent, marginVertical: 20 },
     endQuote: { fontFamily: 'AlbumDisplay', fontWeight: 300, fontStyle: 'italic', fontSize: 14, color: '#FFFFFF', opacity: 0.92, textAlign: 'center', maxWidth: mm(120) },
     endBrand: { fontFamily: 'AlbumBody', fontWeight: 400, fontSize: 8.5, letterSpacing: 2, textTransform: 'uppercase', color: '#FFFFFF', opacity: 0.6, marginTop: 28 },
   });
