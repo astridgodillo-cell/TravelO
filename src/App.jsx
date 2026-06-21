@@ -24,6 +24,8 @@ import ProfilePage from './pages/ProfilePage';
 import OnboardingPage from './pages/OnboardingPage';
 import BrochurePdfPage from './pages/BrochurePdfPage';
 import AlbumPage from './pages/AlbumPage';
+import AlbumsListPage from './pages/AlbumsListPage';
+import StandaloneAlbumPage from './pages/StandaloneAlbumPage';
 
 export default function App() {
   const { pathname } = useLocation();
@@ -82,6 +84,22 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <MyTripsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/albums"
+            element={
+              <ProtectedRoute>
+                <AlbumsListPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/album/:id"
+            element={
+              <ProtectedRoute>
+                <StandaloneAlbumPage />
               </ProtectedRoute>
             }
           />

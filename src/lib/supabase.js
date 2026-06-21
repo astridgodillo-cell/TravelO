@@ -457,6 +457,46 @@ export async function repairAlbumPhoto(photo) {
   }
 }
 
+// ----- ALBUMS AUTONOMES (créés de zéro, sans voyage) -----
+// Table `albums` : { id, user_id, title, content (jsonb), created_at, updated_at }
+
+export async function listAlbums() {
+  const user = await getCurrentUser();
+  if (!user) return { data: [], error: null };
+  return supabase
+    .from('albums')
+    .select('id, title, content, created_at, updated_at')
+    .eq('user_id', user.id)
+    .order('updated_at', { ascending: false });
+}
+
+export async function getAlbum(id) {
+  return supabase.from('albums').select('*').eq('id', id).single();
+}
+
+export async function createAlbum(title, content) {
+  const user = await getCurrentUser();
+  if (!user) throw new Error('Utilisateur non connecté');
+  return supabase
+    .from('albums')
+    .insert({ user_id: user.id, title: title || 'Mon album', content: content || {} })
+    .select()
+    .single();
+}
+
+export async function updateAlbum(id, patch) {
+  return supabase
+    .from('albums')
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single();
+}
+
+export async function deleteAlbum(id) {
+  return supabase.from('albums').delete().eq('id', id);
+}
+
 // ----- PARTAGE DE LISTES (entre utilisateurs, en temps réel) -----
 
 // Invite un utilisateur (par email) à partager une liste. Crée une invitation

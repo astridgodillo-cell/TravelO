@@ -9,51 +9,17 @@ import {
 } from '../lib/supabase';
 import { renderRouteMapImage } from '../lib/staticMapImage';
 import AlbumPdfDoc from '../components/AlbumPdfDoc';
-
-const FORMAT_LABELS = {
-  carre: 'Livre carré 21 × 21 cm',
-  a4paysage: 'A4 paysage 29,7 × 21 cm',
-  a4portrait: 'A4 portrait 21 × 29,7 cm',
-};
-
-// Doit correspondre à PHOTOS_PER_PAGE dans AlbumPdfDoc.jsx.
-const PHOTOS_PER_PAGE = 6;
-
-function balancedSplit(total, pages) {
-  const p = Math.max(1, pages);
-  const base = Math.floor(total / p);
-  const rem = total - base * p;
-  return Array.from({ length: p }, (_, k) => base + (k < rem ? 1 : 0));
-}
-
-// Nombre de photos par page : choix manuel valide, sinon réparti équitablement.
-function computeSplit(total, manual) {
-  if (total <= PHOTOS_PER_PAGE) return [total];
-  if (
-    Array.isArray(manual) &&
-    manual.length &&
-    manual.every((n) => n > 0) &&
-    manual.reduce((a, b) => a + b, 0) === total
-  ) {
-    return manual;
-  }
-  return balancedSplit(total, Math.ceil(total / PHOTOS_PER_PAGE));
-}
-
-// Palette de couleurs de fond proposée (beiges, neutres, et quelques teintes).
-const BG_COLORS = ['#FBF8F3', '#F3ECDD', '#E7E0D4', '#D9C9A8', '#C8643C', '#0F4C45', '#27408B', '#1C2B2D'];
-
-// Renvoie un objet de fond exploitable (gère l'ancien format où bg était
-// directement une photo).
-function normalizeBg(bg) {
-  if (bg && bg.full) {
-    return { mode: 'perPage', spread: { type: 'none' }, pages: [{ type: 'photo', photo: bg, toned: true }] };
-  }
-  return bg || { mode: 'perPage', spread: { type: 'none' }, pages: [] };
-}
+import {
+  FORMAT_LABELS,
+  PHOTOS_PER_PAGE,
+  balancedSplit,
+  computeSplit,
+  BG_COLORS,
+  normalizeBg,
+} from '../lib/albumModel';
 
 // Réglage d'un fond (aucun / couleur / photo + atténuée ou pleines couleurs).
-function BgSpecEditor({ spec, onChange, onPickPhoto }) {
+export function BgSpecEditor({ spec, onChange, onPickPhoto }) {
   const type = spec?.type || 'none';
   const toned = spec?.toned !== false;
   return (
@@ -226,7 +192,7 @@ function PhotoTile({ photo, onCaption, onRemove, onMoveLeft, onMoveRight, canLef
   );
 }
 
-function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhoto, busy }) {
+export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhoto, busy }) {
   const fileRef = useRef(null);
   const [bgOpen, setBgOpen] = useState(false);
 
@@ -473,7 +439,7 @@ function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhoto, busy
 
 // Fenêtre de choix de la photo de couverture : montre toutes les photos déjà
 // présentes dans l'album, regroupées par journée. Un clic choisit la couverture.
-function CoverPicker({ days, album, current, onPick, onClose, title = 'Choisir la photo de couverture' }) {
+export function CoverPicker({ days, album, current, onPick, onClose, title = 'Choisir la photo de couverture' }) {
   const fileRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState(null);

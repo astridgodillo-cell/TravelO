@@ -66,6 +66,11 @@ export default function Navbar() {
           </NavLink>
         )}
         {user && (
+          <NavLink to="/albums" className={cls}>
+            Mes albums
+          </NavLink>
+        )}
+        {user && (
           <NavLink to="/modeles" className={cls}>
             Modèles
           </NavLink>
