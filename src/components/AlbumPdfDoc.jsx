@@ -372,10 +372,12 @@ function PagePattern({ theme, pageW, pageH }) {
         else els.push(<Rect key={`r${x}-${y}`} x={x} y={y} width={4} height={4} rx={1} fill={col} transform={`rotate(35 ${x} ${y})`} />);
       }
   }
+  // Calque de fond hors-flux (sinon le dessin pleine hauteur pousse le contenu
+  // et provoque des pages de continuation vides).
   return (
-    <Svg style={{ position: 'absolute', top: 0, left: 0 }} width={pageW} height={pageH}>
-      {els}
-    </Svg>
+    <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, overflow: 'hidden' }}>
+      <Svg width={pageW} height={pageH}>{els}</Svg>
+    </View>
   );
 }
 
