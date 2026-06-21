@@ -471,12 +471,23 @@ function CoverThumb({ label, photo, onChoose, onClear, emptyText }) {
   );
 }
 
-// Carte optionnelle : liste de villes/étapes. Les coordonnées sont trouvées
-// automatiquement au moment de fabriquer le PDF.
+// Carte optionnelle : liste de villes/étapes (réordonnables par glisser-
+// déposer). Les coordonnées sont trouvées automatiquement à la fabrication.
 function MapSection({ map, onChange }) {
   const enabled = !!map?.enabled;
   const stops = map?.stops || [];
+  const [dragIndex, setDragIndex] = useState(null);
+  const [overIndex, setOverIndex] = useState(null);
   const setStops = (s) => onChange({ ...map, stops: s, enabled });
+
+  const moveStop = (from, to) => {
+    if (from == null || to == null || from === to) return;
+    const next = [...stops];
+    const [x] = next.splice(from, 1);
+    next.splice(to, 0, x);
+    setStops(next);
+  };
+
   return (
     <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
       <label className="flex items-center gap-2 text-lg font-semibold text-slate-900">
@@ -485,11 +496,39 @@ function MapSection({ map, onChange }) {
       </label>
       {enabled && (
         <div className="mt-3">
-          <p className="text-sm text-slate-600">Liste les villes/étapes, dans l'ordre. La carte se dessine toute seule.</p>
+          <p className="text-sm text-slate-600">
+            Liste les villes/étapes, dans l'ordre. Glisse la poignée ⠿ pour les réordonner. La carte se dessine toute seule.
+          </p>
           <div className="mt-2 space-y-2">
             {stops.map((s, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-coral-500 text-xs font-bold text-white">{i + 1}</span>
+              <div
+                key={i}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  if (overIndex !== i) setOverIndex(i);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  moveStop(dragIndex, i);
+                  setDragIndex(null);
+                  setOverIndex(null);
+                }}
+                className={`flex items-center gap-2 rounded-lg ${
+                  overIndex === i && dragIndex !== null ? 'ring-2 ring-coral-300' : ''
+                } ${dragIndex === i ? 'opacity-50' : ''}`}
+              >
+                <span
+                  draggable
+                  onDragStart={() => setDragIndex(i)}
+                  onDragEnd={() => { setDragIndex(null); setOverIndex(null); }}
+                  className="cursor-grab select-none px-1 text-slate-400 hover:text-slate-600 active:cursor-grabbing"
+                  title="Glisser pour déplacer"
+                >
+                  ⠿
+                </span>
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-coral-500 text-xs font-bold text-white">
+                  {i + 1}
+                </span>
                 <input
                   value={s.name || ''}
                   onChange={(e) => {
