@@ -10,7 +10,7 @@ import {
 import { renderRouteMapImage } from '../lib/staticMapImage';
 import AlbumPdfDoc from '../components/AlbumPdfDoc';
 import PdfPagesPreview from '../components/PdfPagesPreview';
-import { DayCard, CoverPicker, ThemePicker } from './AlbumPage';
+import { DayCard, CoverPicker, ThemePicker, Spinner } from './AlbumPage';
 import { FORMAT_LABELS, normalizeBg, bakePhotoEffects, getTheme, unitLabel } from '../lib/albumModel';
 
 const emptyDay = () => ({ title: '', note: '', photos: [], bg: null, split: null });
@@ -458,7 +458,8 @@ export default function StandaloneAlbumPage() {
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <button onClick={generatePdf} disabled={generating || photoCount === 0}
-            className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow disabled:cursor-not-allowed disabled:opacity-50">
+            className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow disabled:cursor-not-allowed disabled:opacity-60">
+            {generating && <Spinner />}
             {generating ? 'Création du fichier…' : pdfUrl ? '🔄 Refaire le fichier' : '📄 Créer le fichier à imprimer'}
           </button>
           {pdfUrl && (

@@ -1819,8 +1819,9 @@ export default function AlbumPage() {
           <button
             onClick={generatePdf}
             disabled={generating || photoCount === 0}
-            className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow disabled:cursor-not-allowed disabled:opacity-60"
           >
+            {generating && <Spinner />}
             {generating
               ? 'Création du fichier…'
               : pdfUrl
