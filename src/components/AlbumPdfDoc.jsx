@@ -256,6 +256,15 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
         const scale = naturalTotal > 0 ? Math.min(1, photoAvailH / naturalTotal) : 1;
         return (
           <Page key={e.i} size={[pageW, pageH]} style={st.page}>
+            {e.bg && imgFull(e.bg) && (
+              <>
+                <View style={st.bgWrap}>
+                  <Image src={imgFull(e.bg)} style={st.coverImg} />
+                </View>
+                {/* voile clair : le fond reste visible mais le contenu lisible */}
+                <View style={st.bgScrim} />
+              </>
+            )}
             <View style={st.header}>
               <Text style={st.dayKicker}>
                 Jour {e.i + 1}{e.location ? ` · ${e.location}` : ''}
@@ -369,6 +378,10 @@ function makeStyles(pageW, pageH) {
     coverRule: { width: mm(16), height: 2, backgroundColor: PALETTE.accent, marginTop: 12, marginBottom: 10 },
     coverDates: { fontFamily: 'AlbumBody', fontWeight: 400, fontSize: 11, letterSpacing: 1, color: '#FFFFFF', opacity: 0.95 },
 
+    // Fond de page (photo) + voile clair par-dessus.
+    bgWrap: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+    bgScrim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(251,248,243,0.80)' },
+
     header: { flexShrink: 0, marginBottom: mm(4) },
     dayKicker: { fontFamily: 'AlbumBody', fontWeight: 700, fontSize: 8.5, letterSpacing: 2, textTransform: 'uppercase', color: PALETTE.accent, marginBottom: 5 },
     dayTitle: { fontFamily: 'AlbumDisplay', fontWeight: 600, fontSize: 22, color: PALETTE.ink, lineHeight: 1.1 },
@@ -387,8 +400,8 @@ function makeStyles(pageW, pageH) {
     // gardent leurs proportions, donc un léger espace peut subsister).
     mosaic: { flexGrow: 1, flexDirection: 'column', justifyContent: 'center', alignItems: 'center', marginTop: mm(2) },
     mosaicImg: { width: '100%', height: '100%', objectFit: 'cover' },
-    capWrap: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.42)', paddingVertical: 2, paddingHorizontal: 4 },
-    capTxt: { fontFamily: 'AlbumBody', fontWeight: 400, fontStyle: 'italic', fontSize: 7.5, color: '#FFFFFF' },
+    capWrap: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.45)', paddingVertical: 4, paddingHorizontal: 5 },
+    capTxt: { fontFamily: 'AlbumBody', fontWeight: 400, fontStyle: 'italic', fontSize: 10, textAlign: 'center', color: '#FFFFFF' },
 
     // Page de fin (quatrième de couverture) : fond sombre, texte centré.
     endPage: { position: 'relative', width: pageW, height: pageH, backgroundColor: PALETTE.ink, justifyContent: 'center', alignItems: 'center', paddingHorizontal: pad },

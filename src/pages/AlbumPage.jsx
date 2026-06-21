@@ -94,7 +94,7 @@ function PhotoTile({ photo, onCaption, onRemove, onMoveLeft, onMoveRight, canLef
   );
 }
 
-function DayCard({ day, index, entry, onChange, onAddPhotos, busy }) {
+function DayCard({ day, index, entry, onChange, onAddPhotos, onChooseBg, busy }) {
   const fileRef = useRef(null);
 
   const update = (patch) => onChange({ ...entry, ...patch });
@@ -118,11 +118,35 @@ function DayCard({ day, index, entry, onChange, onAddPhotos, busy }) {
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-      <div className="mb-3 flex items-center justify-between gap-3">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <span className="rounded-full bg-coral-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-coral-600">
           Jour {index + 1}
           {day?.location ? ` · ${day.location}` : ''}
         </span>
+        <div className="flex items-center gap-2">
+          {entry.bg && (
+            <span className="h-7 w-9 overflow-hidden rounded border border-slate-200">
+              <img src={entry.bg.display || entry.bg.full} alt="" className="h-full w-full object-cover" />
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={onChooseBg}
+            className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+          >
+            🖼️ Fond de page
+          </button>
+          {entry.bg && (
+            <button
+              type="button"
+              onClick={() => update({ bg: null })}
+              className="text-xs font-medium text-slate-400 hover:text-slate-600"
+              title="Enlever le fond"
+            >
+              ✕
+            </button>
+          )}
+        </div>
       </div>
 
       <input
@@ -346,6 +370,7 @@ export default function AlbumPage() {
           title: s?.title ?? (d.day_title || d.location || `Jour ${i + 1}`),
           note: s?.note ?? '',
           photos: Array.isArray(s?.photos) ? s.photos : [],
+          bg: s?.bg ?? null,
         };
       });
 
@@ -451,7 +476,8 @@ export default function AlbumPage() {
           photos.push(await repairAlbumPhoto(p));
           tick();
         }
-        newDays[i] = { ...entry, photos };
+        const bg = entry.bg ? await repairAlbumPhoto(entry.bg) : null;
+        newDays[i] = { ...entry, photos, bg };
       }
       let cover = album.cover;
       if (cover) {
@@ -690,6 +716,7 @@ export default function AlbumPage() {
             entry={album.days[i]}
             onChange={(entry) => setDayEntry(i, entry)}
             onAddPhotos={(files) => addPhotos(i, files)}
+            onChooseBg={() => setPickerFor(`daybg:${i}`)}
             busy={busyDay === i}
           />
         ))}
@@ -845,21 +872,48 @@ export default function AlbumPage() {
         )}
       </section>
 
-      {pickerFor && (
-        <CoverPicker
-          title={pickerFor === 'end' ? 'Choisir la photo de fond' : 'Choisir la photo de couverture'}
-          days={days}
-          album={album}
-          current={pickerFor === 'end' ? album.endPhoto : album.cover}
-          onPick={(photo) => {
-            const field = pickerFor === 'end' ? 'endPhoto' : 'cover';
-            setAlbum((prev) => ({ ...prev, [field]: photo }));
-            setDirty(true);
-            setPickerFor(null);
-          }}
-          onClose={() => setPickerFor(null)}
-        />
-      )}
+      {pickerFor && (() => {
+        const dayBg = pickerFor.startsWith('daybg:')
+          ? parseInt(pickerFor.split(':')[1], 10)
+          : null;
+        const title =
+          dayBg != null
+            ? `Fond de la page · Jour ${dayBg + 1}`
+            : pickerFor === 'end'
+              ? 'Choisir la photo de fond'
+              : 'Choisir la photo de couverture';
+        const current =
+          dayBg != null
+            ? album.days[dayBg]?.bg
+            : pickerFor === 'end'
+              ? album.endPhoto
+              : album.cover;
+        return (
+          <CoverPicker
+            title={title}
+            days={days}
+            album={album}
+            current={current}
+            onPick={(photo) => {
+              if (dayBg != null) {
+                setAlbum((prev) => ({
+                  ...prev,
+                  days: {
+                    ...prev.days,
+                    [dayBg]: { ...prev.days[dayBg], bg: photo },
+                  },
+                }));
+              } else {
+                const field = pickerFor === 'end' ? 'endPhoto' : 'cover';
+                setAlbum((prev) => ({ ...prev, [field]: photo }));
+              }
+              setDirty(true);
+              setPickerFor(null);
+            }}
+            onClose={() => setPickerFor(null)}
+          />
+        );
+      })()}
     </div>
   );
 }
