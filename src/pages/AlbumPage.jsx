@@ -32,6 +32,7 @@ import {
   autoBgFromPhotos,
   formatDateRange,
   FORMAT_DIMS,
+  computeBubble,
 } from '../lib/albumModel';
 
 // Petit indicateur de chargement animé (réutilisé sur les boutons d'envoi).
@@ -503,9 +504,29 @@ export function EffectPicker({ photo, current, onPick, onClose }) {
 // redimensionnables et pivotables. Coordonnées en fractions du canevas.
 // Affiche un élément de décoration (emoji, texte ou image). `sizeUnit` est
 // l'unité de taille (cqmin dans un conteneur dimensionné).
+function BubbleView({ it }) {
+  const g = computeBubble(it.tailAngle ?? 215, it.tailLen ?? 0.35);
+  const side = it.scale * g.vb.w; // en cqmin
+  return (
+    <div style={{ position: 'relative', width: `${side}cqmin`, height: `${side}cqmin` }}>
+      <svg viewBox={`${g.vb.x} ${g.vb.y} ${g.vb.w} ${g.vb.h}`} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'visible' }}>
+        <ellipse cx="0" cy="0" rx="50" ry="30" fill="#ffffff" stroke="#1f2937" strokeWidth="2.4" />
+        <polygon points={`${g.b1.x},${g.b1.y} ${g.tip.x},${g.tip.y} ${g.b2.x},${g.b2.y}`} fill="#ffffff" />
+        <polyline points={`${g.b1.x},${g.b1.y} ${g.tip.x},${g.tip.y} ${g.b2.x},${g.b2.y}`} fill="none" stroke="#1f2937" strokeWidth="2.4" strokeLinejoin="round" strokeLinecap="round" />
+      </svg>
+      <div style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%,-50%)', width: `${it.scale * 78}cqmin`, textAlign: 'center', color: it.color || '#111111', fontWeight: 600, fontSize: `${it.scale * 9}cqmin`, lineHeight: 1.05, overflow: 'hidden', maxHeight: `${it.scale * 52}cqmin` }}>
+        {it.value}
+      </div>
+    </div>
+  );
+}
+
 function DecoItemView({ it }) {
   if (it.type === 'image') {
     return <img src={it.value} alt="" draggable={false} style={{ width: `${it.scale * 100}cqmin`, height: 'auto', display: 'block' }} />;
+  }
+  if (it.type === 'bubble') {
+    return <BubbleView it={it} />;
   }
   return (
     <span style={{ fontSize: `${it.scale * 100}cqmin`, lineHeight: 1, color: it.color, fontWeight: it.type === 'text' ? 700 : 400, whiteSpace: 'nowrap', textShadow: it.type === 'text' ? '0 1px 2px rgba(0,0,0,0.5)' : 'none' }}>
@@ -557,6 +578,7 @@ export function DecoEditor({ title, aspect, background, initialItems, onChange, 
   const addItem = (it) => { const next = [...items, it]; initials.current = [...initials.current, { scale: it.scale, rot: it.rot || 0 }]; commit(next); setSel(next.length - 1); };
   const addEmoji = (e) => addItem({ type: 'emoji', value: e, xf: 0.5, yf: 0.5, scale: 0.16, rot: 0 });
   const addText = () => addItem({ type: 'text', value: 'Texte', xf: 0.5, yf: 0.5, scale: 0.1, rot: 0, color: '#ffffff' });
+  const addBubble = () => addItem({ type: 'bubble', value: 'Bla bla !', xf: 0.5, yf: 0.5, scale: 0.32, rot: 0, color: '#111111', tailAngle: 215, tailLen: 0.35 });
   const remove = (i) => { initials.current = initials.current.filter((_, k) => k !== i); commit(items.filter((_, k) => k !== i)); setSel(null); };
   const resetScale = (i) => update(i, { scale: initials.current[i]?.scale ?? items[i].scale });
   const resetRot = (i) => update(i, { rot: initials.current[i]?.rot ?? 0 });
@@ -638,13 +660,31 @@ export function DecoEditor({ title, aspect, background, initialItems, onChange, 
                   <button onClick={() => remove(sel)} className="text-xs font-medium text-red-600">Supprimer</button>
                 )}
               </div>
-              {selItem.type === 'text' && (
+              {(selItem.type === 'text' || selItem.type === 'bubble') && (
                 <div className="mt-2 flex items-center gap-2">
-                  <input value={selItem.value} onChange={(e) => update(sel, { value: e.target.value })}
-                    className="min-w-0 flex-1 rounded border border-slate-300 px-2 py-1 text-sm" />
-                  <input type="color" value={selItem.color || '#ffffff'} onChange={(e) => update(sel, { color: e.target.value })}
+                  {selItem.type === 'bubble' ? (
+                    <textarea value={selItem.value} onChange={(e) => update(sel, { value: e.target.value })} rows={2}
+                      placeholder="Texte de la bulle"
+                      className="min-w-0 flex-1 resize-y rounded border border-slate-300 px-2 py-1 text-sm" />
+                  ) : (
+                    <input value={selItem.value} onChange={(e) => update(sel, { value: e.target.value })}
+                      className="min-w-0 flex-1 rounded border border-slate-300 px-2 py-1 text-sm" />
+                  )}
+                  <input type="color" value={selItem.color || (selItem.type === 'bubble' ? '#111111' : '#ffffff')} onChange={(e) => update(sel, { color: e.target.value })}
                     className="h-8 w-10 rounded border border-slate-300" />
                 </div>
+              )}
+              {selItem.type === 'bubble' && (
+                <>
+                  <label className="mt-2 block text-xs text-slate-600">Direction de la queue ({selItem.tailAngle ?? 215}°)
+                    <input type="range" min="0" max="359" step="1" value={selItem.tailAngle ?? 215}
+                      onChange={(e) => update(sel, { tailAngle: parseInt(e.target.value, 10) })} className="w-full" />
+                  </label>
+                  <label className="block text-xs text-slate-600">Longueur de la queue
+                    <input type="range" min="0.1" max="0.8" step="0.01" value={selItem.tailLen ?? 0.35}
+                      onChange={(e) => update(sel, { tailLen: parseFloat(e.target.value) })} className="w-full" />
+                  </label>
+                </>
               )}
               <div className="mt-2 text-xs text-slate-600">
                 <div className="flex items-center justify-between">
@@ -672,6 +712,7 @@ export function DecoEditor({ title, aspect, background, initialItems, onChange, 
           <div className="mt-3">
             <div className="mb-2 flex flex-wrap gap-2">
               <button onClick={addText} className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200">➕ Texte</button>
+              <button onClick={addBubble} className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200">💬 Bulle BD</button>
               <button onClick={() => fileRef.current?.click()} disabled={uploading}
                 className="flex items-center gap-1.5 rounded-md bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200 disabled:opacity-60">
                 {uploading && <Spinner className="h-3.5 w-3.5" />}

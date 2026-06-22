@@ -294,7 +294,32 @@ export function unitLabel(unit) {
   return unit === 'etape' ? 'Étape' : 'Jour';
 }
 
-// Format lisible d'une plage de dates (pour la couverture).
+// Géométrie d'une bulle de BD (ellipse + queue), dans un repère centré sur 0,
+// base 100 (ellipse rx=50, ry=30). `tailAngleDeg` : direction de la queue
+// (0 = droite, 90 = bas). `tailLen` : longueur de la queue (fraction de 100).
+// Renvoie le viewBox (carré centré) et les points de la queue.
+export function computeBubble(tailAngleDeg = 215, tailLen = 0.35) {
+  const rx = 50;
+  const ry = 30;
+  const L = Math.max(0, tailLen) * 100;
+  const baseHalf = 14 * (Math.PI / 180);
+  const th = (tailAngleDeg * Math.PI) / 180;
+  const edge = (a) => {
+    const c = Math.cos(a);
+    const s = Math.sin(a);
+    return (rx * ry) / Math.sqrt((ry * c) ** 2 + (rx * s) ** 2);
+  };
+  const Re = edge(th);
+  const tip = { x: Math.cos(th) * (Re + L), y: Math.sin(th) * (Re + L) };
+  const a1 = th - baseHalf;
+  const a2 = th + baseHalf;
+  const r1 = edge(a1) * 0.94;
+  const r2 = edge(a2) * 0.94;
+  const b1 = { x: Math.cos(a1) * r1, y: Math.sin(a1) * r1 };
+  const b2 = { x: Math.cos(a2) * r2, y: Math.sin(a2) * r2 };
+  const half = Math.max(rx, ry, Re + L) + 6;
+  return { rx, ry, tip, b1, b2, vb: { x: -half, y: -half, w: 2 * half, h: 2 * half } };
+}
 export function formatDateRange(start, end) {
   const f = (iso) => {
     if (!iso) return '';

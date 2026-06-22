@@ -16,9 +16,9 @@
  */
 import {
   Document, Page, View, Text, Image, StyleSheet, Font,
-  Svg, Rect, Circle, Defs, LinearGradient, Stop,
+  Svg, Rect, Circle, Ellipse, Polygon, Polyline, Defs, LinearGradient, Stop,
 } from '@react-pdf/renderer';
-import { getPhotoEffect, twemojiUrl, splitPhotos, pageLayout, resolveBg, unitLabel } from '../lib/albumModel';
+import { getPhotoEffect, twemojiUrl, splitPhotos, pageLayout, resolveBg, unitLabel, computeBubble } from '../lib/albumModel';
 
 const CDN = 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl';
 
@@ -300,6 +300,24 @@ function DecoLayer({ items, w, h }) {
           const ih = size / (it.ar || 1);
           return (
             <Image key={i} src={it.value} style={{ position: 'absolute', width: iw, height: ih, left: cx - iw / 2, top: cy - ih / 2, transform: `rotate(${it.rot}deg)`, transformOrigin: 'center' }} />
+          );
+        }
+        if (it.type === 'bubble') {
+          const g = computeBubble(it.tailAngle ?? 215, it.tailLen ?? 0.35);
+          const unit = size / 100; // 1 unité du repère = ... points
+          const boxW = g.vb.w * unit;
+          const fs = 9 * unit;
+          return (
+            <View key={i} style={{ position: 'absolute', left: cx - boxW / 2, top: cy - boxW / 2, width: boxW, height: boxW, transform: `rotate(${it.rot}deg)`, transformOrigin: 'center', alignItems: 'center', justifyContent: 'center' }}>
+              <Svg viewBox={`${g.vb.x} ${g.vb.y} ${g.vb.w} ${g.vb.h}`} style={{ position: 'absolute', top: 0, left: 0, width: boxW, height: boxW }}>
+                <Ellipse cx="0" cy="0" rx="50" ry="30" fill="#FFFFFF" stroke="#1F2937" strokeWidth="2.4" />
+                <Polygon points={`${g.b1.x},${g.b1.y} ${g.tip.x},${g.tip.y} ${g.b2.x},${g.b2.y}`} fill="#FFFFFF" />
+                <Polyline points={`${g.b1.x},${g.b1.y} ${g.tip.x},${g.tip.y} ${g.b2.x},${g.b2.y}`} fill="none" stroke="#1F2937" strokeWidth="2.4" />
+              </Svg>
+              <View style={{ width: boxW * 0.78 * (100 / g.vb.w), alignItems: 'center' }}>
+                <Text style={{ fontFamily: 'AlbumBody', fontWeight: 700, fontSize: fs, color: it.color || '#111111', textAlign: 'center' }}>{it.value}</Text>
+              </View>
+            </View>
           );
         }
         const url = twemojiUrl(it.value);
