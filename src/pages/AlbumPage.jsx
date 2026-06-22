@@ -548,13 +548,18 @@ export function DecoEditor({ title, aspect, background, initialItems, onChange, 
   const canvasRef = useRef(null);
   const fileRef = useRef(null);
   const drag = useRef(null);
+  // Valeurs INITIALES (taille/rotation) de chaque élément, pour le bouton
+  // « retour à l'initiale ».
+  const initials = useRef((initialItems || []).map((d) => ({ scale: d.scale, rot: d.rot || 0 })));
 
   const commit = (next) => { setItems(next); onChange(next); };
   const update = (i, patch) => commit(items.map((it, k) => (k === i ? { ...it, ...patch } : it)));
-  const addItem = (it) => { const next = [...items, it]; commit(next); setSel(next.length - 1); };
+  const addItem = (it) => { const next = [...items, it]; initials.current = [...initials.current, { scale: it.scale, rot: it.rot || 0 }]; commit(next); setSel(next.length - 1); };
   const addEmoji = (e) => addItem({ type: 'emoji', value: e, xf: 0.5, yf: 0.5, scale: 0.16, rot: 0 });
   const addText = () => addItem({ type: 'text', value: 'Texte', xf: 0.5, yf: 0.5, scale: 0.1, rot: 0, color: '#ffffff' });
-  const remove = (i) => { commit(items.filter((_, k) => k !== i)); setSel(null); };
+  const remove = (i) => { initials.current = initials.current.filter((_, k) => k !== i); commit(items.filter((_, k) => k !== i)); setSel(null); };
+  const resetScale = (i) => update(i, { scale: initials.current[i]?.scale ?? items[i].scale });
+  const resetRot = (i) => update(i, { rot: initials.current[i]?.rot ?? 0 });
   async function addImageFile(file) {
     if (!file) return;
     setUploading(true);
@@ -641,14 +646,24 @@ export function DecoEditor({ title, aspect, background, initialItems, onChange, 
                     className="h-8 w-10 rounded border border-slate-300" />
                 </div>
               )}
-              <label className="mt-2 block text-xs text-slate-600">Taille
+              <div className="mt-2 text-xs text-slate-600">
+                <div className="flex items-center justify-between">
+                  <span>Taille</span>
+                  <button type="button" onClick={() => resetScale(sel)} className="text-coral-600 hover:text-coral-700" title="Revenir à la taille initiale">↺ initiale</button>
+                </div>
                 <input type="range" min="0.05" max={selItem.kind === 'photo' ? '1.3' : '0.6'} step="0.01" value={selItem.scale}
-                  onChange={(e) => update(sel, { scale: parseFloat(e.target.value) })} className="w-full" />
-              </label>
-              <label className="block text-xs text-slate-600">Rotation
+                  onChange={(e) => update(sel, { scale: parseFloat(e.target.value) })}
+                  onDoubleClick={() => resetScale(sel)} className="w-full" />
+              </div>
+              <div className="text-xs text-slate-600">
+                <div className="flex items-center justify-between">
+                  <span>Rotation {selItem.rot ? `(${selItem.rot}°)` : '(0°)'}</span>
+                  <button type="button" onClick={() => resetRot(sel)} className="text-coral-600 hover:text-coral-700" title="Remettre droit (rotation initiale)">↺ initiale</button>
+                </div>
                 <input type="range" min="-180" max="180" step="1" value={selItem.rot}
-                  onChange={(e) => update(sel, { rot: parseInt(e.target.value, 10) })} className="w-full" />
-              </label>
+                  onChange={(e) => { const v = parseInt(e.target.value, 10); update(sel, { rot: Math.abs(v) <= 3 ? 0 : v }); }}
+                  onDoubleClick={() => resetRot(sel)} className="w-full" />
+              </div>
             </div>
           ) : (
             <p className="mt-3 text-center text-xs text-slate-500">Touche un élément (photo, emoji, texte…) pour le déplacer, le redimensionner ou le pivoter.</p>
