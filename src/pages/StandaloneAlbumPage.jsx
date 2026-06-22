@@ -343,7 +343,7 @@ export default function StandaloneAlbumPage() {
   const totalPages = BEFORE + dayPageCounts.reduce((a, b) => a + b, 0) + 2;
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div>
       <div className="sticky top-0 z-20 -mx-4 mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur">
         <Link to="/albums" className="text-sm text-brand-700 underline">← Mes albums</Link>
         <button
@@ -355,6 +355,8 @@ export default function StandaloneAlbumPage() {
         </button>
       </div>
 
+      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start lg:gap-8 xl:grid-cols-[minmax(0,1fr)_24rem]">
+       <div className="min-w-0">
       <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-coral-600">Album créé de zéro</div>
       <input
         value={album.title}
@@ -467,37 +469,45 @@ export default function StandaloneAlbumPage() {
 
       {/* Carte */}
       <MapSection map={album.map} onChange={(map) => patch({ map })} />
+       </div>
 
-      {/* Export */}
-      <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-        <div className="flex items-start justify-between gap-2">
-          <h2 className="text-lg font-semibold text-slate-900">Préparer l'album pour l'impression</h2>
-          <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">mise en page v12</span>
-        </div>
-        <p className="mt-1 text-sm font-medium text-slate-700">
-          📖 {totalPages} pages au total (couverture, carte éventuelle et page de fin comprises).
-        </p>
-        <p className="mt-2 text-xs text-slate-500">Format : <span className="font-semibold text-slate-700">{FORMAT_LABELS[format]}</span> (modifiable tout en haut de la page).</p>
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <button onClick={generatePdf} disabled={generating || photoCount === 0}
-            className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow disabled:cursor-not-allowed disabled:opacity-60">
-            {generating && <Spinner />}
-            {generating ? 'Création du fichier…' : pdfUrl ? '🔄 Refaire le fichier' : '📄 Créer le fichier à imprimer'}
-          </button>
-          {pdfUrl && (
-            <a href={pdfUrl} download={fileName} className="rounded-lg border border-brand-600 px-4 py-2 text-sm font-semibold text-brand-700 shadow-sm">⬇️ Télécharger</a>
-          )}
-          {photoCount === 0 && <span className="text-xs text-slate-500">Ajoute au moins une photo.</span>}
-        </div>
-        {pdfBlob && (
-          <div className="mt-4">
-            <p className="mb-2 text-xs text-slate-500">Aperçu (fais défiler) — c'est exactement ce qui sera imprimé.</p>
-            <div className="max-h-[75vh] overflow-y-auto overscroll-contain rounded-xl border border-slate-200 bg-slate-50 p-2 sm:p-3">
-              <PdfPagesPreview blob={pdfBlob} />
-            </div>
+       {/* Colonne de droite (fixe sur ordinateur) : aperçu + impression */}
+       <aside className="mt-8 lg:mt-0 lg:sticky lg:top-24 lg:self-start">
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+          <div className="flex items-start justify-between gap-2">
+            <h2 className="text-lg font-semibold text-slate-900">Aperçu &amp; impression</h2>
+            <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">v12</span>
           </div>
-        )}
-      </section>
+          <p className="mt-1 text-sm font-medium text-slate-700">
+            📖 {totalPages} pages au total (couvertures et carte comprises).
+          </p>
+          <p className="mt-1 text-xs text-slate-500">Format : <span className="font-semibold text-slate-700">{FORMAT_LABELS[format]}</span> (modifiable à gauche).</p>
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <button onClick={generatePdf} disabled={generating || photoCount === 0}
+              className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow disabled:cursor-not-allowed disabled:opacity-60">
+              {generating && <Spinner />}
+              {generating ? 'Création du fichier…' : pdfUrl ? '🔄 Refaire le fichier' : '📄 Créer le fichier à imprimer'}
+            </button>
+            {pdfUrl && (
+              <a href={pdfUrl} download={fileName} className="rounded-lg border border-brand-600 px-4 py-2 text-sm font-semibold text-brand-700 shadow-sm">⬇️ Télécharger</a>
+            )}
+            {photoCount === 0 && <span className="text-xs text-slate-500">Ajoute au moins une photo.</span>}
+          </div>
+          {pdfBlob ? (
+            <div className="mt-4">
+              <p className="mb-2 text-xs text-slate-500">Aperçu — c'est exactement ce qui sera imprimé.</p>
+              <div className="max-h-[70vh] overflow-y-auto overscroll-contain rounded-xl border border-slate-200 bg-slate-50 p-2 sm:p-3 lg:max-h-[calc(100dvh-19rem)]">
+                <PdfPagesPreview blob={pdfBlob} />
+              </div>
+            </div>
+          ) : (
+            <p className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-center text-xs text-slate-500">
+              Clique sur « Créer le fichier » pour voir l'aperçu de toutes les pages ici.
+            </p>
+          )}
+        </section>
+       </aside>
+      </div>
 
       {pickerFor && (() => {
         const kind = pickerFor.kind;
