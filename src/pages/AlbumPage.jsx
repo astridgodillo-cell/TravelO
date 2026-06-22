@@ -46,7 +46,7 @@ export function Spinner({ className = 'h-4 w-4' }) {
 
 // Aperçu fidèle d'une couverture (avant ou fin) + réglages de mise en page.
 // variant : 'cover' (1re de couverture) ou 'end' (page de fin / 4e de couv).
-export function CoverDesigner({ variant = 'cover', photo, title, dates, note, onChangeNote, format = 'carre', theme = null, layout = {}, onChangeLayout, onChoose, onClear, spreadHalf = null, spreadPhoto = null, compact = false }) {
+export function CoverDesigner({ variant = 'cover', photo, title, dates, note, onChangeNote, format = 'carre', theme = null, layout = {}, onChangeLayout, onChoose, onClear, spreadHalf = null, spreadPhoto = null, compact = false, seamless = false }) {
   const isEnd = variant === 'end';
   const spreadSrc = spreadHalf && (spreadPhoto?.display || spreadPhoto?.full);
   const dims = FORMAT_DIMS[format] || FORMAT_DIMS.carre;
@@ -74,7 +74,7 @@ export function CoverDesigner({ variant = 'cover', photo, title, dates, note, on
       {/* Aperçu */}
       <div className={compact ? '' : 'shrink-0'}>
         <div
-          className={`relative ${compact ? 'w-full' : 'w-56'} max-w-full overflow-hidden rounded-lg border border-slate-200 shadow-sm`}
+          className={`relative ${compact ? 'w-full' : 'w-56'} max-w-full overflow-hidden ${seamless ? '' : 'rounded-lg border border-slate-200 shadow-sm'}`}
           style={{ aspectRatio: String(aspect), containerType: 'size', backgroundColor: ink }}
         >
           {spreadHalf ? (
@@ -190,13 +190,13 @@ export function CoversSection({ album, format, theme, dates, hasMap, onPatch, on
         </div>
       )}
 
-      <div className="mt-2 grid grid-cols-1 gap-5 sm:grid-cols-2">
+      <div className={`mt-2 grid grid-cols-1 sm:grid-cols-2 ${spreadOn ? 'gap-x-0 gap-y-5' : 'gap-5'}`}>
         {(() => {
           const front = (
             <div key="front">
               <p className="text-xs font-semibold uppercase tracking-wide text-coral-600">1re de couverture (avant)</p>
               <CoverDesigner
-                variant="cover" compact
+                variant="cover" compact seamless={spreadOn}
                 photo={album.cover} title={album.title} dates={dates}
                 format={format} theme={theme}
                 layout={album.coverLayout || {}}
@@ -212,7 +212,7 @@ export function CoversSection({ album, format, theme, dates, hasMap, onPatch, on
             <div key="back">
               <p className="text-xs font-semibold uppercase tracking-wide text-coral-600">4e de couverture (page de fin)</p>
               <CoverDesigner
-                variant="end" compact
+                variant="end" compact seamless={spreadOn}
                 photo={album.endPhoto} title={album.title} dates={dates}
                 note={album.endNote} onChangeNote={(t) => onPatch({ endNote: t })}
                 format={format} theme={theme}
