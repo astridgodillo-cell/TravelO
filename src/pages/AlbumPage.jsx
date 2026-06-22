@@ -33,6 +33,8 @@ import {
   formatDateRange,
   FORMAT_DIMS,
   computeBubble,
+  FONT_CHOICES,
+  fontCss,
 } from '../lib/albumModel';
 
 // Petit indicateur de chargement animé (réutilisé sur les boutons d'envoi).
@@ -514,7 +516,7 @@ function BubbleView({ it }) {
         <polygon points={`${g.b1.x},${g.b1.y} ${g.tip.x},${g.tip.y} ${g.b2.x},${g.b2.y}`} fill="#ffffff" />
         <polyline points={`${g.b1.x},${g.b1.y} ${g.tip.x},${g.tip.y} ${g.b2.x},${g.b2.y}`} fill="none" stroke="#1f2937" strokeWidth="2.4" strokeLinejoin="round" strokeLinecap="round" />
       </svg>
-      <div style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%,-50%)', width: `${it.scale * 78}cqmin`, textAlign: 'center', color: it.color || '#111111', fontWeight: 600, fontSize: `${it.scale * 9}cqmin`, lineHeight: 1.05, overflow: 'hidden', maxHeight: `${it.scale * 52}cqmin` }}>
+      <div style={{ position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%,-50%)', width: `${it.scale * 78}cqmin`, textAlign: 'center', color: it.color || '#111111', fontWeight: 700, fontFamily: fontCss(it.font || 'comic'), fontSize: `${it.scale * 9 * (it.fontScale ?? 1)}cqmin`, lineHeight: 1.05, overflow: 'hidden', maxHeight: `${it.scale * 52}cqmin` }}>
         {it.value}
       </div>
     </div>
@@ -529,7 +531,7 @@ function DecoItemView({ it }) {
     return <BubbleView it={it} />;
   }
   return (
-    <span style={{ fontSize: `${it.scale * 100}cqmin`, lineHeight: 1, color: it.color, fontWeight: it.type === 'text' ? 700 : 400, whiteSpace: 'nowrap', textShadow: it.type === 'text' ? '0 1px 2px rgba(0,0,0,0.5)' : 'none' }}>
+    <span style={{ fontSize: `${it.scale * 100}cqmin`, lineHeight: 1, color: it.color, fontWeight: it.type === 'text' ? 700 : 400, fontFamily: it.type === 'text' ? fontCss(it.font) : undefined, whiteSpace: 'nowrap', textShadow: it.type === 'text' ? '0 1px 2px rgba(0,0,0,0.5)' : 'none' }}>
       {it.value}
     </span>
   );
@@ -577,8 +579,8 @@ export function DecoEditor({ title, aspect, background, initialItems, onChange, 
   const update = (i, patch) => commit(items.map((it, k) => (k === i ? { ...it, ...patch } : it)));
   const addItem = (it) => { const next = [...items, it]; initials.current = [...initials.current, { scale: it.scale, rot: it.rot || 0 }]; commit(next); setSel(next.length - 1); };
   const addEmoji = (e) => addItem({ type: 'emoji', value: e, xf: 0.5, yf: 0.5, scale: 0.16, rot: 0 });
-  const addText = () => addItem({ type: 'text', value: 'Texte', xf: 0.5, yf: 0.5, scale: 0.1, rot: 0, color: '#ffffff' });
-  const addBubble = () => addItem({ type: 'bubble', value: 'Bla bla !', xf: 0.5, yf: 0.5, scale: 0.32, rot: 0, color: '#111111', tailAngle: 215, tailLen: 0.35 });
+  const addText = () => addItem({ type: 'text', value: 'Texte', xf: 0.5, yf: 0.5, scale: 0.1, rot: 0, color: '#ffffff', font: 'display' });
+  const addBubble = () => addItem({ type: 'bubble', value: 'Bla bla !', xf: 0.5, yf: 0.5, scale: 0.32, rot: 0, color: '#111111', tailAngle: 215, tailLen: 0.35, font: 'comic', fontScale: 1 });
   const remove = (i) => { initials.current = initials.current.filter((_, k) => k !== i); commit(items.filter((_, k) => k !== i)); setSel(null); };
   const resetScale = (i) => update(i, { scale: initials.current[i]?.scale ?? items[i].scale });
   const resetRot = (i) => update(i, { rot: initials.current[i]?.rot ?? 0 });
@@ -674,8 +676,26 @@ export function DecoEditor({ title, aspect, background, initialItems, onChange, 
                     className="h-8 w-10 rounded border border-slate-300" />
                 </div>
               )}
+              {(selItem.type === 'text' || selItem.type === 'bubble') && (
+                <div className="mt-2">
+                  <span className="text-xs text-slate-600">Police</span>
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    {FONT_CHOICES.map((f) => (
+                      <button key={f.key} type="button" onClick={() => update(sel, { font: f.key })}
+                        style={{ fontFamily: f.css }}
+                        className={`rounded-md px-2 py-1 text-xs font-semibold ${(selItem.font || (selItem.type === 'bubble' ? 'comic' : 'display')) === f.key ? 'bg-coral-500 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               {selItem.type === 'bubble' && (
                 <>
+                  <label className="mt-2 block text-xs text-slate-600">Taille du texte
+                    <input type="range" min="0.5" max="2" step="0.05" value={selItem.fontScale ?? 1}
+                      onChange={(e) => update(sel, { fontScale: parseFloat(e.target.value) })} className="w-full" />
+                  </label>
                   <label className="mt-2 block text-xs text-slate-600">Direction de la queue ({selItem.tailAngle ?? 215}°)
                     <input type="range" min="0" max="359" step="1" value={selItem.tailAngle ?? 215}
                       onChange={(e) => update(sel, { tailAngle: parseInt(e.target.value, 10) })} className="w-full" />

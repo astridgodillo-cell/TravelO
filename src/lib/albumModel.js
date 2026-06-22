@@ -294,6 +294,21 @@ export function unitLabel(unit) {
   return unit === 'etape' ? 'Étape' : 'Jour';
 }
 
+// Polices proposées pour les textes et les bulles. `css` = pile de polices pour
+// l'aperçu (navigateur) ; `pdf` = famille enregistrée dans AlbumPdfDoc.
+export const FONT_CHOICES = [
+  { key: 'display', label: 'Élégante', css: "'Spectral', Georgia, 'Times New Roman', serif", pdf: 'AlbumDisplay' },
+  { key: 'sans', label: 'Simple', css: "'Lato', system-ui, Arial, sans-serif", pdf: 'AlbumBody' },
+  { key: 'hand', label: 'Manuscrite', css: "'Caveat', 'Segoe Script', cursive", pdf: 'AlbumHand' },
+  { key: 'comic', label: 'BD', css: "'Comic Sans MS', 'Comic Neue', 'Chalkboard SE', cursive", pdf: 'AlbumComic' },
+];
+export function fontCss(key) {
+  return (FONT_CHOICES.find((f) => f.key === key) || FONT_CHOICES[0]).css;
+}
+export function fontPdf(key) {
+  return (FONT_CHOICES.find((f) => f.key === key) || FONT_CHOICES[0]).pdf;
+}
+
 // Géométrie d'une bulle de BD (ellipse + queue), dans un repère centré sur 0,
 // base 100 (ellipse rx=50, ry=30). `tailAngleDeg` : direction de la queue
 // (0 = droite, 90 = bas). `tailLen` : longueur de la queue (fraction de 100).

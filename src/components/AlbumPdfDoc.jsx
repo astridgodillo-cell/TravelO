@@ -18,7 +18,7 @@ import {
   Document, Page, View, Text, Image, StyleSheet, Font,
   Svg, Rect, Circle, Ellipse, Polygon, Polyline, Defs, LinearGradient, Stop,
 } from '@react-pdf/renderer';
-import { getPhotoEffect, twemojiUrl, splitPhotos, pageLayout, resolveBg, unitLabel, computeBubble } from '../lib/albumModel';
+import { getPhotoEffect, twemojiUrl, splitPhotos, pageLayout, resolveBg, unitLabel, computeBubble, fontPdf } from '../lib/albumModel';
 
 const CDN = 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl';
 
@@ -41,6 +41,20 @@ Font.register({
   ],
 });
 Font.registerHyphenationCallback((w) => [w]);
+Font.register({
+  family: 'AlbumHand',
+  fonts: [
+    { src: `${CDN}/patrickhand/PatrickHand-Regular.ttf`, fontWeight: 400 },
+    { src: `${CDN}/patrickhand/PatrickHand-Regular.ttf`, fontWeight: 700 },
+  ],
+});
+Font.register({
+  family: 'AlbumComic',
+  fonts: [
+    { src: `${CDN}/comicneue/ComicNeue-Regular.ttf`, fontWeight: 400 },
+    { src: `${CDN}/comicneue/ComicNeue-Bold.ttf`, fontWeight: 700 },
+  ],
+});
 
 // Conversion millimètres → points PDF (1 pt = 1/72 pouce ; 1 pouce = 25,4 mm).
 const MM = 72 / 25.4;
@@ -290,7 +304,7 @@ function DecoLayer({ items, w, h }) {
           const estW = Math.max(1, (it.value || '').length) * fs * 0.62;
           return (
             <View key={i} style={{ position: 'absolute', left: cx - estW / 2, top: cy - fs * 0.7, width: estW, transform: `rotate(${it.rot}deg)`, transformOrigin: 'center' }}>
-              <Text style={{ fontFamily: 'AlbumDisplay', fontWeight: 700, fontSize: fs, color: it.color || '#FFFFFF', textAlign: 'center' }}>{it.value}</Text>
+              <Text style={{ fontFamily: fontPdf(it.font), fontWeight: 700, fontSize: fs, color: it.color || '#FFFFFF', textAlign: 'center' }}>{it.value}</Text>
             </View>
           );
         }
@@ -306,7 +320,7 @@ function DecoLayer({ items, w, h }) {
           const g = computeBubble(it.tailAngle ?? 215, it.tailLen ?? 0.35);
           const unit = size / 100; // 1 unité du repère = ... points
           const boxW = g.vb.w * unit;
-          const fs = 9 * unit;
+          const fs = 9 * unit * (it.fontScale ?? 1);
           return (
             <View key={i} style={{ position: 'absolute', left: cx - boxW / 2, top: cy - boxW / 2, width: boxW, height: boxW, transform: `rotate(${it.rot}deg)`, transformOrigin: 'center', alignItems: 'center', justifyContent: 'center' }}>
               <Svg viewBox={`${g.vb.x} ${g.vb.y} ${g.vb.w} ${g.vb.h}`} style={{ position: 'absolute', top: 0, left: 0, width: boxW, height: boxW }}>
@@ -315,7 +329,7 @@ function DecoLayer({ items, w, h }) {
                 <Polyline points={`${g.b1.x},${g.b1.y} ${g.tip.x},${g.tip.y} ${g.b2.x},${g.b2.y}`} fill="none" stroke="#1F2937" strokeWidth="2.4" />
               </Svg>
               <View style={{ width: boxW * 0.78 * (100 / g.vb.w), alignItems: 'center' }}>
-                <Text style={{ fontFamily: 'AlbumBody', fontWeight: 700, fontSize: fs, color: it.color || '#111111', textAlign: 'center' }}>{it.value}</Text>
+                <Text style={{ fontFamily: fontPdf(it.font || 'comic'), fontWeight: 700, fontSize: fs, color: it.color || '#111111', textAlign: 'center' }}>{it.value}</Text>
               </View>
             </View>
           );
