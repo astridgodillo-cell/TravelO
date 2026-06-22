@@ -1710,6 +1710,8 @@ export default function AlbumPage() {
   const dayOffsets = sectionPageCounts.map(
     (_, i) => 1 + (hasMapPage ? 1 : 0) + sectionPageCounts.slice(0, i).reduce((a, b) => a + b, 0) + 1
   );
+  // Total = couverture + carte éventuelle + pages des sections + page de fin.
+  const totalPages = 1 + (hasMapPage ? 1 : 0) + sectionPageCounts.reduce((a, b) => a + b, 0) + 1;
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -1930,6 +1932,9 @@ export default function AlbumPage() {
             mise en page v12
           </span>
         </div>
+        <p className="mt-1 text-sm font-medium text-slate-700">
+          📖 {totalPages} pages au total (couverture, carte éventuelle et page de fin comprises).
+        </p>
         <p className="mt-1 text-sm text-slate-600">
           On fabrique un fichier PDF prêt à envoyer à un imprimeur. Les photos
           sont utilisées en pleine qualité, et un petit débord est ajouté autour

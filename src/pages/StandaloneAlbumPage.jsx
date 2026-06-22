@@ -330,6 +330,7 @@ export default function StandaloneAlbumPage() {
   const dayOffsets = dayPageCounts.map(
     (_, i) => 1 + (hasMapPage ? 1 : 0) + dayPageCounts.slice(0, i).reduce((a, b) => a + b, 0) + 1
   );
+  const totalPages = 1 + (hasMapPage ? 1 : 0) + dayPageCounts.reduce((a, b) => a + b, 0) + 1;
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -480,6 +481,9 @@ export default function StandaloneAlbumPage() {
           <h2 className="text-lg font-semibold text-slate-900">Préparer l'album pour l'impression</h2>
           <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">mise en page v12</span>
         </div>
+        <p className="mt-1 text-sm font-medium text-slate-700">
+          📖 {totalPages} pages au total (couverture, carte éventuelle et page de fin comprises).
+        </p>
         <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
           {Object.entries(FORMAT_LABELS).map(([key, label]) => (
             <button key={key} type="button"
