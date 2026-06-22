@@ -367,15 +367,20 @@ function CoverFade({ color = '#1C2B2D' }) {
   );
 }
 
-export default function AlbumPdfDoc({ album, days = [], format = 'carre', summary = null, routeMap = null, stops = [], endNote = '', endPhoto = null, theme = null, unit = 'jour', coverLayout = {} }) {
+export default function AlbumPdfDoc({ album, days = [], format = 'carre', summary = null, routeMap = null, stops = [], endNote = '', endPhoto = null, theme = null, unit = 'jour', coverLayout = {}, endLayout = {} }) {
   const coverPos = coverLayout.pos || 'bottom';
   const coverAlign = coverLayout.align || 'left';
   const coverKicker = coverLayout.kicker != null ? coverLayout.kicker : 'Album de voyage';
   const coverShowDates = coverLayout.showDates !== false;
+  const endPos = endLayout.pos || 'center';
+  const endAlign = endLayout.align || 'center';
+  const endKicker = endLayout.kicker != null ? endLayout.kicker : 'Fin du voyage';
+  const endShowDates = endLayout.showDates !== false;
   const fmt = FORMATS[format] || FORMATS.carre;
   // Page = format final + 3 mm de fond perdu sur chaque bord.
   const pageW = mm(fmt.trimW + BLEED_MM * 2);
   const pageH = mm(fmt.trimH + BLEED_MM * 2);
+  const pad = mm(PAD_MM);
   // Palette effective : thème éventuel par-dessus la palette par défaut.
   const P = {
     ...PALETTE,
@@ -427,13 +432,13 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
             justifyContent: coverPos === 'top' ? 'flex-start' : coverPos === 'center' ? 'center' : 'flex-end',
           }}
         >
-          <View style={[st.coverContent, coverAlign === 'center' ? { alignItems: 'center' } : null]}>
-            <Text style={[st.coverKicker, coverAlign === 'center' ? { textAlign: 'center' } : null]}>{coverKicker}</Text>
-            <Text style={[st.coverTitle, coverAlign === 'center' ? { textAlign: 'center' } : null]}>{album?.title || 'Mon voyage'}</Text>
+          <View style={[st.coverContent, { alignItems: coverAlign === 'center' ? 'center' : coverAlign === 'right' ? 'flex-end' : 'flex-start' }]}>
+            <Text style={[st.coverKicker, { textAlign: coverAlign }]}>{coverKicker}</Text>
+            <Text style={[st.coverTitle, { textAlign: coverAlign }]}>{album?.title || 'Mon voyage'}</Text>
             {coverShowDates && dateRange ? (
               <>
                 <View style={st.coverRule} />
-                <Text style={[st.coverDates, coverAlign === 'center' ? { textAlign: 'center' } : null]}>{dateRange}</Text>
+                <Text style={[st.coverDates, { textAlign: coverAlign }]}>{dateRange}</Text>
               </>
             ) : null}
           </View>
@@ -543,15 +548,28 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
             <View style={st.endScrim} />
           </>
         )}
-        <View style={st.endInner}>
-          <Text style={st.endKicker}>Fin du voyage</Text>
-          <Text style={st.endTitle}>{album?.title || 'Mon voyage'}</Text>
-          {dateRange ? <Text style={st.endDates}>{dateRange}</Text> : null}
-          <View style={st.endRule} />
-          <Text style={st.endQuote}>
-            {(endNote || '').trim() || '« Les voyages finissent, les souvenirs restent. »'}
-          </Text>
-          <Text style={st.endBrand}>Album réalisé avec TravelO</Text>
+        <View
+          style={{
+            position: 'absolute',
+            top: pad,
+            left: pad,
+            right: pad,
+            bottom: pad,
+            flexDirection: 'column',
+            justifyContent: endPos === 'top' ? 'flex-start' : endPos === 'bottom' ? 'flex-end' : 'center',
+            alignItems: endAlign === 'left' ? 'flex-start' : endAlign === 'right' ? 'flex-end' : 'center',
+          }}
+        >
+          <View style={[st.endInner, endAlign === 'left' ? { alignItems: 'flex-start' } : endAlign === 'right' ? { alignItems: 'flex-end' } : null]}>
+            <Text style={st.endKicker}>{endKicker}</Text>
+            <Text style={[st.endTitle, endAlign === 'left' ? { textAlign: 'left' } : endAlign === 'right' ? { textAlign: 'right' } : null]}>{album?.title || 'Mon voyage'}</Text>
+            {endShowDates && dateRange ? <Text style={st.endDates}>{dateRange}</Text> : null}
+            <View style={st.endRule} />
+            <Text style={[st.endQuote, endAlign === 'left' ? { textAlign: 'left' } : endAlign === 'right' ? { textAlign: 'right' } : null]}>
+              {(endNote || '').trim() || '« Les voyages finissent, les souvenirs restent. »'}
+            </Text>
+            <Text style={st.endBrand}>Album réalisé avec TravelO</Text>
+          </View>
         </View>
       </Page>
     </Document>

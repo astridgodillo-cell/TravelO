@@ -10,7 +10,7 @@ import {
 import { renderRouteMapImage } from '../lib/staticMapImage';
 import AlbumPdfDoc from '../components/AlbumPdfDoc';
 import PdfPagesPreview from '../components/PdfPagesPreview';
-import { DayCard, CoverPicker, ThemePicker, Spinner, CoverDesigner } from './AlbumPage';
+import { DayCard, CoverPicker, ThemePicker, Spinner, CoverDesigner, FormatPicker } from './AlbumPage';
 import { FORMAT_LABELS, normalizeBg, bakePhotoEffects, getTheme, unitLabel, splitPhotos, computeSplit, bgIsEmpty, autoBgFromPhotos, formatDateRange } from '../lib/albumModel';
 
 const emptyDay = () => ({ title: '', note: '', photos: [], bg: null, split: null });
@@ -75,9 +75,11 @@ export default function StandaloneAlbumPage() {
         theme: c.theme ?? 'classique',
         unit: c.unit ?? 'jour',
         coverLayout: c.coverLayout ?? {},
+        endLayout: c.endLayout ?? {},
         days: Array.isArray(c.days) && c.days.length ? c.days : [emptyDay()],
         map: c.map ?? { enabled: false, stops: [] },
       });
+      if (c.format) setFormat(c.format);
       setSavedOnce(!!data?.content?.days);
       setLoading(false);
     });
@@ -173,7 +175,9 @@ export default function StandaloneAlbumPage() {
       endPhoto: a.endPhoto || null,
       theme: a.theme || 'classique',
       unit: a.unit || 'jour',
+      format,
       coverLayout: a.coverLayout || {},
+      endLayout: a.endLayout || {},
       days: a.days,
       map: a.map || { enabled: false, stops: [] },
     };
@@ -289,6 +293,7 @@ export default function StandaloneAlbumPage() {
           theme={getTheme(album.theme)}
           unit={album.unit}
           coverLayout={album.coverLayout}
+          endLayout={album.endLayout}
         />
       ).toBlob();
       if (pdfUrl) URL.revokeObjectURL(pdfUrl);
@@ -352,6 +357,10 @@ export default function StandaloneAlbumPage() {
         placeholder="Titre de l'album"
         className="w-full border-0 border-b-2 border-slate-200 pb-2 text-2xl font-bold tracking-tight text-slate-900 outline-none focus:border-coral-400 sm:text-3xl"
       />
+
+      <div className="mt-4">
+        <FormatPicker value={format} onChange={(f) => { setFormat(f); setDirty(true); if (pdfUrl) { URL.revokeObjectURL(pdfUrl); setPdfUrl(null); setPdfBlob(null); } }} />
+      </div>
 
       <div className="mt-3 flex flex-wrap gap-4">
         <label className="text-sm text-slate-600">
@@ -458,20 +467,20 @@ export default function StandaloneAlbumPage() {
 
       {/* Page de fin */}
       <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-        <h2 className="text-lg font-semibold text-slate-900">Page de fin</h2>
-        <textarea
-          value={album.endNote}
-          onChange={(e) => patch({ endNote: e.target.value })}
-          rows={3}
-          placeholder="Ton mot de fin (par défaut : une citation)"
-          className="mt-3 w-full resize-y rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-none focus:border-coral-400"
-        />
-        <CoverThumb
-          label="Photo de fond (facultative)"
+        <h2 className="text-lg font-semibold text-slate-900">Page de fin (4ᵉ de couverture)</h2>
+        <CoverDesigner
+          variant="end"
           photo={album.endPhoto}
+          title={album.title}
+          dates={formatDateRange(album.dateStart, album.dateEnd)}
+          note={album.endNote}
+          onChangeNote={(t) => patch({ endNote: t })}
+          format={format}
+          theme={getTheme(album.theme)}
+          layout={album.endLayout || {}}
+          onChangeLayout={(l) => patch({ endLayout: l })}
           onChoose={() => setPickerFor({ kind: 'end' })}
           onClear={album.endPhoto ? () => patch({ endPhoto: null }) : null}
-          emptyText="Sans photo : fond sombre uni."
         />
       </section>
 
@@ -562,30 +571,6 @@ export default function StandaloneAlbumPage() {
 }
 
 // Vignette + boutons pour une photo (couverture / fond de fin).
-function CoverThumb({ label, photo, onChoose, onClear, emptyText }) {
-  return (
-    <div className="mt-4 flex items-center gap-4">
-      <div className="relative h-24 w-32 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
-        {photo ? (
-          <img src={photo.display || photo.full} alt="" className="h-full w-full object-cover" />
-        ) : (
-          <span className="flex h-full w-full items-center justify-center px-2 text-center text-[11px] text-slate-400">{emptyText}</span>
-        )}
-      </div>
-      <div className="min-w-0">
-        <p className="text-sm font-medium text-slate-700">{label}</p>
-        <div className="mt-2 flex flex-wrap gap-2">
-          <button type="button" onClick={onChoose}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">🖼️ Choisir</button>
-          {onClear && (
-            <button type="button" onClick={onClear} className="rounded-lg px-3 py-1.5 text-xs font-medium text-slate-500 hover:text-slate-700">Enlever</button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // Carte optionnelle : liste de villes/étapes (réordonnables par glisser-
 // déposer). Les coordonnées sont trouvées automatiquement à la fabrication.
 function MapSection({ map, onChange }) {

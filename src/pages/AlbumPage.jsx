@@ -44,19 +44,21 @@ export function Spinner({ className = 'h-4 w-4' }) {
   );
 }
 
-// Aperçu fidèle de la couverture + réglages de sa mise en page (position du
-// bloc titre, alignement, texte d'intro, dates). Utilisé par les deux albums.
-export function CoverDesigner({ photo, title, dates, format = 'carre', theme = null, layout = {}, onChangeLayout, onChoose, onClear }) {
+// Aperçu fidèle d'une couverture (avant ou fin) + réglages de mise en page.
+// variant : 'cover' (1re de couverture) ou 'end' (page de fin / 4e de couv).
+export function CoverDesigner({ variant = 'cover', photo, title, dates, note, onChangeNote, format = 'carre', theme = null, layout = {}, onChangeLayout, onChoose, onClear }) {
+  const isEnd = variant === 'end';
   const dims = FORMAT_DIMS[format] || FORMAT_DIMS.carre;
   const aspect = dims.trimW / dims.trimH;
-  const pos = layout.pos || 'bottom';
-  const align = layout.align || 'left';
-  const kicker = layout.kicker != null ? layout.kicker : 'Album de voyage';
+  const pos = layout.pos || (isEnd ? 'center' : 'bottom');
+  const align = layout.align || (isEnd ? 'center' : 'left');
+  const kicker = layout.kicker != null ? layout.kicker : (isEnd ? 'Fin du voyage' : 'Album de voyage');
   const showDates = layout.showDates !== false;
   const ink = theme?.ink || '#1C2B2D';
   const accent = theme?.accent || '#C8643C';
   const set = (patch) => onChangeLayout({ ...layout, ...patch });
-  const justify = pos === 'top' ? 'flex-start' : pos === 'center' ? 'center' : 'flex-end';
+  const justify = pos === 'top' ? 'flex-start' : pos === 'bottom' ? 'flex-end' : 'center';
+  const items = align === 'left' ? 'flex-start' : align === 'right' ? 'flex-end' : 'center';
   const src = photo?.display || photo?.full || null;
 
   const seg = (current, k, val, label) => (
@@ -75,17 +77,22 @@ export function CoverDesigner({ photo, title, dates, format = 'carre', theme = n
           style={{ aspectRatio: String(aspect), containerType: 'size', backgroundColor: ink }}
         >
           {src && <img src={src} alt="" className="absolute inset-0 h-full w-full object-cover" draggable={false} />}
-          <div className="absolute inset-x-0 bottom-0 h-3/5" style={{ background: `linear-gradient(to top, ${ink}, transparent)` }} />
-          <div className="absolute inset-0 flex flex-col p-[5%]" style={{ justifyContent: justify }}>
-            <div className="rounded" style={{ backgroundColor: 'rgba(18,26,26,0.52)', padding: '4% 5%', textAlign: align === 'center' ? 'center' : 'left' }}>
-              {kicker ? <div style={{ color: '#fff', opacity: 0.9, fontSize: '2.4cqmin', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase' }}>{kicker}</div> : null}
-              <div style={{ color: '#fff', fontFamily: 'Georgia, serif', fontWeight: 600, fontSize: '8cqmin', lineHeight: 1.05, marginTop: '2%' }}>{title || 'Mon voyage'}</div>
-              {showDates && dates ? (
+          {isEnd
+            ? <div className="absolute inset-0" style={{ backgroundColor: 'rgba(15,22,22,0.58)' }} />
+            : <div className="absolute inset-x-0 bottom-0 h-3/5" style={{ background: `linear-gradient(to top, ${ink}, transparent)` }} />}
+          <div className="absolute inset-0 flex flex-col p-[6%]" style={{ justifyContent: justify, alignItems: items }}>
+            <div style={{ textAlign: align, maxWidth: '100%', ...(isEnd ? {} : { backgroundColor: 'rgba(18,26,26,0.52)', padding: '4% 5%', borderRadius: 4 }) }}>
+              {kicker ? <div style={{ color: accent, fontSize: '2.4cqmin', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase' }}>{kicker}</div> : null}
+              <div style={{ color: '#fff', fontFamily: 'Georgia, serif', fontWeight: 600, fontSize: isEnd ? '6cqmin' : '8cqmin', lineHeight: 1.05, marginTop: '3%' }}>{title || 'Mon voyage'}</div>
+              {showDates && dates ? <div style={{ color: '#fff', opacity: 0.9, fontSize: '2.6cqmin', marginTop: '3%' }}>{dates}</div> : null}
+              {isEnd && (
                 <>
-                  <div style={{ height: '0.6cqmin', width: '14%', backgroundColor: accent, margin: align === 'center' ? '3% auto' : '3% 0' }} />
-                  <div style={{ color: '#fff', opacity: 0.95, fontSize: '2.7cqmin' }}>{dates}</div>
+                  <div style={{ height: '0.6cqmin', width: '16%', backgroundColor: accent, margin: align === 'center' ? '5% auto' : align === 'right' ? '5% 0 5% auto' : '5% 0' }} />
+                  <div style={{ color: '#fff', opacity: 0.92, fontStyle: 'italic', fontFamily: 'Georgia, serif', fontSize: '3cqmin', lineHeight: 1.3 }}>
+                    {(note || '').trim() || '« Les voyages finissent, les souvenirs restent. »'}
+                  </div>
                 </>
-              ) : null}
+              )}
             </div>
           </div>
         </div>
@@ -100,7 +107,7 @@ export function CoverDesigner({ photo, title, dates, format = 'carre', theme = n
 
       {/* Réglages de mise en page */}
       <div className="flex-1 space-y-2.5">
-        <p className="text-sm font-medium text-slate-700">Mise en page de la couverture</p>
+        <p className="text-sm font-medium text-slate-700">{isEnd ? 'Mise en page de la page de fin' : 'Mise en page de la couverture'}</p>
         <div className="flex flex-wrap items-center gap-2">
           <span className="w-20 text-xs text-slate-500">Position</span>
           {seg(pos, 'pos', 'top', 'Haut')}
@@ -111,17 +118,48 @@ export function CoverDesigner({ photo, title, dates, format = 'carre', theme = n
           <span className="w-20 text-xs text-slate-500">Alignement</span>
           {seg(align, 'align', 'left', 'Gauche')}
           {seg(align, 'align', 'center', 'Centré')}
+          {seg(align, 'align', 'right', 'Droite')}
         </div>
         <label className="block text-xs text-slate-500">Texte d'intro
           <input value={kicker} onChange={(e) => set({ kicker: e.target.value })}
-            placeholder="Album de voyage"
+            placeholder={isEnd ? 'Fin du voyage' : 'Album de voyage'}
             className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-700" />
         </label>
+        {isEnd && onChangeNote && (
+          <label className="block text-xs text-slate-500">Mot de fin
+            <textarea value={note || ''} onChange={(e) => onChangeNote(e.target.value)} rows={2}
+              placeholder="Par défaut : une citation"
+              className="mt-1 w-full resize-y rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-700" />
+          </label>
+        )}
         <label className="flex items-center gap-2 text-xs text-slate-600">
           <input type="checkbox" checked={showDates} onChange={(e) => set({ showDates: e.target.checked })} />
           Afficher les dates
         </label>
-        <p className="text-[11px] text-slate-400">Le titre de la couverture est le titre de l'album (modifiable en haut).</p>
+        <p className="text-[11px] text-slate-400">Le titre affiché est le titre de l'album (modifiable en haut).</p>
+      </div>
+    </div>
+  );
+}
+
+// Choix du format de l'album (toute la création s'y adapte).
+export function FormatPicker({ value, onChange }) {
+  const opts = [
+    ['carre', 'Carré 21 × 21 cm', 'Le format classique des livres photo.'],
+    ['a4paysage', 'A4 paysage 29,7 × 21 cm', 'Allongé, comme une feuille couchée.'],
+    ['a4portrait', 'A4 portrait 21 × 29,7 cm', 'Vertical, comme une feuille debout.'],
+  ];
+  return (
+    <div>
+      <p className="mb-2 text-sm font-medium text-slate-700">Format de l'album</p>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        {opts.map(([k, label, desc]) => (
+          <button key={k} type="button" onClick={() => onChange(k)}
+            className={`rounded-xl border px-3 py-2 text-left text-sm ${value === k ? 'border-coral-400 bg-coral-50 text-coral-700' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'}`}>
+            <span className="block font-semibold">{label}</span>
+            <span className="mt-0.5 block text-xs font-normal text-slate-500">{desc}</span>
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -1382,8 +1420,10 @@ export default function AlbumPage() {
         theme: saved?.theme ?? 'classique',
         unit: saved?.unit ?? 'jour',
         coverLayout: saved?.coverLayout ?? {},
+        endLayout: saved?.endLayout ?? {},
         days: daysArr,
       });
+      if (saved?.format) setFormat(saved.format);
       setSavedOnce(!!saved);
       setLoading(false);
     });
@@ -1487,7 +1527,9 @@ export default function AlbumPage() {
           endPhoto: album.endPhoto || null,
           theme: album.theme || 'classique',
           unit: album.unit || 'jour',
+          format,
           coverLayout: album.coverLayout || {},
+          endLayout: album.endLayout || {},
           days: album.days,
           updatedAt: new Date().toISOString(),
         },
@@ -1569,7 +1611,9 @@ export default function AlbumPage() {
           endPhoto: nextAlbum.endPhoto || null,
           theme: nextAlbum.theme || 'classique',
           unit: nextAlbum.unit || 'jour',
+          format,
           coverLayout: nextAlbum.coverLayout || {},
+          endLayout: nextAlbum.endLayout || {},
           days: nextAlbum.days,
           updatedAt: new Date().toISOString(),
         },
@@ -1649,6 +1693,7 @@ export default function AlbumPage() {
           stops={stops}
           unit={album.unit}
           coverLayout={album.coverLayout}
+          endLayout={album.endLayout}
           endNote={album.endNote}
           endPhoto={album.endPhoto}
           theme={getTheme(album.theme)}
@@ -1745,6 +1790,10 @@ export default function AlbumPage() {
         className="w-full border-0 border-b-2 border-slate-200 pb-2 text-2xl font-bold tracking-tight text-slate-900 outline-none focus:border-coral-400 sm:text-3xl"
       />
 
+      <div className="mt-4">
+        <FormatPicker value={format} onChange={(f) => { setFormat(f); if (pdfUrl) { URL.revokeObjectURL(pdfUrl); setPdfUrl(null); setPdfBlob(null); } }} />
+      </div>
+
       <ThemePicker
         value={album.theme || 'classique'}
         onChange={(t) => { setAlbum((prev) => ({ ...prev, theme: t })); setDirty(true); }}
@@ -1772,7 +1821,7 @@ export default function AlbumPage() {
         theme={getTheme(album.theme)}
         layout={album.coverLayout || {}}
         onChangeLayout={(l) => { setAlbum((prev) => ({ ...prev, coverLayout: l })); setDirty(true); }}
-        onChoose={() => setPickerFor('cover')}
+        onChoose={() => setPickerFor({ kind: 'cover' })}
         onClear={album.cover ? () => { setAlbum((prev) => ({ ...prev, cover: null })); setDirty(true); } : null}
       />
 
@@ -1861,65 +1910,24 @@ export default function AlbumPage() {
 
       {/* PAGE DE FIN */}
       <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-        <h2 className="text-lg font-semibold text-slate-900">Page de fin</h2>
+        <h2 className="text-lg font-semibold text-slate-900">Page de fin (4ᵉ de couverture)</h2>
         <p className="mt-1 text-sm text-slate-600">
-          La toute dernière page de l'album. Tu peux y écrire ton propre message
-          et choisir une photo de fond.
+          La toute dernière page de l'album : aperçu et mise en page comme la couverture.
         </p>
-
-        <textarea
-          value={album.endNote}
-          onChange={(e) => {
-            setAlbum((prev) => ({ ...prev, endNote: e.target.value }));
-            setDirty(true);
-          }}
-          rows={3}
-          placeholder="Ton mot de fin (par défaut : « Les voyages finissent, les souvenirs restent. »)"
-          className="mt-3 w-full resize-y rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-none focus:border-coral-400"
+        <CoverDesigner
+          variant="end"
+          photo={album.endPhoto}
+          title={album.title}
+          dates={formatDateRange(trip?.itinerary?.summary?.start_date, trip?.itinerary?.summary?.end_date)}
+          note={album.endNote}
+          onChangeNote={(t) => { setAlbum((prev) => ({ ...prev, endNote: t })); setDirty(true); }}
+          format={format}
+          theme={getTheme(album.theme)}
+          layout={album.endLayout || {}}
+          onChangeLayout={(l) => { setAlbum((prev) => ({ ...prev, endLayout: l })); setDirty(true); }}
+          onChoose={() => setPickerFor({ kind: 'end' })}
+          onClear={album.endPhoto ? () => { setAlbum((prev) => ({ ...prev, endPhoto: null })); setDirty(true); } : null}
         />
-
-        <div className="mt-3 flex items-center gap-4">
-          <div className="relative h-24 w-32 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
-            {album.endPhoto ? (
-              <img
-                src={album.endPhoto.display || album.endPhoto.full}
-                alt=""
-                className="h-full w-full object-cover"
-              />
-            ) : (
-              <span className="flex h-full w-full items-center justify-center px-2 text-center text-[11px] text-slate-400">
-                Fond uni (sombre)
-              </span>
-            )}
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-slate-700">Photo de fond (facultative)</p>
-            <p className="mt-0.5 text-xs text-slate-500">
-              Sans photo, la page de fin est sur un fond sombre uni.
-            </p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => setPickerFor('end')}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-              >
-                🖼️ Choisir une photo de fond
-              </button>
-              {album.endPhoto && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAlbum((prev) => ({ ...prev, endPhoto: null }));
-                    setDirty(true);
-                  }}
-                  className="rounded-lg px-3 py-1.5 text-xs font-medium text-slate-500 hover:text-slate-700"
-                >
-                  Enlever la photo
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
       </section>
 
       {/* EXPORT IMPRIMABLE */}
