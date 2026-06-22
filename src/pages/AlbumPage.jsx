@@ -9,6 +9,7 @@ import {
   repairAlbumPhoto,
 } from '../lib/supabase';
 import { renderRouteMapImage } from '../lib/staticMapImage';
+import { writeAlbumText } from '../lib/ai';
 import AlbumPdfDoc from '../components/AlbumPdfDoc';
 import PdfPagesPreview from '../components/PdfPagesPreview';
 import {
@@ -1116,6 +1117,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
   const [bgOpen, setBgOpen] = useState(false);
   const [decoPage, setDecoPage] = useState(null);
   const [spreadStart, setSpreadStart] = useState(0); // 1re page du duo affiché
+  const [aiBusy, setAiBusy] = useState(false);
 
   const update = (patch) => onChange({ ...entry, ...patch });
 
@@ -1210,6 +1212,34 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
         rows={3}
         className="mt-3 w-full resize-y rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-none focus:border-coral-400"
       />
+      <div className="mt-1.5 flex items-center gap-2">
+        <button
+          type="button"
+          disabled={aiBusy}
+          onClick={async () => {
+            setAiBusy(true);
+            try {
+              const txt = await writeAlbumText({
+                location: day?.location || entry.title,
+                title: entry.title,
+                note: entry.note,
+                captions: (entry.photos || []).map((p) => p.caption).filter(Boolean),
+                unit,
+              });
+              if (txt) update({ note: txt });
+            } catch (e) {
+              alert(e.message || "L'IA n'a pas pu écrire le texte. Réessaie dans un instant.");
+            } finally {
+              setAiBusy(false);
+            }
+          }}
+          className="flex items-center gap-1.5 rounded-lg border border-coral-300 bg-coral-50 px-3 py-1.5 text-xs font-semibold text-coral-700 hover:bg-coral-100 disabled:opacity-60"
+        >
+          {aiBusy && <Spinner className="h-3.5 w-3.5" />}
+          {aiBusy ? 'Rédaction…' : (entry.note?.trim() ? '✨ Améliorer avec l’IA' : '✨ Écrire avec l’IA')}
+        </button>
+        <span className="text-[11px] text-slate-400">D'après le lieu, le titre et tes légendes.</span>
+      </div>
 
       {entry.photos.length > 0 && (
         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">

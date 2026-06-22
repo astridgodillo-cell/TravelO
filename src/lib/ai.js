@@ -202,6 +202,13 @@ export async function travelChat(messages) {
   return data?.reply || '';
 }
 
+// Rédige (ou améliore) le texte d'une page d'album pour une journée/étape.
+// ctx = { location, title, note, captions:[], unit, tripTitle }. Renvoie un texte.
+export async function writeAlbumText(ctx = {}) {
+  const data = await invoke({ mode: 'album-text', ...ctx });
+  return (data?.text || '').trim();
+}
+
 // Réinvente un titre de voyage : court et poétique, + un sous-titre descriptif
 // qui résume le parcours. Best-effort : renvoie des chaînes vides si échec.
 export async function generateTripTitle(itinerary) {

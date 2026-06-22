@@ -4048,6 +4048,27 @@ RÈGLES : réalisme et faisabilité (pas trop d'étapes, rythme tenable, environ
       return jsonResponse({ reply, usage, model: modelUsed });
     }
 
+    if (mode === 'album-text') {
+      // Rédige le petit texte d'une page d'album (journée / étape) à partir du
+      // lieu, d'un éventuel texte déjà écrit et des légendes des photos.
+      const place = String(body.location || body.title || '').trim();
+      const existing = String(body.note || '').trim();
+      const captions = Array.isArray(body.captions)
+        ? body.captions.map((c) => String(c || '').trim()).filter(Boolean).slice(0, 12)
+        : [];
+      const tripTitle = String(body.tripTitle || '').trim();
+      const unitWord = body.unit === 'etape' ? 'étape' : 'journée';
+      const prompt = `Tu écris le texte d'une page d'ALBUM PHOTO de voyage (carnet de souvenirs), à la première personne, en français.
+Rédige un court paragraphe chaleureux et évocateur (2 à 4 phrases, ~40 à 70 mots) qui raconte cette ${unitWord}.
+${tripTitle ? `Voyage : « ${tripTitle} ».\n` : ''}${place ? `Lieu / titre : « ${place} ».\n` : ''}${existing ? `Texte déjà écrit par le voyageur (à améliorer / prolonger en gardant l'esprit et les faits) :\n"""${existing}"""\n` : ''}${captions.length ? `Indices (légendes de photos) : ${captions.join(' ; ')}.\n` : ''}
+Style : carnet de voyage, sensoriel et sincère, sans clichés ni superlatifs creux, sans hashtags, sans emojis, sans titre, sans guillemets autour du texte. N'invente pas de faits précis non fournis.
+Réponds en JSON STRICT : {"text": "<le paragraphe>"}`;
+      const { text, usage, modelUsed } = await callMain(prompt, 600);
+      const parsed = await parseOrRepair(text, callMainSafe);
+      const out = (parsed?.text || text || '').toString().trim();
+      return jsonResponse({ text: out, usage, model: modelUsed });
+    }
+
     if (mode === 'parse-brief') {
       const brief = typeof body.text === 'string' ? body.text.trim() : '';
       const today = body.today || '';
