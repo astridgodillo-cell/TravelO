@@ -81,7 +81,7 @@ export function CoverDesigner({ variant = 'cover', photo, title, dates, note, on
             spreadSrc ? (
               <div className="absolute inset-0 overflow-hidden">
                 <img src={spreadSrc} alt="" draggable={false}
-                  style={{ position: 'absolute', top: 0, height: '100%', width: '200%', left: spreadHalf === 'right' ? '-100%' : '0', objectFit: 'cover' }} />
+                  style={{ position: 'absolute', top: 0, height: '100%', width: '200%', objectFit: 'cover', ...(spreadHalf === 'right' ? { right: 0 } : { left: 0 }) }} />
               </div>
             ) : (
               <div className="absolute inset-0 flex items-center justify-center px-4 text-center text-[11px] text-white/70">Choisis la photo des couvertures ↑</div>
