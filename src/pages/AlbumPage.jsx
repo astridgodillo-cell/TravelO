@@ -191,35 +191,44 @@ export function CoversSection({ album, format, theme, dates, hasMap, onPatch, on
       )}
 
       <div className="mt-2 grid grid-cols-1 gap-5 sm:grid-cols-2">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-coral-600">1re de couverture (avant)</p>
-          <CoverDesigner
-            variant="cover" compact
-            photo={album.cover} title={album.title} dates={dates}
-            format={format} theme={theme}
-            layout={album.coverLayout || {}}
-            onChangeLayout={(l) => onPatch({ coverLayout: l })}
-            onChoose={() => onPick('cover')}
-            onClear={album.cover ? () => onPatch({ cover: null }) : null}
-            spreadHalf={spreadOn ? 'right' : null}
-            spreadPhoto={spread.photo}
-          />
-        </div>
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-coral-600">4e de couverture (page de fin)</p>
-          <CoverDesigner
-            variant="end" compact
-            photo={album.endPhoto} title={album.title} dates={dates}
-            note={album.endNote} onChangeNote={(t) => onPatch({ endNote: t })}
-            format={format} theme={theme}
-            layout={album.endLayout || {}}
-            onChangeLayout={(l) => onPatch({ endLayout: l })}
-            onChoose={() => onPick('end')}
-            onClear={album.endPhoto ? () => onPatch({ endPhoto: null }) : null}
-            spreadHalf={spreadOn ? 'left' : null}
-            spreadPhoto={spread.photo}
-          />
-        </div>
+        {(() => {
+          const front = (
+            <div key="front">
+              <p className="text-xs font-semibold uppercase tracking-wide text-coral-600">1re de couverture (avant)</p>
+              <CoverDesigner
+                variant="cover" compact
+                photo={album.cover} title={album.title} dates={dates}
+                format={format} theme={theme}
+                layout={album.coverLayout || {}}
+                onChangeLayout={(l) => onPatch({ coverLayout: l })}
+                onChoose={() => onPick('cover')}
+                onClear={album.cover ? () => onPatch({ cover: null }) : null}
+                spreadHalf={spreadOn ? 'right' : null}
+                spreadPhoto={spread.photo}
+              />
+            </div>
+          );
+          const back = (
+            <div key="back">
+              <p className="text-xs font-semibold uppercase tracking-wide text-coral-600">4e de couverture (page de fin)</p>
+              <CoverDesigner
+                variant="end" compact
+                photo={album.endPhoto} title={album.title} dates={dates}
+                note={album.endNote} onChangeNote={(t) => onPatch({ endNote: t })}
+                format={format} theme={theme}
+                layout={album.endLayout || {}}
+                onChangeLayout={(l) => onPatch({ endLayout: l })}
+                onChoose={() => onPick('end')}
+                onClear={album.endPhoto ? () => onPatch({ endPhoto: null }) : null}
+                spreadHalf={spreadOn ? 'left' : null}
+                spreadPhoto={spread.photo}
+              />
+            </div>
+          );
+          // Photo étendue : 4e à gauche + 1re à droite → la photo se lit en
+          // continu. Deux photos différentes : 1re à gauche, 4e à droite.
+          return spreadOn ? [back, front] : [front, back];
+        })()}
       </div>
 
       {/* Page d'ouverture (après la 2e de couverture blanche) */}
