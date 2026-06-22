@@ -38,6 +38,9 @@ import {
   fontCss,
   getFrameShape,
   shapeClipCss,
+  photoFocal,
+  coverFrac,
+  frameInsetFrac,
 } from '../lib/albumModel';
 
 // Petit indicateur de chargement animé (réutilisé sur les boutons d'envoi).
@@ -430,55 +433,124 @@ function isLowRes(photo) {
   return longEdge > 0 && longEdge < MIN_PRINT_PX;
 }
 
-function effectPreview(effect, radiusPx = 10) {
-  // Aperçu (HTML) du filtre + cadre dans l'éditeur et le sélecteur.
-  const imgStyle = {};
-  const wrap = {};
-  if (effect.css) imgStyle.filter = effect.css;
+// Styles d'un effet (HTML) découpés en trois rôles :
+//   frameWrap : décor du cadre (fond/bordure) AUTOUR de la zone photo ;
+//   clip      : découpe appliquée à la zone photo (forme, coins arrondis…) ;
+//   filter    : filtre couleur appliqué à l'image.
+// La marge intérieure du cadre vient de frameInsetFrac (partagée avec le PDF).
+function effectStyles(effect, radiusPx = 10) {
+  const ins = frameInsetFrac(effect.frame);
+  const pad = `${ins.t * 100}% ${ins.r * 100}% ${ins.b * 100}% ${ins.l * 100}%`;
+  const frameWrap = {};
+  const clip = {};
+  const filter = effect.css || '';
   switch (effect.frame) {
-    case 'border': Object.assign(wrap, { padding: '5%', background: '#fff' }); break;
-    case 'postcard': Object.assign(wrap, { padding: '5%', background: '#fff', border: '1px solid #e2ddd0' }); break;
-    case 'polaroid': Object.assign(wrap, { padding: '5% 5% 16% 5%', background: '#fff' }); break;
-    case 'rounded': imgStyle.borderRadius = radiusPx; break;
-    case 'thin': imgStyle.border = '2px solid #111'; break;
-    case 'wood': Object.assign(wrap, { padding: '6%', background: 'linear-gradient(135deg,#a06a33,#6e4423)' }); break;
-    case 'gold': Object.assign(wrap, { padding: '5%', background: 'linear-gradient(135deg,#e7c66a,#b8901f)' }); break;
-    case 'stamp': Object.assign(wrap, { padding: '7%', background: '#fff', border: '2px dashed #b9b2a3' }); break;
-    case 'film': Object.assign(wrap, { padding: '12% 5%', background: '#141414' }); break;
-    case 'parchment': Object.assign(wrap, { padding: '6%', background: '#efe2c4', border: '1px solid #cdbd97' }); break;
+    case 'border': Object.assign(frameWrap, { padding: pad, background: '#fff' }); break;
+    case 'postcard': Object.assign(frameWrap, { padding: pad, background: '#fff', border: '1px solid #e2ddd0' }); break;
+    case 'polaroid': Object.assign(frameWrap, { padding: pad, background: '#fff' }); break;
+    case 'rounded': clip.borderRadius = radiusPx; break;
+    case 'thin': clip.border = '2px solid #111'; break;
+    case 'wood': Object.assign(frameWrap, { padding: pad, background: 'linear-gradient(135deg,#a06a33,#6e4423)' }); break;
+    case 'gold': Object.assign(frameWrap, { padding: pad, background: 'linear-gradient(135deg,#e7c66a,#b8901f)' }); break;
+    case 'stamp': Object.assign(frameWrap, { padding: pad, background: '#fff', border: '2px dashed #b9b2a3' }); break;
+    case 'film': Object.assign(frameWrap, { padding: pad, background: '#141414' }); break;
+    case 'parchment': Object.assign(frameWrap, { padding: pad, background: '#efe2c4', border: '1px solid #cdbd97' }); break;
     case 'shape': {
       const sh = getFrameShape(effect.shape);
-      if (sh) imgStyle.clipPath = shapeClipCss(sh.pts);
+      if (sh) clip.clipPath = shapeClipCss(sh.pts);
       break;
     }
     default: break;
   }
-  return { imgStyle, wrapStyle: wrap };
+  return { frameWrap, clip, filter };
 }
 
-// Fenêtre de choix d'effet : montre LA photo avec chaque effet appliqué.
-export function EffectPicker({ photo, current, onPick, onClose }) {
-  const src = photo.display || photo.full;
+// Remplit une case (son conteneur parent, de ratio containerAr) avec une photo :
+// cadre + filtre + CADRAGE (point de mire fx,fy + zoom fz) → on voit exactement
+// la zone choisie. Géométrie identique au PDF (coverFrac/frameInsetFrac).
+function PhotoFill({ photo, containerAr = 4 / 3, radiusPx = 10 }) {
+  const effect = getPhotoEffect(photo.effect);
+  const { frameWrap, clip, filter } = effectStyles(effect, radiusPx);
+  const ins = frameInsetFrac(effect.frame);
+  const innerAr = containerAr * (1 - ins.l - ins.r) / (1 - ins.t - ins.b);
+  const iAr = photo.w && photo.h ? photo.w / photo.h : innerAr;
+  const { fx, fy, fz } = photoFocal(photo);
+  const f = coverFrac(innerAr, iAr, fx, fy, fz);
+  return (
+    <div className="flex h-full w-full items-center justify-center overflow-hidden" style={frameWrap}>
+      <div className="relative h-full w-full overflow-hidden" style={clip}>
+        <img
+          src={photo.display || photo.full}
+          alt=""
+          draggable={false}
+          style={{ position: 'absolute', left: `${f.left * 100}%`, top: `${f.top * 100}%`, width: `${f.w * 100}%`, height: `${f.h * 100}%`, maxWidth: 'none', filter: filter || undefined }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// Fenêtre de choix d'effet : choix du filtre/cadre/forme + CADRAGE de la photo
+// (glisser pour déplacer la zone visible, curseur pour zoomer). onChange reçoit
+// un correctif partiel : { effect } ou { fx, fy, fz }.
+export function EffectPicker({ photo, current, onChange, onClose }) {
+  const f0 = photoFocal(photo);
+  const [fx, setFx] = useState(f0.fx);
+  const [fy, setFy] = useState(f0.fy);
+  const [fz, setFz] = useState(f0.fz);
+  const boxRef = useRef(null);
+  const drag = useRef(null);
+
+  const effect = getPhotoEffect(current);
+  const ins = frameInsetFrac(effect.frame);
+  const PREVIEW_AR = 4 / 3;
+  const innerAr = (PREVIEW_AR * (1 - ins.l - ins.r)) / (1 - ins.t - ins.b);
+  const iAr = photo.w && photo.h ? photo.w / photo.h : innerAr;
+
+  const apply = (patch) => {
+    if ('fx' in patch) setFx(patch.fx);
+    if ('fy' in patch) setFy(patch.fy);
+    if ('fz' in patch) setFz(patch.fz);
+    onChange(patch);
+  };
+  const recenter = () => apply({ fx: 0.5, fy: 0.5, fz: 1 });
+
+  const onPointerDown = (e) => {
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    drag.current = { x: e.clientX, y: e.clientY, fx, fy };
+  };
+  const onPointerMove = (e) => {
+    if (!drag.current || !boxRef.current) return;
+    const r = boxRef.current.getBoundingClientRect();
+    const cv = coverFrac(innerAr, iAr, drag.current.fx, drag.current.fy, fz);
+    const ow = cv.w - 1;
+    const oh = cv.h - 1;
+    let nfx = drag.current.fx;
+    let nfy = drag.current.fy;
+    if (ow > 0.0001) nfx = Math.min(1, Math.max(0, drag.current.fx - (e.clientX - drag.current.x) / r.width / ow));
+    if (oh > 0.0001) nfy = Math.min(1, Math.max(0, drag.current.fy - (e.clientY - drag.current.y) / r.height / oh));
+    apply({ fx: nfx, fy: nfy });
+  };
+  const onPointerUp = () => { drag.current = null; };
+
+  const previewPhoto = { ...photo, fx, fy, fz };
   const groups = [
     ['Filtres de couleur', PHOTO_EFFECTS.filter((e) => e.cat === 'filtre')],
     ['Cadres', PHOTO_EFFECTS.filter((e) => e.cat === 'cadre')],
     ['Formes (découpe)', PHOTO_EFFECTS.filter((e) => e.cat === 'forme')],
   ];
-  const Tile = ({ e }) => {
-    const { imgStyle, wrapStyle } = effectPreview(e, 8);
-    return (
-      <button
-        type="button"
-        onClick={() => { onPick(e.id); onClose(); }}
-        className={`overflow-hidden rounded-xl border-2 ${current === e.id ? 'border-coral-500' : 'border-transparent'}`}
-      >
-        <div className="flex aspect-[4/3] w-full items-center justify-center overflow-hidden bg-slate-100" style={wrapStyle}>
-          <img src={src} alt="" className="h-full w-full object-cover" style={imgStyle} />
-        </div>
-        <div className="truncate px-1 py-1 text-center text-[11px] font-medium text-slate-700">{e.label}</div>
-      </button>
-    );
-  };
+  const Tile = ({ e }) => (
+    <button
+      type="button"
+      onClick={() => onChange({ effect: e.id })}
+      className={`overflow-hidden rounded-xl border-2 ${current === e.id ? 'border-coral-500' : 'border-transparent'}`}
+    >
+      <div className="aspect-[4/3] w-full bg-slate-100" style={{ containerType: 'size' }}>
+        <PhotoFill photo={{ ...photo, effect: e.id, fx, fy, fz }} containerAr={4 / 3} radiusPx={8} />
+      </div>
+      <div className="truncate px-1 py-1 text-center text-[11px] font-medium text-slate-700">{e.label}</div>
+    </button>
+  );
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-4">
       <div className="flex max-h-[100dvh] w-full max-w-2xl flex-col rounded-t-2xl bg-white shadow-2xl sm:max-h-[90vh] sm:rounded-2xl">
@@ -487,10 +559,41 @@ export function EffectPicker({ photo, current, onPick, onClose }) {
           <button onClick={onClose} className="-m-2 p-2 text-2xl leading-none text-slate-400 hover:text-slate-700">✕</button>
         </div>
         <div className="flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-3">
+          {/* Cadrage : glisser pour déplacer, curseur pour zoomer */}
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Cadrage</p>
+            <div className="mx-auto" style={{ maxWidth: '20rem' }}>
+              <div
+                ref={boxRef}
+                onPointerDown={onPointerDown}
+                onPointerMove={onPointerMove}
+                onPointerUp={onPointerUp}
+                onPointerCancel={onPointerUp}
+                className="relative w-full cursor-move touch-none select-none overflow-hidden rounded-xl bg-slate-100"
+                style={{ aspectRatio: '4 / 3', containerType: 'size' }}
+              >
+                <PhotoFill photo={previewPhoto} containerAr={4 / 3} radiusPx={10} />
+              </div>
+              <div className="mt-2 flex items-center gap-3">
+                <span className="text-xs text-slate-500">Zoom</span>
+                <input
+                  type="range"
+                  min="1"
+                  max="3"
+                  step="0.05"
+                  value={fz}
+                  onChange={(ev) => apply({ fz: Number(ev.target.value) })}
+                  className="h-1 flex-1 cursor-pointer accent-coral-500"
+                />
+                <button type="button" onClick={recenter} className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50">Recentrer</button>
+              </div>
+              <p className="mt-1 text-[11px] text-slate-400">Glisse la photo pour choisir la partie visible.</p>
+            </div>
+          </div>
           <div>
             <button
               type="button"
-              onClick={() => { onPick('none'); onClose(); }}
+              onClick={() => onChange({ effect: 'none' })}
               className={`mb-1 w-full rounded-lg border px-3 py-2 text-sm font-medium ${current === 'none' ? 'border-coral-400 bg-coral-50 text-coral-700' : 'border-slate-200 text-slate-700 hover:bg-slate-50'}`}
             >
               Aucun effet (photo d'origine)
@@ -504,6 +607,9 @@ export function EffectPicker({ photo, current, onPick, onClose }) {
               </div>
             </div>
           ))}
+        </div>
+        <div className="flex shrink-0 justify-end border-t border-slate-100 px-4 py-3">
+          <button onClick={onClose} className="rounded-lg bg-coral-500 px-5 py-2 text-sm font-semibold text-white">Terminé</button>
         </div>
       </div>
     </div>
@@ -551,13 +657,10 @@ function DecoItemView({ it }) {
 function ObjView({ it }) {
   if (it.kind === 'photo') {
     const p = it.photo;
-    const { imgStyle, wrapStyle } = effectPreview(getPhotoEffect(p.effect));
     const pdeco = p.deco || [];
     return (
       <div className="relative overflow-hidden" style={{ width: `${it.scale * 100}cqmin`, aspectRatio: String(it.ar || 4 / 3), containerType: 'size' }}>
-        <div className="flex h-full w-full items-center justify-center overflow-hidden" style={wrapStyle}>
-          <img src={p.display || p.full} alt="" className="h-full w-full object-cover" style={imgStyle} draggable={false} />
-        </div>
+        <PhotoFill photo={p} containerAr={it.ar || 4 / 3} />
         {pdeco.map((d, k) => (
           <div key={k} className="absolute" style={{ left: `${d.xf * 100}%`, top: `${d.yf * 100}%`, transform: `translate(-50%,-50%) rotate(${d.rot}deg)` }}>
             <DecoItemView it={d} />
@@ -835,8 +938,6 @@ export function DecoEditor({ title, aspect, background, initialItems, onChange, 
 // Décorer UNE photo (le fond du canevas est la photo).
 export function DecorateModal({ photo, onChange, onClose }) {
   const ar = photo.w && photo.h ? photo.w / photo.h : 4 / 3;
-  const eff = getPhotoEffect(photo.effect);
-  const { imgStyle } = effectPreview(eff);
   return (
     <DecoEditor
       title="Décorer la photo"
@@ -844,7 +945,7 @@ export function DecorateModal({ photo, onChange, onClose }) {
       initialItems={photo.deco || []}
       onChange={onChange}
       onClose={onClose}
-      background={<img src={photo.display || photo.full} alt="" className="h-full w-full object-cover" style={imgStyle} draggable={false} />}
+      background={<PhotoFill photo={photo} containerAr={ar} />}
     />
   );
 }
@@ -879,13 +980,10 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
   let baseStyle = { backgroundColor: theme?.paper || '#FBF8F3', ...themePatternStyle(theme) };
   if (spec.type === 'color') baseStyle = { backgroundColor: spec.color };
 
-  const photoInner = (p) => {
-    const { imgStyle, wrapStyle } = effectPreview(getPhotoEffect(p.effect));
+  const photoInner = (p, containerAr) => {
     return (
       <>
-        <div className="flex h-full w-full items-center justify-center overflow-hidden" style={wrapStyle}>
-          <img src={p.display || p.full} alt="" className="h-full w-full object-cover" style={imgStyle} draggable={false} />
-        </div>
+        <PhotoFill photo={p} containerAr={containerAr} />
         {(p.deco || []).map((it, k) => (
           <div key={k} className="absolute" style={{ left: `${it.xf * 100}%`, top: `${it.yf * 100}%`, transform: `translate(-50%,-50%) rotate(${it.rot}deg)` }}>
             <DecoItemView it={it} />
@@ -930,7 +1028,7 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
             const hPct = ((b.scale * minPage) / ar / lay.pageH) * 100;
             return (
               <div key={i} className="absolute overflow-hidden" style={{ left: `${b.xf * 100}%`, top: `${b.yf * 100}%`, width: `${wPct}%`, height: `${hPct}%`, transform: `translate(-50%,-50%) rotate(${b.rot}deg)`, containerType: 'size' }}>
-                {photoInner(p)}
+                {photoInner(p, ar)}
               </div>
             );
           })
@@ -939,7 +1037,7 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
             if (!c) return null;
             return (
               <div key={i} className="absolute overflow-hidden" style={{ left: pct(c.x, lay.pageW), top: pct(c.y, lay.pageH), width: pct(c.w, lay.pageW), height: pct(c.h, lay.pageH), containerType: 'size' }}>
-                {photoInner(p)}
+                {photoInner(p, c.w / c.h)}
               </div>
             );
           })}
@@ -1027,13 +1125,10 @@ export function PageDecorateModal({
       {!freeValid && photos.map((p, i) => {
         const c = lay.cells[i];
         if (!c) return null;
-        const { imgStyle, wrapStyle } = effectPreview(getPhotoEffect(p.effect));
         const pdeco = p.deco || [];
         return (
           <div key={i} className="absolute overflow-hidden" style={{ left: pct(c.x, lay.pageW), top: pct(c.y, lay.pageH), width: pct(c.w, lay.pageW), height: pct(c.h, lay.pageH), containerType: 'size' }}>
-            <div className="flex h-full w-full items-center justify-center overflow-hidden" style={wrapStyle}>
-              <img src={p.display || p.full} alt="" className="h-full w-full object-cover" style={imgStyle} draggable={false} />
-            </div>
+            <PhotoFill photo={p} containerAr={c.w / c.h} />
             {pdeco.map((it, k) => (
               <div key={k} className="absolute" style={{ left: `${it.xf * 100}%`, top: `${it.yf * 100}%`, transform: `translate(-50%,-50%) rotate(${it.rot}deg)` }}>
                 <DecoItemView it={it} />
@@ -1111,14 +1206,11 @@ function PhotoTile({ photo, onCaption, onRemove, onMoveLeft, onMoveRight, canLef
   const [fxOpen, setFxOpen] = useState(false);
   const [decoOpen, setDecoOpen] = useState(false);
   const effect = getPhotoEffect(photo.effect);
-  const { imgStyle, wrapStyle } = effectPreview(effect);
   const deco = photo.deco || [];
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
       <div className="relative aspect-[4/3] bg-slate-100" style={{ containerType: 'size' }}>
-        <div className="flex h-full w-full items-center justify-center overflow-hidden" style={wrapStyle}>
-          <img src={photo.display || photo.full} alt="" className="h-full w-full object-cover" style={imgStyle} />
-        </div>
+        <PhotoFill photo={photo} containerAr={4 / 3} />
         {/* aperçu des décorations */}
         {deco.map((it, i) => (
           <div key={i} className="pointer-events-none absolute"
@@ -1168,7 +1260,7 @@ function PhotoTile({ photo, onCaption, onRemove, onMoveLeft, onMoveRight, canLef
         className="w-full border-t border-slate-100 px-2.5 py-2 text-xs text-slate-700 outline-none"
       />
       {fxOpen && (
-        <EffectPicker photo={photo} current={effect.id} onPick={onEffect} onClose={() => setFxOpen(false)} />
+        <EffectPicker photo={photo} current={effect.id} onChange={onEffect} onClose={() => setFxOpen(false)} />
       )}
       {decoOpen && (
         <DecorateModal photo={photo} onChange={onDeco} onClose={() => setDecoOpen(false)} />
@@ -1235,8 +1327,8 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
     );
     update({ photos });
   }
-  function setPhotoEffect(pi, effect) {
-    const photos = entry.photos.map((p, i) => (i === pi ? { ...p, effect } : p));
+  function setPhotoPatch(pi, patch) {
+    const photos = entry.photos.map((p, i) => (i === pi ? { ...p, ...patch } : p));
     update({ photos });
   }
   function setPhotoDeco(pi, deco) {
@@ -1313,7 +1405,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
               key={pi}
               photo={p}
               onCaption={(c) => setPhotoCaption(pi, c)}
-              onEffect={(fx) => setPhotoEffect(pi, fx)}
+              onEffect={(patch) => setPhotoPatch(pi, patch)}
               onDeco={(d) => setPhotoDeco(pi, d)}
               onRemove={() => removePhoto(pi)}
               onMoveLeft={() => movePhoto(pi, -1)}

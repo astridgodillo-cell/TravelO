@@ -18,7 +18,7 @@ import {
   Document, Page, View, Text, Image, StyleSheet, Font,
   Svg, Rect, Circle, Ellipse, Polygon, Polyline, Defs, ClipPath, LinearGradient, Stop,
 } from '@react-pdf/renderer';
-import { getPhotoEffect, twemojiUrl, splitPhotos, pageLayout, resolveBg, unitLabel, computeBubble, fontPdf, getFrameShape, shapePointsPx } from '../lib/albumModel';
+import { getPhotoEffect, twemojiUrl, splitPhotos, pageLayout, resolveBg, unitLabel, computeBubble, fontPdf, getFrameShape, shapePointsPx, photoFocal, coverFrac, frameInsetFrac } from '../lib/albumModel';
 
 const CDN = 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl';
 
@@ -150,24 +150,33 @@ function PageBackground({ spec, pageW, pageH, st }) {
   return null;
 }
 
-const COVER_IMG = { width: '100%', height: '100%', objectFit: 'cover' };
+// Remplit une zone w×h (points) avec une image en « cover », en respectant le
+// CADRAGE (point de mire + zoom). Géométrie identique à l'éditeur (coverFrac).
+function CoverImg({ src, w, h, ar, focal }) {
+  const fc = focal || { fx: 0.5, fy: 0.5, fz: 1 };
+  const f = coverFrac(w / h, ar || w / h, fc.fx, fc.fy, fc.fz);
+  return (
+    <View style={{ width: '100%', height: '100%', overflow: 'hidden', position: 'relative' }}>
+      <Image src={src} style={{ position: 'absolute', left: f.left * w, top: f.top * h, width: f.w * w, height: f.h * h }} />
+    </View>
+  );
+}
 
-// Cadres « simples » (fond + marge + éventuelle bordure) → style du conteneur.
-function simpleFrameStyle(frame, w, h) {
-  const pad = Math.max(4, Math.min(w, h) * 0.05);
+// Couleur de fond / bordure d'un cadre « simple » (la marge vient de l'inset).
+function simpleFrameStyle(frame) {
   switch (frame) {
-    case 'border': return { backgroundColor: '#FFFFFF', padding: pad };
-    case 'postcard': return { backgroundColor: '#FFFFFF', padding: pad, borderWidth: 0.7, borderColor: '#E2DDD0' };
-    case 'polaroid': return { backgroundColor: '#FFFFFF', paddingTop: pad, paddingHorizontal: pad, paddingBottom: pad * 3 };
-    case 'wood': return { backgroundColor: '#7C4A21', padding: Math.max(6, Math.min(w, h) * 0.06) };
-    case 'gold': return { backgroundColor: '#C9A227', padding: pad };
-    case 'parchment': return { backgroundColor: '#EFE2C4', padding: pad, borderWidth: 0.8, borderColor: '#CDBD97' };
+    case 'border': return { backgroundColor: '#FFFFFF' };
+    case 'postcard': return { backgroundColor: '#FFFFFF', borderWidth: 0.7, borderColor: '#E2DDD0' };
+    case 'polaroid': return { backgroundColor: '#FFFFFF' };
+    case 'wood': return { backgroundColor: '#7C4A21' };
+    case 'gold': return { backgroundColor: '#C9A227' };
+    case 'parchment': return { backgroundColor: '#EFE2C4', borderWidth: 0.8, borderColor: '#CDBD97' };
     default: return null;
   }
 }
 
 // Timbre : bordure blanche + trous de perforation (gris) le long des 4 bords.
-function StampFrame({ src, w, h }) {
+function StampFrame({ src, w, h, ar, focal }) {
   const b = Math.max(6, Math.min(w, h) * 0.07); // épaisseur du bord blanc
   const r = b * 0.32;
   const stepX = Math.max(8, w / Math.round(w / (r * 3)));
@@ -182,7 +191,7 @@ function StampFrame({ src, w, h }) {
   return (
     <View style={{ width: '100%', height: '100%', backgroundColor: '#FFFFFF', position: 'relative' }}>
       <View style={{ position: 'absolute', top: b, left: b, right: b, bottom: b }}>
-        <Image src={src} style={COVER_IMG} />
+        <CoverImg src={src} w={w - 2 * b} h={h - 2 * b} ar={ar} focal={focal} />
       </View>
       <Svg style={{ position: 'absolute', top: 0, left: 0 }} width={w} height={h}>
         {holes.map(([k, cx, cy]) => (
@@ -194,7 +203,7 @@ function StampFrame({ src, w, h }) {
 }
 
 // Pellicule : bandes noires haut/bas avec perforations blanches (style 35 mm).
-function FilmFrame({ src, w, h }) {
+function FilmFrame({ src, w, h, ar, focal }) {
   const strip = Math.max(10, h * 0.12);
   const hole = strip * 0.42;
   const stepX = Math.max(10, w / Math.round(w / (hole * 1.9)));
@@ -205,7 +214,7 @@ function FilmFrame({ src, w, h }) {
   return (
     <View style={{ width: '100%', height: '100%', backgroundColor: '#141414', position: 'relative' }}>
       <View style={{ position: 'absolute', top: strip, left: 4, right: 4, bottom: strip }}>
-        <Image src={src} style={COVER_IMG} />
+        <CoverImg src={src} w={w - 8} h={h - 2 * strip} ar={ar} focal={focal} />
       </View>
       <Svg style={{ position: 'absolute', top: 0, left: 0 }} width={w} height={h}>
         {holes.map(([k, x], i) => (
@@ -269,16 +278,12 @@ function PagePattern({ theme, pageW, pageH }) {
 // Découpe de la photo selon une silhouette (cœur, étoile…). La photo est
 // dessinée en « cover » (sans déformation) puis masquée par le polygone de la
 // forme — exactement comme l'éditeur (clip-path), coins transparents.
-function ShapeFrame({ src, shape, w, h, ar }) {
+function ShapeFrame({ src, shape, w, h, ar, focal }) {
   const sh = getFrameShape(shape);
-  if (!sh) return <Image src={src} style={COVER_IMG} />;
-  // Rectangle de dessin couvrant la case w×h en conservant le ratio de l'image.
-  let dw = w; let dh = h; let dx = 0; let dy = 0;
-  if (ar) {
-    const cellAr = w / h;
-    if (ar > cellAr) { dh = h; dw = h * ar; dx = -(dw - w) / 2; }
-    else { dw = w; dh = w / ar; dy = -(dh - h) / 2; }
-  }
+  if (!sh) return <CoverImg src={src} w={w} h={h} ar={ar} focal={focal} />;
+  const fc = focal || { fx: 0.5, fy: 0.5, fz: 1 };
+  // Rectangle de dessin (cover + cadrage) IDENTIQUE à l'éditeur, puis masqué.
+  const f = coverFrac(w / h, ar || w / h, fc.fx, fc.fy, fc.fz);
   return (
     <Svg width={w} height={h}>
       <Defs>
@@ -286,31 +291,41 @@ function ShapeFrame({ src, shape, w, h, ar }) {
           <Polygon points={shapePointsPx(sh.pts, w, h)} />
         </ClipPath>
       </Defs>
-      <Image src={src} x={dx} y={dy} style={{ width: dw, height: dh }} clipPath="url(#shp)" />
+      <Image src={src} x={f.left * w} y={f.top * h} style={{ width: f.w * w, height: f.h * h }} clipPath="url(#shp)" />
     </Svg>
   );
 }
 
-function FramedImage({ src, frame, shape, w, h, ar, st }) {
-  if (!frame) return <Image src={src} style={st.mosaicImg} />;
-  if (frame === 'shape') return <ShapeFrame src={src} shape={shape} w={w} h={h} ar={ar} />;
-  if (frame === 'stamp') return <StampFrame src={src} w={w} h={h} />;
-  if (frame === 'film') return <FilmFrame src={src} w={w} h={h} />;
+function FramedImage({ src, frame, shape, w, h, ar, focal }) {
+  if (!frame) return <CoverImg src={src} w={w} h={h} ar={ar} focal={focal} />;
+  if (frame === 'shape') return <ShapeFrame src={src} shape={shape} w={w} h={h} ar={ar} focal={focal} />;
+  if (frame === 'stamp') return <StampFrame src={src} w={w} h={h} ar={ar} focal={focal} />;
+  if (frame === 'film') return <FilmFrame src={src} w={w} h={h} ar={ar} focal={focal} />;
   if (frame === 'rounded') {
     const rad = Math.min(w, h) * 0.06;
     return (
       <View style={{ width: '100%', height: '100%', borderRadius: rad, overflow: 'hidden' }}>
-        <Image src={src} style={COVER_IMG} />
+        <CoverImg src={src} w={w} h={h} ar={ar} focal={focal} />
       </View>
     );
   }
   if (frame === 'thin') {
-    return <Image src={src} style={{ ...COVER_IMG, borderWidth: 1.2, borderColor: '#111111' }} />;
+    return (
+      <View style={{ width: '100%', height: '100%', borderWidth: 1.2, borderColor: '#111111' }}>
+        <CoverImg src={src} w={w} h={h} ar={ar} focal={focal} />
+      </View>
+    );
   }
-  const fs = simpleFrameStyle(frame, w, h);
+  // Cadres « simples » : fond/bordure + marge intérieure (frameInsetFrac).
+  const fs = simpleFrameStyle(frame);
+  const ins = frameInsetFrac(frame);
+  const iw = w * (1 - ins.l - ins.r);
+  const ih = h * (1 - ins.t - ins.b);
   return (
-    <View style={{ width: '100%', height: '100%', ...fs }}>
-      <Image src={src} style={COVER_IMG} />
+    <View style={{ width: '100%', height: '100%', position: 'relative', ...fs }}>
+      <View style={{ position: 'absolute', left: ins.l * w, top: ins.t * h, width: iw, height: ih }}>
+        <CoverImg src={src} w={iw} h={ih} ar={ar} focal={focal} />
+      </View>
     </View>
   );
 }
@@ -372,12 +387,13 @@ function DecoLayer({ items, w, h }) {
 
 // Une photo de la mosaïque : effet (cadre + filtre « cuit ») + décorations
 // propres à la photo, en fractions de la case.
-function PdfPhoto({ photo, st, w, h }) {
+function PdfPhoto({ photo, w, h }) {
   const effect = getPhotoEffect(photo.effect);
   const src = photo._fx || imgFull(photo);
   const deco = photo.deco || [];
   const ar = photo.w && photo.h ? photo.w / photo.h : null;
-  const framed = <FramedImage src={src} frame={effect.frame} shape={effect.shape} w={w} h={h} ar={ar} st={st} />;
+  const focal = photoFocal(photo);
+  const framed = <FramedImage src={src} frame={effect.frame} shape={effect.shape} w={w} h={h} ar={ar} focal={focal} />;
   if (!deco.length) return framed;
   return (
     <View style={{ width: '100%', height: '100%', position: 'relative' }}>

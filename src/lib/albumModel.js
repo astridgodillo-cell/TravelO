@@ -375,6 +375,39 @@ export function getPhotoEffect(id) {
   return PHOTO_EFFECTS.find((e) => e.id === id) || PHOTO_EFFECTS[0];
 }
 
+// Cadrage d'une photo DANS sa case : point de mire (fx,fy ∈ 0..1) + zoom
+// (fz ≥ 1). Permet de choisir la zone visible quand la photo est rognée
+// (« cover ») ou découpée par un cadre/forme. Valeurs par défaut = centre.
+export function photoFocal(p) {
+  const c = (v) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0.5);
+  return { fx: c(p?.fx), fy: c(p?.fy), fz: Math.max(1, Number.isFinite(p?.fz) ? p.fz : 1) };
+}
+
+// Marge intérieure d'un cadre, en FRACTIONS de la case (haut/droite/bas/gauche).
+// Source unique partagée éditeur ⇄ PDF → la zone photo est rigoureusement la
+// même des deux côtés.
+export function frameInsetFrac(frame) {
+  switch (frame) {
+    case 'border': case 'postcard': case 'gold': case 'parchment':
+      return { t: 0.05, r: 0.05, b: 0.05, l: 0.05 };
+    case 'wood': return { t: 0.06, r: 0.06, b: 0.06, l: 0.06 };
+    case 'polaroid': return { t: 0.05, r: 0.05, b: 0.16, l: 0.05 };
+    case 'stamp': return { t: 0.07, r: 0.07, b: 0.07, l: 0.07 };
+    case 'film': return { t: 0.12, r: 0.012, b: 0.12, l: 0.012 };
+    default: return { t: 0, r: 0, b: 0, l: 0 };
+  }
+}
+
+// Calcule, en FRACTIONS de la case (conteneur de ratio cAr), la taille et la
+// position d'une image (ratio iAr) affichée en « cover » avec point de mire
+// (fx,fy) et zoom fz. Utilisé À L'IDENTIQUE par l'éditeur (CSS %) et le PDF.
+export function coverFrac(cAr, iAr, fx = 0.5, fy = 0.5, fz = 1) {
+  let w; let h;
+  if (iAr > cAr) { h = 1; w = iAr / cAr; } else { w = 1; h = cAr / iAr; }
+  w *= fz; h *= fz;
+  return { w, h, left: -(w - 1) * fx, top: -(h - 1) * fy };
+}
+
 // Thèmes d'album : ambiance appliquée à tout l'album (fond + couleur d'accent +
 // motif décoratif léger sur les pages qui n'ont pas leur propre fond).
 //   pattern : 'none' | 'dots' | 'grid' | 'diagonal' | 'confetti'
