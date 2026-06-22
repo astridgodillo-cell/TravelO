@@ -968,7 +968,7 @@ function themePatternStyle(theme) {
 
 // Aperçu STATIQUE d'une page (même mise en page que l'éditeur/PDF) : fond,
 // en-tête, photos (grille ou disposition libre), légendes, décorations.
-export function PagePreview({ photos, format, theme, title, note, firstPage, dayIndex, location, unit = 'jour', bg, pageIndex, pageCount, deco, free, width = '11rem' }) {
+export function PagePreview({ photos, format, theme, title, note, firstPage, dayIndex, location, unit = 'jour', bg, pageIndex, pageCount, deco, free, width = '11rem', onPhotoClick }) {
   const spec = resolveBg(bg, pageIndex, pageCount);
   const onPlate = spec.type !== 'none';
   const lay = pageLayout(photos, format, { title, note, firstPage, onPlate });
@@ -1027,7 +1027,9 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
             const wPct = ((b.scale * minPage) / lay.pageW) * 100;
             const hPct = ((b.scale * minPage) / ar / lay.pageH) * 100;
             return (
-              <div key={i} className="absolute overflow-hidden" style={{ left: `${b.xf * 100}%`, top: `${b.yf * 100}%`, width: `${wPct}%`, height: `${hPct}%`, transform: `translate(-50%,-50%) rotate(${b.rot}deg)`, containerType: 'size' }}>
+              <div key={i} onClick={onPhotoClick ? (e) => { e.stopPropagation(); onPhotoClick(i); } : undefined}
+                className={`absolute overflow-hidden ${onPhotoClick ? 'cursor-pointer ring-coral-400 hover:ring-2' : ''}`}
+                style={{ left: `${b.xf * 100}%`, top: `${b.yf * 100}%`, width: `${wPct}%`, height: `${hPct}%`, transform: `translate(-50%,-50%) rotate(${b.rot}deg)`, containerType: 'size' }}>
                 {photoInner(p, ar)}
               </div>
             );
@@ -1036,7 +1038,9 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
             const c = lay.cells[i];
             if (!c) return null;
             return (
-              <div key={i} className="absolute overflow-hidden" style={{ left: pct(c.x, lay.pageW), top: pct(c.y, lay.pageH), width: pct(c.w, lay.pageW), height: pct(c.h, lay.pageH), containerType: 'size' }}>
+              <div key={i} onClick={onPhotoClick ? (e) => { e.stopPropagation(); onPhotoClick(i); } : undefined}
+                className={`absolute overflow-hidden ${onPhotoClick ? 'cursor-pointer ring-coral-400 hover:ring-2' : ''}`}
+                style={{ left: pct(c.x, lay.pageW), top: pct(c.y, lay.pageH), width: pct(c.w, lay.pageW), height: pct(c.h, lay.pageH), containerType: 'size' }}>
                 {photoInner(p, c.w / c.h)}
               </div>
             );
@@ -1269,10 +1273,65 @@ function PhotoTile({ photo, onCaption, onRemove, onMoveLeft, onMoveRight, canLef
   );
 }
 
+// Édition rapide d'une photo, ouverte en cliquant la photo dans l'aperçu :
+// regroupe au même endroit l'effet/cadrage, la décoration, la légende, l'ordre
+// et le retrait — sans avoir à retrouver la vignette de la photo.
+function PhotoQuickEdit({ photo, canLeft, canRight, onPatch, onDeco, onCaption, onMove, onRemove, onClose }) {
+  const [fxOpen, setFxOpen] = useState(false);
+  const [decoOpen, setDecoOpen] = useState(false);
+  const effect = getPhotoEffect(photo.effect);
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-4">
+      <div className="flex max-h-[100dvh] w-full max-w-md flex-col rounded-t-2xl bg-white shadow-2xl sm:max-h-[90vh] sm:rounded-2xl">
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
+          <h3 className="font-semibold text-slate-800">Modifier la photo</h3>
+          <button onClick={onClose} className="-m-2 p-2 text-2xl leading-none text-slate-400 hover:text-slate-700">✕</button>
+        </div>
+        <div className="flex-1 space-y-3 overflow-y-auto overscroll-contain px-4 py-3">
+          <div className="mx-auto aspect-[4/3] w-full max-w-xs overflow-hidden rounded-xl bg-slate-100" style={{ containerType: 'size' }}>
+            <PhotoFill photo={photo} containerAr={4 / 3} />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => setFxOpen(true)}
+              className="rounded-lg border border-slate-200 px-3 py-2 text-center text-sm font-medium text-slate-700 hover:bg-slate-50">
+              🎨 Effet &amp; cadrage
+              <span className="mt-0.5 block text-[11px] text-slate-400">{effect.id === 'none' ? 'aucun' : effect.label}</span>
+            </button>
+            <button type="button" onClick={() => setDecoOpen(true)}
+              className="rounded-lg border border-slate-200 px-3 py-2 text-center text-sm font-medium text-slate-700 hover:bg-slate-50">
+              ✨ Décorer
+              <span className="mt-0.5 block text-[11px] text-slate-400">emojis · texte · bulles</span>
+            </button>
+          </div>
+          <input value={photo.caption || ''} onChange={(e) => onCaption(e.target.value)}
+            placeholder="Légende sous la photo"
+            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-none focus:border-coral-400" />
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex gap-2">
+              <button type="button" onClick={() => onMove(-1)} disabled={!canLeft}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-30" title="Déplacer avant">◀ Avant</button>
+              <button type="button" onClick={() => onMove(1)} disabled={!canRight}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-30" title="Déplacer après">Après ▶</button>
+            </div>
+            <button type="button" onClick={onRemove}
+              className="rounded-lg border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50">🗑️ Retirer</button>
+          </div>
+        </div>
+        <div className="flex shrink-0 justify-end border-t border-slate-100 px-4 py-3">
+          <button onClick={onClose} className="rounded-lg bg-coral-500 px-5 py-2 text-sm font-semibold text-white">Terminé</button>
+        </div>
+      </div>
+      {fxOpen && <EffectPicker photo={photo} current={effect.id} onChange={onPatch} onClose={() => setFxOpen(false)} />}
+      {decoOpen && <DecorateModal photo={photo} onChange={onDeco} onClose={() => setDecoOpen(false)} />}
+    </div>
+  );
+}
+
 export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhoto, busy, progress = null, format = 'carre', onFormatChange = null, theme = null, unit = 'jour', pageOffset = null }) {
   const fileRef = useRef(null);
   const [bgOpen, setBgOpen] = useState(false);
   const [decoPage, setDecoPage] = useState(null);
+  const [editIdx, setEditIdx] = useState(null); // photo en cours d'édition (clic sur l'aperçu)
   const [spreadStart, setSpreadStart] = useState(0); // 1re page du duo affiché
   const [aiBusy, setAiBusy] = useState(false);
 
@@ -1661,34 +1720,46 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
       {chunks.some((c) => c.length > 0) && (() => {
         const start = Math.min(spreadStart, Math.max(0, pageCount - 2));
         const visible = pageCount <= 1 ? [0] : [start, start + 1].filter((p) => p < pageCount);
+        const pageStart = (p) => chunks.slice(0, p).reduce((a, c) => a + c.length, 0);
         return (
-          <div className="mt-3 flex items-stretch gap-2">
+          <>
+          <p className="mt-3 text-center text-[11px] text-slate-400">👆 Clique une photo pour l'effet/le cadrage/la décorer · clique le fond pour décorer la page.</p>
+          <div className="mt-1 flex items-stretch gap-2">
             {pageCount > 2 && (
               <button type="button" onClick={() => setSpreadStart(Math.max(0, start - 1))} disabled={start <= 0}
                 className="flex w-8 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-30" title="Pages précédentes">◀</button>
             )}
             <div className="grid min-w-0 flex-1 grid-cols-2 gap-2 sm:gap-3">
               {visible.map((p) => (
-                <button key={p} type="button" onClick={() => coveredBy[p] < 0 && setDecoPage(p)} className="min-w-0 text-left" title="Cliquer pour composer / décorer cette page">
-                  <PagePreview
-                    photos={chunks[p]}
-                    format={format}
-                    theme={theme}
-                    title={entry.title}
-                    note={entry.note}
-                    firstPage={p === 0}
-                    dayIndex={index}
-                    location={day?.location}
-                    unit={unit}
-                    bg={entry.bg}
-                    pageIndex={p}
-                    pageCount={pageCount}
-                    deco={entry.pageDeco?.[p]}
-                    free={entry.freePages?.[p]}
-                    width="100%"
-                  />
+                <div key={p} className="min-w-0">
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => coveredBy[p] < 0 && setDecoPage(p)}
+                    className={`min-w-0 ${coveredBy[p] < 0 ? 'cursor-pointer' : ''}`}
+                    title="Cliquer le fond pour composer / décorer la page"
+                  >
+                    <PagePreview
+                      photos={chunks[p]}
+                      format={format}
+                      theme={theme}
+                      title={entry.title}
+                      note={entry.note}
+                      firstPage={p === 0}
+                      dayIndex={index}
+                      location={day?.location}
+                      unit={unit}
+                      bg={entry.bg}
+                      pageIndex={p}
+                      pageCount={pageCount}
+                      deco={entry.pageDeco?.[p]}
+                      free={entry.freePages?.[p]}
+                      width="100%"
+                      onPhotoClick={coveredBy[p] < 0 ? (li) => setEditIdx(pageStart(p) + li) : undefined}
+                    />
+                  </div>
                   <span className="mt-1 block text-center text-[11px] text-slate-400">Page {p + 1}</span>
-                </button>
+                </div>
               ))}
               {visible.length === 1 && <div />}
             </div>
@@ -1697,6 +1768,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
                 className="flex w-8 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-30" title="Pages suivantes">▶</button>
             )}
           </div>
+          </>
         );
       })()}
 
@@ -1724,6 +1796,20 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
           initialFree={entry.freePages?.[decoPage] || null}
           onChangeFree={(boxes) => setPageFree(decoPage, boxes)}
           onClose={() => setDecoPage(null)}
+        />
+      )}
+
+      {editIdx != null && entry.photos[editIdx] && (
+        <PhotoQuickEdit
+          photo={entry.photos[editIdx]}
+          canLeft={editIdx > 0}
+          canRight={editIdx < entry.photos.length - 1}
+          onPatch={(patch) => setPhotoPatch(editIdx, patch)}
+          onDeco={(d) => setPhotoDeco(editIdx, d)}
+          onCaption={(c) => setPhotoCaption(editIdx, c)}
+          onMove={(dir) => { movePhoto(editIdx, dir); setEditIdx(editIdx + dir); }}
+          onRemove={() => { removePhoto(editIdx); setEditIdx(null); }}
+          onClose={() => setEditIdx(null)}
         />
       )}
     </section>
