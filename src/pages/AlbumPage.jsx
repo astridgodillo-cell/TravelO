@@ -9,7 +9,7 @@ import {
   repairAlbumPhoto,
 } from '../lib/supabase';
 import { renderRouteMapImage } from '../lib/staticMapImage';
-import { writeAlbumText } from '../lib/ai';
+import { writeAlbumText, pixabaySearch, pixabayFetch } from '../lib/ai';
 import AlbumPdfDoc from '../components/AlbumPdfDoc';
 import PdfPagesPreview from '../components/PdfPagesPreview';
 import {
@@ -569,6 +569,10 @@ export function DecoEditor({ title, aspect, background, initialItems, onChange, 
   const [sel, setSel] = useState(null);
   const [cat, setCat] = useState(STICKER_CATEGORIES[0].key);
   const [uploading, setUploading] = useState(false);
+  const [pixQ, setPixQ] = useState('');
+  const [pixHits, setPixHits] = useState([]);
+  const [pixLoading, setPixLoading] = useState(false);
+  const [pixErr, setPixErr] = useState(null);
   const canvasRef = useRef(null);
   const fileRef = useRef(null);
   const drag = useRef(null);
@@ -593,6 +597,34 @@ export function DecoEditor({ title, aspect, background, initialItems, onChange, 
       addItem({ type: 'image', value: url, ar: w && h ? w / h : 1, xf: 0.5, yf: 0.5, scale: 0.25, rot: 0 });
     } catch {
       alert("L'import de l'image a échoué. Réessaie avec un fichier PNG ou JPG.");
+    } finally {
+      setUploading(false);
+    }
+  }
+  async function runPixSearch() {
+    const q = pixQ.trim();
+    if (!q) return;
+    setPixLoading(true);
+    setPixErr(null);
+    try {
+      setPixHits(await pixabaySearch(q));
+    } catch (e) {
+      setPixErr(e.message || 'Recherche impossible.');
+      setPixHits([]);
+    } finally {
+      setPixLoading(false);
+    }
+  }
+  async function addPixabay(hit) {
+    setUploading(true);
+    try {
+      const dataUrl = await pixabayFetch(hit.full);
+      if (!dataUrl) throw new Error('Image indisponible.');
+      const blob = await (await fetch(dataUrl)).blob();
+      const { url, w, h } = await uploadAlbumSticker(blob);
+      addItem({ type: 'image', value: url, ar: w && h ? w / h : (hit.w && hit.h ? hit.w / hit.h : 1), xf: 0.5, yf: 0.5, scale: 0.3, rot: 0 });
+    } catch (e) {
+      alert(e.message || "L'ajout de l'illustration a échoué.");
     } finally {
       setUploading(false);
     }
@@ -754,6 +786,31 @@ export function DecoEditor({ title, aspect, background, initialItems, onChange, 
               {activeCat.emojis.map((e, idx) => (
                 <button key={e + idx} onClick={() => addEmoji(e)} className="rounded py-1 hover:bg-slate-100 active:bg-slate-200">{e}</button>
               ))}
+            </div>
+
+            {/* Illustrations / cliparts via Pixabay */}
+            <div className="mt-3">
+              <form onSubmit={(e) => { e.preventDefault(); runPixSearch(); }} className="flex gap-2">
+                <input value={pixQ} onChange={(e) => setPixQ(e.target.value)}
+                  placeholder="Chercher un clipart / une illustration (Pixabay)…"
+                  className="min-w-0 flex-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm" />
+                <button type="submit" disabled={pixLoading} className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200 disabled:opacity-50">
+                  {pixLoading ? '…' : 'Chercher'}
+                </button>
+              </form>
+              {pixErr && <p className="mt-1 text-xs text-red-600">{pixErr}</p>}
+              {pixHits.length > 0 && (
+                <div className="mt-2 grid max-h-48 grid-cols-4 gap-1.5 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2 sm:grid-cols-5">
+                  {pixHits.map((hh) => (
+                    <button key={hh.id} type="button" onClick={() => addPixabay(hh)} disabled={uploading}
+                      className="aspect-square overflow-hidden rounded bg-white ring-1 ring-slate-200 hover:ring-coral-400 disabled:opacity-50"
+                      title="Ajouter cette illustration">
+                      <img src={hh.preview} alt={hh.tags || ''} className="h-full w-full object-contain" />
+                    </button>
+                  ))}
+                </div>
+              )}
+              <p className="mt-1 text-[11px] text-slate-400">Illustrations fournies par Pixabay.</p>
             </div>
           </div>
         </div>

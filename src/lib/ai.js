@@ -202,6 +202,18 @@ export async function travelChat(messages) {
   return data?.reply || '';
 }
 
+// Recherche d'illustrations/cliparts sur Pixabay (via l'Edge Function).
+export async function pixabaySearch(q, { kind = 'illustration', page = 1 } = {}) {
+  const data = await invoke({ mode: 'pixabay-search', q, kind, page });
+  return data?.hits || [];
+}
+
+// Récupère une image Pixabay (octets) en data URL (contourne le CORS).
+export async function pixabayFetch(url) {
+  const data = await invoke({ mode: 'pixabay-fetch', url });
+  return data?.dataUrl || null;
+}
+
 // Rédige (ou améliore) le texte d'une page d'album pour une journée/étape.
 // ctx = { location, title, note, captions:[], unit, tripTitle }. Renvoie un texte.
 export async function writeAlbumText(ctx = {}) {

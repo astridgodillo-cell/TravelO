@@ -37,6 +37,7 @@ const SUPABASE_SERVICE_ROLE_KEY =
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 // À configurer manuellement dans Edge Functions → Secrets
 const PEXELS_API_KEY = Deno.env.get('PEXELS_API_KEY') || '';
+const PIXABAY_KEY = Deno.env.get('PIXABAY_KEY') || '';
 const UNSPLASH_ACCESS_KEY = Deno.env.get('UNSPLASH_ACCESS_KEY') || '';
 const GOOGLE_PLACES_API_KEY = Deno.env.get('GOOGLE_PLACES_API_KEY') || '';
 
@@ -4046,6 +4047,54 @@ RÈGLES : réalisme et faisabilité (pas trop d'étapes, rythme tenable, environ
       const parsed = await parseOrRepair(text, callMainSafe);
       const reply = (parsed?.reply || text || '').toString().trim();
       return jsonResponse({ reply, usage, model: modelUsed });
+    }
+
+    if (mode === 'pixabay-search') {
+      if (!PIXABAY_KEY) {
+        return jsonResponse({ error: 'Pixabay non configuré (secret PIXABAY_KEY manquant).' }, 400);
+      }
+      const q = String(body.q || '').trim();
+      if (!q) return jsonResponse({ hits: [] });
+      const kind = body.kind === 'vector' ? 'vector' : body.kind === 'photo' ? 'photo' : 'illustration';
+      const page = Math.max(1, parseInt(body.page, 10) || 1);
+      const url = `https://pixabay.com/api/?key=${PIXABAY_KEY}&q=${encodeURIComponent(q)}&image_type=${kind}&safesearch=true&per_page=24&page=${page}&lang=fr`;
+      try {
+        const res = await fetch(url);
+        if (!res.ok) return jsonResponse({ error: `Pixabay: ${res.status}` }, 502);
+        const j = await res.json();
+        const hits = (j.hits || []).map((h: any) => ({
+          id: h.id,
+          preview: h.previewURL,
+          full: h.webformatURL,
+          w: h.webformatWidth,
+          h: h.webformatHeight,
+          tags: h.tags,
+        }));
+        return jsonResponse({ hits, total: j.totalHits || 0 });
+      } catch (e) {
+        return jsonResponse({ error: String(e?.message || e) }, 502);
+      }
+    }
+
+    if (mode === 'pixabay-fetch') {
+      // Récupère les octets d'une image Pixabay côté serveur (pas de CORS) et
+      // les renvoie en data URL, pour réimport dans le stockage de l'album.
+      const url = String(body.url || '');
+      if (!/^https:\/\/(pixabay\.com|cdn\.pixabay\.com|[a-z0-9.-]*\.pixabay\.com)\//i.test(url)) {
+        return jsonResponse({ error: 'URL non autorisée.' }, 400);
+      }
+      try {
+        const res = await fetch(url);
+        if (!res.ok) return jsonResponse({ error: `Pixabay: ${res.status}` }, 502);
+        const ct = res.headers.get('content-type') || 'image/jpeg';
+        const buf = new Uint8Array(await res.arrayBuffer());
+        let bin = '';
+        for (let i = 0; i < buf.length; i += 1) bin += String.fromCharCode(buf[i]);
+        const b64 = btoa(bin);
+        return jsonResponse({ dataUrl: `data:${ct};base64,${b64}` });
+      } catch (e) {
+        return jsonResponse({ error: String(e?.message || e) }, 502);
+      }
     }
 
     if (mode === 'album-text') {
