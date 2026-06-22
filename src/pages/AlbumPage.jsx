@@ -968,7 +968,7 @@ function themePatternStyle(theme) {
 
 // Aperçu STATIQUE d'une page (même mise en page que l'éditeur/PDF) : fond,
 // en-tête, photos (grille ou disposition libre), légendes, décorations.
-export function PagePreview({ photos, format, theme, title, note, firstPage, dayIndex, location, unit = 'jour', bg, pageIndex, pageCount, deco, free, width = '11rem', onPhotoClick }) {
+export function PagePreview({ photos, format, theme, title, note, firstPage, dayIndex, location, unit = 'jour', bg, pageIndex, pageCount, deco, free, width = '11rem', onPhotoClick, interactive = false, onFreeChange, onDecoChange }) {
   const spec = resolveBg(bg, pageIndex, pageCount);
   const onPlate = spec.type !== 'none';
   const lay = pageLayout(photos, format, { title, note, firstPage, onPlate });
@@ -979,6 +979,58 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
   const freeValid = Array.isArray(free) && free.length === photos.length && photos.length > 0;
   let baseStyle = { backgroundColor: theme?.paper || '#FBF8F3', ...themePatternStyle(theme) };
   if (spec.type === 'color') baseStyle = { backgroundColor: spec.color };
+
+  // --- Déplacement direct (glisser) des photos et décorations dans l'aperçu ---
+  // Un tap (sans déplacement) sur une photo ouvre ses outils (onPhotoClick) ;
+  // un glissé la déplace. Glisser une photo en grille bascule la page en
+  // « disposition libre » (en repartant des positions de la grille).
+  const rootRef = useRef(null);
+  const drag = useRef(null);
+  const boxesRef = useRef(null);
+  const decosRef = useRef(null);
+  const seedBoxes = () =>
+    photos.map((pp, k) => {
+      const c = lay.cells[k] || { x: lay.pad, y: lay.pad, w: minPage * 0.4, h: minPage * 0.3 };
+      return { xf: (c.x + c.w / 2) / lay.pageW, yf: (c.y + c.h / 2) / lay.pageH, scale: c.w / minPage, rot: 0 };
+    });
+  const startPhoto = (e, i) => {
+    if (!interactive && !onPhotoClick) return;
+    e.stopPropagation();
+    rootRef.current?.setPointerCapture?.(e.pointerId);
+    const boxes = freeValid ? free.map((b) => ({ ...b })) : seedBoxes();
+    boxesRef.current = boxes;
+    drag.current = { kind: 'photo', i, x: e.clientX, y: e.clientY, sx: boxes[i].xf, sy: boxes[i].yf, moved: false, wasFree: freeValid };
+  };
+  const startDeco = (e, i) => {
+    if (!interactive) return;
+    e.stopPropagation();
+    rootRef.current?.setPointerCapture?.(e.pointerId);
+    const items = (deco || []).map((d) => ({ ...d }));
+    decosRef.current = items;
+    drag.current = { kind: 'deco', i, x: e.clientX, y: e.clientY, sx: items[i].xf, sy: items[i].yf, moved: false };
+  };
+  const onCanvasMove = (e) => {
+    const d = drag.current;
+    if (!d || !rootRef.current) return;
+    if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 6) return;
+    d.moved = true;
+    const r = rootRef.current.getBoundingClientRect();
+    const nxf = Math.min(1, Math.max(0, d.sx + (e.clientX - d.x) / r.width));
+    const nyf = Math.min(1, Math.max(0, d.sy + (e.clientY - d.y) / r.height));
+    if (d.kind === 'photo') {
+      boxesRef.current[d.i] = { ...boxesRef.current[d.i], xf: nxf, yf: nyf };
+      onFreeChange?.(boxesRef.current.map((b) => ({ ...b })));
+    } else {
+      decosRef.current[d.i] = { ...decosRef.current[d.i], xf: nxf, yf: nyf };
+      onDecoChange?.(decosRef.current.map((x) => ({ ...x })));
+    }
+  };
+  const onCanvasUp = () => {
+    const d = drag.current;
+    drag.current = null;
+    if (d && !d.moved && d.kind === 'photo') onPhotoClick?.(d.i);
+  };
+  const interactiveCells = interactive || !!onPhotoClick;
 
   const photoInner = (p, containerAr) => {
     return (
@@ -997,7 +1049,14 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
   };
 
   return (
-    <div className="relative overflow-hidden rounded-lg border border-slate-200 shadow-sm" style={{ width, maxWidth: '100%', aspectRatio: String(lay.pageW / lay.pageH), containerType: 'size', ...baseStyle }}>
+    <div
+      ref={rootRef}
+      onPointerMove={interactiveCells ? onCanvasMove : undefined}
+      onPointerUp={interactiveCells ? onCanvasUp : undefined}
+      onPointerCancel={interactiveCells ? onCanvasUp : undefined}
+      className={`relative overflow-hidden rounded-lg border border-slate-200 shadow-sm ${interactive ? 'touch-none select-none' : ''}`}
+      style={{ width, maxWidth: '100%', aspectRatio: String(lay.pageW / lay.pageH), containerType: 'size', ...baseStyle }}
+    >
       {spec.type === 'photo' && (spec.photo?.display || spec.photo?.full) && (
         <>
           {spec.spreadCount > 1 ? (
@@ -1027,8 +1086,8 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
             const wPct = ((b.scale * minPage) / lay.pageW) * 100;
             const hPct = ((b.scale * minPage) / ar / lay.pageH) * 100;
             return (
-              <div key={i} onClick={onPhotoClick ? (e) => { e.stopPropagation(); onPhotoClick(i); } : undefined}
-                className={`absolute overflow-hidden ${onPhotoClick ? 'cursor-pointer ring-coral-400 hover:ring-2' : ''}`}
+              <div key={i} onPointerDown={interactiveCells ? (e) => startPhoto(e, i) : undefined}
+                className={`absolute overflow-hidden ${interactiveCells ? 'cursor-grab ring-coral-400 hover:ring-2 active:cursor-grabbing' : ''}`}
                 style={{ left: `${b.xf * 100}%`, top: `${b.yf * 100}%`, width: `${wPct}%`, height: `${hPct}%`, transform: `translate(-50%,-50%) rotate(${b.rot}deg)`, containerType: 'size' }}>
                 {photoInner(p, ar)}
               </div>
@@ -1038,8 +1097,8 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
             const c = lay.cells[i];
             if (!c) return null;
             return (
-              <div key={i} onClick={onPhotoClick ? (e) => { e.stopPropagation(); onPhotoClick(i); } : undefined}
-                className={`absolute overflow-hidden ${onPhotoClick ? 'cursor-pointer ring-coral-400 hover:ring-2' : ''}`}
+              <div key={i} onPointerDown={interactiveCells ? (e) => startPhoto(e, i) : undefined}
+                className={`absolute overflow-hidden ${interactiveCells ? 'cursor-grab ring-coral-400 hover:ring-2 active:cursor-grabbing' : ''}`}
                 style={{ left: pct(c.x, lay.pageW), top: pct(c.y, lay.pageH), width: pct(c.w, lay.pageW), height: pct(c.h, lay.pageH), containerType: 'size' }}>
                 {photoInner(p, c.w / c.h)}
               </div>
@@ -1047,7 +1106,9 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
           })}
       {/* décorations de page */}
       {(deco || []).map((it, k) => (
-        <div key={k} className="absolute" style={{ left: `${it.xf * 100}%`, top: `${it.yf * 100}%`, transform: `translate(-50%,-50%) rotate(${it.rot}deg)` }}>
+        <div key={k} onPointerDown={interactive ? (e) => startDeco(e, k) : undefined}
+          className={`absolute ${interactive ? 'cursor-grab touch-none active:cursor-grabbing' : ''}`}
+          style={{ left: `${it.xf * 100}%`, top: `${it.yf * 100}%`, transform: `translate(-50%,-50%) rotate(${it.rot}deg)` }}>
           <DecoItemView it={it} />
         </div>
       ))}
@@ -1723,7 +1784,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
         const pageStart = (p) => chunks.slice(0, p).reduce((a, c) => a + c.length, 0);
         return (
           <>
-          <p className="mt-3 text-center text-[11px] text-slate-400">👆 Clique une photo pour l'effet/le cadrage/la décorer · clique le fond pour décorer la page.</p>
+          <p className="mt-3 text-center text-[11px] text-slate-400">👆 Clique une photo pour l'effet/le cadrage/la décorer · glisse les photos et décorations pour les déplacer.</p>
           <div className="mt-1 flex items-stretch gap-2">
             {pageCount > 2 && (
               <button type="button" onClick={() => setSpreadStart(Math.max(0, start - 1))} disabled={start <= 0}
@@ -1732,32 +1793,27 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
             <div className="grid min-w-0 flex-1 grid-cols-2 gap-2 sm:gap-3">
               {visible.map((p) => (
                 <div key={p} className="min-w-0">
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => coveredBy[p] < 0 && setDecoPage(p)}
-                    className={`min-w-0 ${coveredBy[p] < 0 ? 'cursor-pointer' : ''}`}
-                    title="Cliquer le fond pour composer / décorer la page"
-                  >
-                    <PagePreview
-                      photos={chunks[p]}
-                      format={format}
-                      theme={theme}
-                      title={entry.title}
-                      note={entry.note}
-                      firstPage={p === 0}
-                      dayIndex={index}
-                      location={day?.location}
-                      unit={unit}
-                      bg={entry.bg}
-                      pageIndex={p}
-                      pageCount={pageCount}
-                      deco={entry.pageDeco?.[p]}
-                      free={entry.freePages?.[p]}
-                      width="100%"
-                      onPhotoClick={coveredBy[p] < 0 ? (li) => setEditIdx(pageStart(p) + li) : undefined}
-                    />
-                  </div>
+                  <PagePreview
+                    photos={chunks[p]}
+                    format={format}
+                    theme={theme}
+                    title={entry.title}
+                    note={entry.note}
+                    firstPage={p === 0}
+                    dayIndex={index}
+                    location={day?.location}
+                    unit={unit}
+                    bg={entry.bg}
+                    pageIndex={p}
+                    pageCount={pageCount}
+                    deco={entry.pageDeco?.[p]}
+                    free={entry.freePages?.[p]}
+                    width="100%"
+                    interactive={coveredBy[p] < 0}
+                    onPhotoClick={coveredBy[p] < 0 ? (li) => setEditIdx(pageStart(p) + li) : undefined}
+                    onFreeChange={coveredBy[p] < 0 ? (boxes) => setPageFree(p, boxes) : undefined}
+                    onDecoChange={coveredBy[p] < 0 ? (items) => update({ pageDeco: { ...(entry.pageDeco || {}), [p]: items } }) : undefined}
+                  />
                   <span className="mt-1 block text-center text-[11px] text-slate-400">Page {p + 1}</span>
                 </div>
               ))}
