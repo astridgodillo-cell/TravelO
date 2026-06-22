@@ -818,7 +818,7 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
         <>
           {spec.spreadCount > 1 ? (
             <img src={spec.photo.display || spec.photo.full} alt="" draggable={false}
-              style={{ position: 'absolute', top: 0, height: '100%', width: `${spec.spreadCount * 100}cqw`, maxWidth: 'none', left: `${-spec.spreadIndex * 100}cqw`, objectFit: 'cover' }} />
+              style={{ position: 'absolute', top: 0, height: '100%', width: `${spec.spreadCount * 100}%`, maxWidth: 'none', left: `${-spec.spreadIndex * 100}%`, objectFit: 'cover' }} />
           ) : (
             <img src={spec.photo.display || spec.photo.full} alt="" className="absolute inset-0 h-full w-full object-cover" draggable={false} />
           )}
@@ -908,7 +908,12 @@ export function PageDecorateModal({
   else if (spec.type === 'photo' && (spec.photo?.display || spec.photo?.full)) {
     bgPhoto = (
       <>
-        <img src={spec.photo.display || spec.photo.full} alt="" className="absolute inset-0 h-full w-full object-cover" draggable={false} />
+        {spec.spreadCount > 1 ? (
+          <img src={spec.photo.display || spec.photo.full} alt="" draggable={false}
+            style={{ position: 'absolute', top: 0, height: '100%', width: `${spec.spreadCount * 100}%`, maxWidth: 'none', left: `${-spec.spreadIndex * 100}%`, objectFit: 'cover' }} />
+        ) : (
+          <img src={spec.photo.display || spec.photo.full} alt="" className="absolute inset-0 h-full w-full object-cover" draggable={false} />
+        )}
         {spec.toned !== false && <div className="absolute inset-0" style={{ backgroundColor: 'rgba(251,248,243,0.80)' }} />}
       </>
     );
