@@ -878,10 +878,11 @@ export function PageDecorateModal({
 
   const handleChange = (objs) => {
     const decos = objs.filter((o) => o.kind !== 'photo');
-    onChange(decos);
-    if (freeValid) {
-      onChangeFree(objs.filter((o) => o.kind === 'photo').map(({ xf, yf, scale, rot }) => ({ xf, yf, scale, rot })));
-    }
+    const boxes = freeValid
+      ? objs.filter((o) => o.kind === 'photo').map(({ xf, yf, scale, rot }) => ({ xf, yf, scale, rot }))
+      : undefined;
+    // Une SEULE mise à jour (sinon le 2e appel écrase le 1er → décos perdues).
+    onChange(decos, boxes);
   };
 
   const FORMAT_LABELS = { carre: '21 × 21 cm', a4paysage: 'A4 paysage', a4portrait: 'A4 portrait' };
@@ -1009,7 +1010,6 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
   const splitCounts = computeSplit(total, entry.split);
   const pageCount = splitCounts.length;
   const chunks = splitPhotos(entry.photos, entry.split);
-  const setPageDeco = (p, items) => update({ pageDeco: { ...(entry.pageDeco || {}), [p]: items } });
   const setPageFree = (p, boxes) => {
     const next = { ...(entry.freePages || {}) };
     if (boxes) next[p] = boxes; else delete next[p];
@@ -1372,7 +1372,11 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
           pageCount={pageCount}
           unit={unit}
           initialItems={entry.pageDeco?.[decoPage] || []}
-          onChange={(items) => setPageDeco(decoPage, items)}
+          onChange={(items, boxes) => {
+            const patch = { pageDeco: { ...(entry.pageDeco || {}), [decoPage]: items } };
+            if (boxes !== undefined) patch.freePages = { ...(entry.freePages || {}), [decoPage]: boxes };
+            update(patch);
+          }}
           initialFree={entry.freePages?.[decoPage] || null}
           onChangeFree={(boxes) => setPageFree(decoPage, boxes)}
           onClose={() => setDecoPage(null)}
