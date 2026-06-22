@@ -367,7 +367,11 @@ function CoverFade({ color = '#1C2B2D' }) {
   );
 }
 
-export default function AlbumPdfDoc({ album, days = [], format = 'carre', summary = null, routeMap = null, stops = [], endNote = '', endPhoto = null, theme = null, unit = 'jour' }) {
+export default function AlbumPdfDoc({ album, days = [], format = 'carre', summary = null, routeMap = null, stops = [], endNote = '', endPhoto = null, theme = null, unit = 'jour', coverLayout = {} }) {
+  const coverPos = coverLayout.pos || 'bottom';
+  const coverAlign = coverLayout.align || 'left';
+  const coverKicker = coverLayout.kicker != null ? coverLayout.kicker : 'Album de voyage';
+  const coverShowDates = coverLayout.showDates !== false;
   const fmt = FORMATS[format] || FORMATS.carre;
   // Page = format final + 3 mm de fond perdu sur chaque bord.
   const pageW = mm(fmt.trimW + BLEED_MM * 2);
@@ -412,15 +416,27 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
           </View>
         )}
         <CoverFade color={P.ink} />
-        <View style={st.coverContent}>
-          <Text style={st.coverKicker}>Album de voyage</Text>
-          <Text style={st.coverTitle}>{album?.title || 'Mon voyage'}</Text>
-          {dateRange ? (
-            <>
-              <View style={st.coverRule} />
-              <Text style={st.coverDates}>{dateRange}</Text>
-            </>
-          ) : null}
+        <View
+          style={{
+            position: 'absolute',
+            top: pad,
+            left: pad,
+            right: pad,
+            bottom: pad,
+            flexDirection: 'column',
+            justifyContent: coverPos === 'top' ? 'flex-start' : coverPos === 'center' ? 'center' : 'flex-end',
+          }}
+        >
+          <View style={[st.coverContent, coverAlign === 'center' ? { alignItems: 'center' } : null]}>
+            <Text style={[st.coverKicker, coverAlign === 'center' ? { textAlign: 'center' } : null]}>{coverKicker}</Text>
+            <Text style={[st.coverTitle, coverAlign === 'center' ? { textAlign: 'center' } : null]}>{album?.title || 'Mon voyage'}</Text>
+            {coverShowDates && dateRange ? (
+              <>
+                <View style={st.coverRule} />
+                <Text style={[st.coverDates, coverAlign === 'center' ? { textAlign: 'center' } : null]}>{dateRange}</Text>
+              </>
+            ) : null}
+          </View>
         </View>
       </Page>
 
@@ -570,10 +586,6 @@ function makeStyles(pageW, pageH, P = PALETTE) {
     // Plaque sombre semi-transparente derrière le texte : garantit que le titre
     // (blanc) reste lisible, même si la photo a des zones claires à cet endroit.
     coverContent: {
-      position: 'absolute',
-      left: pad,
-      right: pad,
-      bottom: pad,
       backgroundColor: 'rgba(18,26,26,0.52)',
       borderRadius: 6,
       paddingVertical: 16,

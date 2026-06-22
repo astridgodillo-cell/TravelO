@@ -294,6 +294,20 @@ export function unitLabel(unit) {
   return unit === 'etape' ? 'Étape' : 'Jour';
 }
 
+// Format lisible d'une plage de dates (pour la couverture).
+export function formatDateRange(start, end) {
+  const f = (iso) => {
+    if (!iso) return '';
+    try {
+      return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+    } catch { return ''; }
+  };
+  const a = f(start);
+  const b = f(end);
+  if (a && b && a !== b) return `${a} – ${b}`;
+  return a || b || '';
+}
+
 // Emojis/stickers proposés pour décorer, classés par catégories.
 export const STICKER_CATEGORIES = [
   {

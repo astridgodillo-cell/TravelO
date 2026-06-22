@@ -10,8 +10,8 @@ import {
 import { renderRouteMapImage } from '../lib/staticMapImage';
 import AlbumPdfDoc from '../components/AlbumPdfDoc';
 import PdfPagesPreview from '../components/PdfPagesPreview';
-import { DayCard, CoverPicker, ThemePicker, Spinner } from './AlbumPage';
-import { FORMAT_LABELS, normalizeBg, bakePhotoEffects, getTheme, unitLabel, splitPhotos, computeSplit, bgIsEmpty, autoBgFromPhotos } from '../lib/albumModel';
+import { DayCard, CoverPicker, ThemePicker, Spinner, CoverDesigner } from './AlbumPage';
+import { FORMAT_LABELS, normalizeBg, bakePhotoEffects, getTheme, unitLabel, splitPhotos, computeSplit, bgIsEmpty, autoBgFromPhotos, formatDateRange } from '../lib/albumModel';
 
 const emptyDay = () => ({ title: '', note: '', photos: [], bg: null, split: null });
 
@@ -74,6 +74,7 @@ export default function StandaloneAlbumPage() {
         endPhoto: c.endPhoto ?? null,
         theme: c.theme ?? 'classique',
         unit: c.unit ?? 'jour',
+        coverLayout: c.coverLayout ?? {},
         days: Array.isArray(c.days) && c.days.length ? c.days : [emptyDay()],
         map: c.map ?? { enabled: false, stops: [] },
       });
@@ -172,6 +173,7 @@ export default function StandaloneAlbumPage() {
       endPhoto: a.endPhoto || null,
       theme: a.theme || 'classique',
       unit: a.unit || 'jour',
+      coverLayout: a.coverLayout || {},
       days: a.days,
       map: a.map || { enabled: false, stops: [] },
     };
@@ -286,6 +288,7 @@ export default function StandaloneAlbumPage() {
           endPhoto={album.endPhoto}
           theme={getTheme(album.theme)}
           unit={album.unit}
+          coverLayout={album.coverLayout}
         />
       ).toBlob();
       if (pdfUrl) URL.revokeObjectURL(pdfUrl);
@@ -315,6 +318,13 @@ export default function StandaloneAlbumPage() {
   // Numéro de page réel (1 = couverture) de la 1re page de chaque section, pour
   // l'indicateur « double page en vis‑à‑vis ». La carte occupe une page si elle
   // est activée et a au moins une étape.
+  const coverFallback = (() => {
+    for (const s of album.days) {
+      const p = (s.photos || []).find((x) => x && (x.full || x.display));
+      if (p) return p;
+    }
+    return null;
+  })();
   const hasMapPage = !!album.map?.enabled && (album.map.stops || []).some((s) => s.name?.trim());
   const dayPageCounts = album.days.map((s) => splitPhotos(s.photos, s.split).filter((c) => c.length > 0).length);
   const dayOffsets = dayPageCounts.map(
@@ -369,13 +379,17 @@ export default function StandaloneAlbumPage() {
         <span className="text-xs text-slate-500">Pratique pour regrouper plusieurs journées d'une même étape.</span>
       </div>
 
-      {/* Couverture */}
-      <CoverThumb
-        label="Photo de couverture"
-        photo={album.cover}
+      {/* Couverture + mise en page */}
+      <CoverDesigner
+        photo={album.cover || coverFallback}
+        title={album.title}
+        dates={formatDateRange(album.dateStart, album.dateEnd)}
+        format={format}
+        theme={getTheme(album.theme)}
+        layout={album.coverLayout || {}}
+        onChangeLayout={(l) => patch({ coverLayout: l })}
         onChoose={() => setPickerFor({ kind: 'cover' })}
         onClear={album.cover ? () => patch({ cover: null }) : null}
-        emptyText="Sans photo : la 1re photo de l'album est utilisée."
       />
 
       {error && <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
