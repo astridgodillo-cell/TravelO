@@ -675,37 +675,28 @@ function ObjView({ it }) {
   return <DecoItemView it={it} />;
 }
 
-export function DecoEditor({ title, aspect, background, initialItems, onChange, onClose, toolbar = null }) {
-  const [items, setItems] = useState(() => (initialItems || []).map((d) => ({ ...d })));
-  const [sel, setSel] = useState(null);
+// Panneau « ajouter une décoration » : texte, bulle, image importée, emojis par
+// catégorie, et cliparts Pixabay. Autonome (gère sa propre recherche/import).
+// onAddItem(item) reçoit l'objet prêt (positionné au centre par défaut).
+function DecoAddPanel({ onAddItem }) {
   const [cat, setCat] = useState(STICKER_CATEGORIES[0].key);
   const [uploading, setUploading] = useState(false);
   const [pixQ, setPixQ] = useState('');
   const [pixHits, setPixHits] = useState([]);
   const [pixLoading, setPixLoading] = useState(false);
   const [pixErr, setPixErr] = useState(null);
-  const canvasRef = useRef(null);
   const fileRef = useRef(null);
-  const drag = useRef(null);
-  // Valeurs INITIALES (taille/rotation) de chaque élément, pour le bouton
-  // « retour à l'initiale ».
-  const initials = useRef((initialItems || []).map((d) => ({ scale: d.scale, rot: d.rot || 0 })));
+  const activeCat = STICKER_CATEGORIES.find((c) => c.key === cat) || STICKER_CATEGORIES[0];
 
-  const commit = (next) => { setItems(next); onChange(next); };
-  const update = (i, patch) => commit(items.map((it, k) => (k === i ? { ...it, ...patch } : it)));
-  const addItem = (it) => { const next = [...items, it]; initials.current = [...initials.current, { scale: it.scale, rot: it.rot || 0 }]; commit(next); setSel(next.length - 1); };
-  const addEmoji = (e) => addItem({ type: 'emoji', value: e, xf: 0.5, yf: 0.5, scale: 0.16, rot: 0 });
-  const addText = () => addItem({ type: 'text', value: 'Texte', xf: 0.5, yf: 0.5, scale: 0.1, rot: 0, color: '#ffffff', font: 'display' });
-  const addBubble = () => addItem({ type: 'bubble', value: 'Bla bla !', xf: 0.5, yf: 0.5, scale: 0.32, rot: 0, color: '#111111', tailAngle: 215, tailLen: 0.35, font: 'comic', fontScale: 1 });
-  const remove = (i) => { initials.current = initials.current.filter((_, k) => k !== i); commit(items.filter((_, k) => k !== i)); setSel(null); };
-  const resetScale = (i) => update(i, { scale: initials.current[i]?.scale ?? items[i].scale });
-  const resetRot = (i) => update(i, { rot: initials.current[i]?.rot ?? 0 });
+  const addEmoji = (e) => onAddItem({ type: 'emoji', value: e, xf: 0.5, yf: 0.5, scale: 0.16, rot: 0 });
+  const addText = () => onAddItem({ type: 'text', value: 'Texte', xf: 0.5, yf: 0.5, scale: 0.1, rot: 0, color: '#ffffff', font: 'display' });
+  const addBubble = () => onAddItem({ type: 'bubble', value: 'Bla bla !', xf: 0.5, yf: 0.5, scale: 0.32, rot: 0, color: '#111111', tailAngle: 215, tailLen: 0.35, font: 'comic', fontScale: 1 });
   async function addImageFile(file) {
     if (!file) return;
     setUploading(true);
     try {
       const { url, w, h } = await uploadAlbumSticker(file);
-      addItem({ type: 'image', value: url, ar: w && h ? w / h : 1, xf: 0.5, yf: 0.5, scale: 0.25, rot: 0 });
+      onAddItem({ type: 'image', value: url, ar: w && h ? w / h : 1, xf: 0.5, yf: 0.5, scale: 0.25, rot: 0 });
     } catch {
       alert("L'import de l'image a échoué. Réessaie avec un fichier PNG ou JPG.");
     } finally {
@@ -733,14 +724,158 @@ export function DecoEditor({ title, aspect, background, initialItems, onChange, 
       if (!dataUrl) throw new Error('Image indisponible.');
       const blob = await (await fetch(dataUrl)).blob();
       const { url, w, h } = await uploadAlbumSticker(blob);
-      addItem({ type: 'image', value: url, ar: w && h ? w / h : (hit.w && hit.h ? hit.w / hit.h : 1), xf: 0.5, yf: 0.5, scale: 0.3, rot: 0 });
+      onAddItem({ type: 'image', value: url, ar: w && h ? w / h : (hit.w && hit.h ? hit.w / hit.h : 1), xf: 0.5, yf: 0.5, scale: 0.3, rot: 0 });
     } catch (e) {
       alert(e.message || "L'ajout de l'illustration a échoué.");
     } finally {
       setUploading(false);
     }
   }
-  const activeCat = STICKER_CATEGORIES.find((c) => c.key === cat) || STICKER_CATEGORIES[0];
+
+  return (
+    <div>
+      <div className="mb-2 flex flex-wrap gap-2">
+        <button onClick={addText} className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200">➕ Texte</button>
+        <button onClick={addBubble} className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200">💬 Bulle BD</button>
+        <button onClick={() => fileRef.current?.click()} disabled={uploading}
+          className="flex items-center gap-1.5 rounded-md bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200 disabled:opacity-60">
+          {uploading && <Spinner className="h-3.5 w-3.5" />}
+          {uploading ? 'Import…' : '🖼️ Importer une image (PNG)'}
+        </button>
+        <input ref={fileRef} type="file" accept="image/*" className="hidden"
+          onChange={(e) => { addImageFile(e.target.files?.[0]); e.target.value = ''; }} />
+      </div>
+      <div className="mb-1 flex flex-wrap gap-1">
+        {STICKER_CATEGORIES.map((c) => (
+          <button key={c.key} onClick={() => setCat(c.key)} title={c.name}
+            className={`rounded-md px-2 py-1 text-base leading-none ${cat === c.key ? 'bg-coral-500' : 'bg-slate-100 hover:bg-slate-200'}`}>
+            {c.label}
+          </button>
+        ))}
+      </div>
+      <div className="grid max-h-44 grid-cols-8 gap-1 overflow-y-auto rounded-lg border border-slate-200 p-2 text-2xl sm:grid-cols-10 sm:text-xl">
+        {activeCat.emojis.map((e, idx) => (
+          <button key={e + idx} onClick={() => addEmoji(e)} className="rounded py-1 hover:bg-slate-100 active:bg-slate-200">{e}</button>
+        ))}
+      </div>
+      <div className="mt-3">
+        <form onSubmit={(e) => { e.preventDefault(); runPixSearch(); }} className="flex gap-2">
+          <input value={pixQ} onChange={(e) => setPixQ(e.target.value)}
+            placeholder="Chercher un clipart / une illustration (Pixabay)…"
+            className="min-w-0 flex-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm" />
+          <button type="submit" disabled={pixLoading} className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200 disabled:opacity-50">
+            {pixLoading ? '…' : 'Chercher'}
+          </button>
+        </form>
+        {pixErr && <p className="mt-1 text-xs text-red-600">{pixErr}</p>}
+        {pixHits.length > 0 && (
+          <div className="mt-2 grid max-h-48 grid-cols-4 gap-1.5 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2 sm:grid-cols-5">
+            {pixHits.map((hh) => (
+              <button key={hh.id} type="button" onClick={() => addPixabay(hh)} disabled={uploading}
+                className="aspect-square overflow-hidden rounded bg-white ring-1 ring-slate-200 hover:ring-coral-400 disabled:opacity-50"
+                title="Ajouter cette illustration">
+                <img src={hh.preview} alt={hh.tags || ''} className="h-full w-full object-contain" />
+              </button>
+            ))}
+          </div>
+        )}
+        <p className="mt-1 text-[11px] text-slate-400">Illustrations fournies par Pixabay.</p>
+      </div>
+    </div>
+  );
+}
+
+// Réglages d'un élément sélectionné (texte/couleur/police, bulle, taille,
+// rotation). Réutilisé par l'éditeur plein écran ET par l'édition directe dans
+// l'aperçu. onChange(patch) fusionne ; les boutons « ↺ initiale » sont
+// optionnels (onResetScale/onResetRot).
+function DecoItemControls({ item, onChange, onRemove, onResetScale, onResetRot, allowRemove = true }) {
+  const isText = item.type === 'text' || item.type === 'bubble';
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold text-slate-600">{item.kind === 'photo' ? 'Photo sélectionnée' : 'Élément sélectionné'}</span>
+        {allowRemove && onRemove && (
+          <button onClick={onRemove} className="text-xs font-medium text-red-600">Supprimer</button>
+        )}
+      </div>
+      {isText && (
+        <div className="mt-2 flex items-center gap-2">
+          {item.type === 'bubble' ? (
+            <textarea value={item.value} onChange={(e) => onChange({ value: e.target.value })} rows={2}
+              placeholder="Texte de la bulle" className="min-w-0 flex-1 resize-y rounded border border-slate-300 px-2 py-1 text-sm" />
+          ) : (
+            <input value={item.value} onChange={(e) => onChange({ value: e.target.value })}
+              className="min-w-0 flex-1 rounded border border-slate-300 px-2 py-1 text-sm" />
+          )}
+          <input type="color" value={item.color || (item.type === 'bubble' ? '#111111' : '#ffffff')} onChange={(e) => onChange({ color: e.target.value })}
+            className="h-8 w-10 rounded border border-slate-300" />
+        </div>
+      )}
+      {isText && (
+        <div className="mt-2">
+          <span className="text-xs text-slate-600">Police</span>
+          <div className="mt-1 flex flex-wrap gap-1.5">
+            {FONT_CHOICES.map((f) => (
+              <button key={f.key} type="button" onClick={() => onChange({ font: f.key })} style={{ fontFamily: f.css }}
+                className={`rounded-md px-2 py-1 text-xs font-semibold ${(item.font || (item.type === 'bubble' ? 'comic' : 'display')) === f.key ? 'bg-coral-500 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {item.type === 'bubble' && (
+        <>
+          <label className="mt-2 block text-xs text-slate-600">Taille du texte
+            <input type="range" min="0.5" max="2" step="0.05" value={item.fontScale ?? 1}
+              onChange={(e) => onChange({ fontScale: parseFloat(e.target.value) })} className="w-full" />
+          </label>
+          <label className="mt-2 block text-xs text-slate-600">Direction de la queue ({item.tailAngle ?? 215}°)
+            <input type="range" min="0" max="359" step="1" value={item.tailAngle ?? 215}
+              onChange={(e) => onChange({ tailAngle: parseInt(e.target.value, 10) })} className="w-full" />
+          </label>
+          <label className="block text-xs text-slate-600">Longueur de la queue
+            <input type="range" min="0.1" max="0.8" step="0.01" value={item.tailLen ?? 0.35}
+              onChange={(e) => onChange({ tailLen: parseFloat(e.target.value) })} className="w-full" />
+          </label>
+        </>
+      )}
+      <div className="mt-2 text-xs text-slate-600">
+        <div className="flex items-center justify-between">
+          <span>Taille</span>
+          {onResetScale && <button type="button" onClick={onResetScale} className="text-coral-600 hover:text-coral-700" title="Revenir à la taille initiale">↺ initiale</button>}
+        </div>
+        <input type="range" min="0.05" max={item.kind === 'photo' ? '1.3' : '0.6'} step="0.01" value={item.scale}
+          onChange={(e) => onChange({ scale: parseFloat(e.target.value) })} className="w-full" />
+      </div>
+      <div className="text-xs text-slate-600">
+        <div className="flex items-center justify-between">
+          <span>Rotation {item.rot ? `(${item.rot}°)` : '(0°)'}</span>
+          {onResetRot && <button type="button" onClick={onResetRot} className="text-coral-600 hover:text-coral-700" title="Remettre droit">↺ initiale</button>}
+        </div>
+        <input type="range" min="-180" max="180" step="1" value={item.rot}
+          onChange={(e) => { const v = parseInt(e.target.value, 10); onChange({ rot: Math.abs(v) <= 3 ? 0 : v }); }} className="w-full" />
+      </div>
+    </div>
+  );
+}
+
+export function DecoEditor({ title, aspect, background, initialItems, onChange, onClose, toolbar = null }) {
+  const [items, setItems] = useState(() => (initialItems || []).map((d) => ({ ...d })));
+  const [sel, setSel] = useState(null);
+  const canvasRef = useRef(null);
+  const drag = useRef(null);
+  // Valeurs INITIALES (taille/rotation) de chaque élément, pour le bouton
+  // « retour à l'initiale ».
+  const initials = useRef((initialItems || []).map((d) => ({ scale: d.scale, rot: d.rot || 0 })));
+
+  const commit = (next) => { setItems(next); onChange(next); };
+  const update = (i, patch) => commit(items.map((it, k) => (k === i ? { ...it, ...patch } : it)));
+  const addItem = (it) => { const next = [...items, it]; initials.current = [...initials.current, { scale: it.scale, rot: it.rot || 0 }]; commit(next); setSel(next.length - 1); };
+  const remove = (i) => { initials.current = initials.current.filter((_, k) => k !== i); commit(items.filter((_, k) => k !== i)); setSel(null); };
+  const resetScale = (i) => update(i, { scale: initials.current[i]?.scale ?? items[i].scale });
+  const resetRot = (i) => update(i, { rot: initials.current[i]?.rot ?? 0 });
 
   // Glisser au doigt OU à la souris : on utilise les évènements « pointer »
   // (souris + tactile) et on capture le pointeur sur le canevas pour suivre le
@@ -799,130 +934,22 @@ export function DecoEditor({ title, aspect, background, initialItems, onChange, 
           </div>
 
           {selItem ? (
-            <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-600">{selItem.kind === 'photo' ? 'Photo sélectionnée' : 'Élément sélectionné'}</span>
-                {selItem.kind !== 'photo' && (
-                  <button onClick={() => remove(sel)} className="text-xs font-medium text-red-600">Supprimer</button>
-                )}
-              </div>
-              {(selItem.type === 'text' || selItem.type === 'bubble') && (
-                <div className="mt-2 flex items-center gap-2">
-                  {selItem.type === 'bubble' ? (
-                    <textarea value={selItem.value} onChange={(e) => update(sel, { value: e.target.value })} rows={2}
-                      placeholder="Texte de la bulle"
-                      className="min-w-0 flex-1 resize-y rounded border border-slate-300 px-2 py-1 text-sm" />
-                  ) : (
-                    <input value={selItem.value} onChange={(e) => update(sel, { value: e.target.value })}
-                      className="min-w-0 flex-1 rounded border border-slate-300 px-2 py-1 text-sm" />
-                  )}
-                  <input type="color" value={selItem.color || (selItem.type === 'bubble' ? '#111111' : '#ffffff')} onChange={(e) => update(sel, { color: e.target.value })}
-                    className="h-8 w-10 rounded border border-slate-300" />
-                </div>
-              )}
-              {(selItem.type === 'text' || selItem.type === 'bubble') && (
-                <div className="mt-2">
-                  <span className="text-xs text-slate-600">Police</span>
-                  <div className="mt-1 flex flex-wrap gap-1.5">
-                    {FONT_CHOICES.map((f) => (
-                      <button key={f.key} type="button" onClick={() => update(sel, { font: f.key })}
-                        style={{ fontFamily: f.css }}
-                        className={`rounded-md px-2 py-1 text-xs font-semibold ${(selItem.font || (selItem.type === 'bubble' ? 'comic' : 'display')) === f.key ? 'bg-coral-500 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
-                        {f.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {selItem.type === 'bubble' && (
-                <>
-                  <label className="mt-2 block text-xs text-slate-600">Taille du texte
-                    <input type="range" min="0.5" max="2" step="0.05" value={selItem.fontScale ?? 1}
-                      onChange={(e) => update(sel, { fontScale: parseFloat(e.target.value) })} className="w-full" />
-                  </label>
-                  <label className="mt-2 block text-xs text-slate-600">Direction de la queue ({selItem.tailAngle ?? 215}°)
-                    <input type="range" min="0" max="359" step="1" value={selItem.tailAngle ?? 215}
-                      onChange={(e) => update(sel, { tailAngle: parseInt(e.target.value, 10) })} className="w-full" />
-                  </label>
-                  <label className="block text-xs text-slate-600">Longueur de la queue
-                    <input type="range" min="0.1" max="0.8" step="0.01" value={selItem.tailLen ?? 0.35}
-                      onChange={(e) => update(sel, { tailLen: parseFloat(e.target.value) })} className="w-full" />
-                  </label>
-                </>
-              )}
-              <div className="mt-2 text-xs text-slate-600">
-                <div className="flex items-center justify-between">
-                  <span>Taille</span>
-                  <button type="button" onClick={() => resetScale(sel)} className="text-coral-600 hover:text-coral-700" title="Revenir à la taille initiale">↺ initiale</button>
-                </div>
-                <input type="range" min="0.05" max={selItem.kind === 'photo' ? '1.3' : '0.6'} step="0.01" value={selItem.scale}
-                  onChange={(e) => update(sel, { scale: parseFloat(e.target.value) })}
-                  onDoubleClick={() => resetScale(sel)} className="w-full" />
-              </div>
-              <div className="text-xs text-slate-600">
-                <div className="flex items-center justify-between">
-                  <span>Rotation {selItem.rot ? `(${selItem.rot}°)` : '(0°)'}</span>
-                  <button type="button" onClick={() => resetRot(sel)} className="text-coral-600 hover:text-coral-700" title="Remettre droit (rotation initiale)">↺ initiale</button>
-                </div>
-                <input type="range" min="-180" max="180" step="1" value={selItem.rot}
-                  onChange={(e) => { const v = parseInt(e.target.value, 10); update(sel, { rot: Math.abs(v) <= 3 ? 0 : v }); }}
-                  onDoubleClick={() => resetRot(sel)} className="w-full" />
-              </div>
+            <div className="mt-3">
+              <DecoItemControls
+                item={selItem}
+                onChange={(patch) => update(sel, patch)}
+                onRemove={() => remove(sel)}
+                onResetScale={() => resetScale(sel)}
+                onResetRot={() => resetRot(sel)}
+                allowRemove={selItem.kind !== 'photo'}
+              />
             </div>
           ) : (
             <p className="mt-3 text-center text-xs text-slate-500">Touche un élément (photo, emoji, texte…) pour le déplacer, le redimensionner ou le pivoter.</p>
           )}
 
           <div className="mt-3">
-            <div className="mb-2 flex flex-wrap gap-2">
-              <button onClick={addText} className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200">➕ Texte</button>
-              <button onClick={addBubble} className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200">💬 Bulle BD</button>
-              <button onClick={() => fileRef.current?.click()} disabled={uploading}
-                className="flex items-center gap-1.5 rounded-md bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200 disabled:opacity-60">
-                {uploading && <Spinner className="h-3.5 w-3.5" />}
-                {uploading ? 'Import…' : '🖼️ Importer une image (PNG)'}
-              </button>
-              <input ref={fileRef} type="file" accept="image/*" className="hidden"
-                onChange={(e) => { addImageFile(e.target.files?.[0]); e.target.value = ''; }} />
-            </div>
-            <div className="mb-1 flex flex-wrap gap-1">
-              {STICKER_CATEGORIES.map((c) => (
-                <button key={c.key} onClick={() => setCat(c.key)} title={c.name}
-                  className={`rounded-md px-2 py-1 text-base leading-none ${cat === c.key ? 'bg-coral-500' : 'bg-slate-100 hover:bg-slate-200'}`}>
-                  {c.label}
-                </button>
-              ))}
-            </div>
-            <div className="grid max-h-44 grid-cols-8 gap-1 overflow-y-auto rounded-lg border border-slate-200 p-2 text-2xl sm:grid-cols-10 sm:text-xl">
-              {activeCat.emojis.map((e, idx) => (
-                <button key={e + idx} onClick={() => addEmoji(e)} className="rounded py-1 hover:bg-slate-100 active:bg-slate-200">{e}</button>
-              ))}
-            </div>
-
-            {/* Illustrations / cliparts via Pixabay */}
-            <div className="mt-3">
-              <form onSubmit={(e) => { e.preventDefault(); runPixSearch(); }} className="flex gap-2">
-                <input value={pixQ} onChange={(e) => setPixQ(e.target.value)}
-                  placeholder="Chercher un clipart / une illustration (Pixabay)…"
-                  className="min-w-0 flex-1 rounded-md border border-slate-300 px-2 py-1.5 text-sm" />
-                <button type="submit" disabled={pixLoading} className="rounded-md bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200 disabled:opacity-50">
-                  {pixLoading ? '…' : 'Chercher'}
-                </button>
-              </form>
-              {pixErr && <p className="mt-1 text-xs text-red-600">{pixErr}</p>}
-              {pixHits.length > 0 && (
-                <div className="mt-2 grid max-h-48 grid-cols-4 gap-1.5 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-2 sm:grid-cols-5">
-                  {pixHits.map((hh) => (
-                    <button key={hh.id} type="button" onClick={() => addPixabay(hh)} disabled={uploading}
-                      className="aspect-square overflow-hidden rounded bg-white ring-1 ring-slate-200 hover:ring-coral-400 disabled:opacity-50"
-                      title="Ajouter cette illustration">
-                      <img src={hh.preview} alt={hh.tags || ''} className="h-full w-full object-contain" />
-                    </button>
-                  ))}
-                </div>
-              )}
-              <p className="mt-1 text-[11px] text-slate-400">Illustrations fournies par Pixabay.</p>
-            </div>
+            <DecoAddPanel onAddItem={addItem} />
           </div>
         </div>
 
@@ -968,7 +995,7 @@ function themePatternStyle(theme) {
 
 // Aperçu STATIQUE d'une page (même mise en page que l'éditeur/PDF) : fond,
 // en-tête, photos (grille ou disposition libre), légendes, décorations.
-export function PagePreview({ photos, format, theme, title, note, firstPage, dayIndex, location, unit = 'jour', bg, pageIndex, pageCount, deco, free, width = '11rem', onPhotoClick, interactive = false, onFreeChange, onDecoChange }) {
+export function PagePreview({ photos, format, theme, title, note, firstPage, dayIndex, location, unit = 'jour', bg, pageIndex, pageCount, deco, free, width = '11rem', interactive = false, onFreeChange, onDecoChange, onSelect, selected = null }) {
   const spec = resolveBg(bg, pageIndex, pageCount);
   const onPlate = spec.type !== 'none';
   const lay = pageLayout(photos, format, { title, note, firstPage, onPlate });
@@ -980,9 +1007,9 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
   let baseStyle = { backgroundColor: theme?.paper || '#FBF8F3', ...themePatternStyle(theme) };
   if (spec.type === 'color') baseStyle = { backgroundColor: spec.color };
 
-  // --- Déplacement direct (glisser) des photos et décorations dans l'aperçu ---
-  // Un tap (sans déplacement) sur une photo ouvre ses outils (onPhotoClick) ;
-  // un glissé la déplace. Glisser une photo en grille bascule la page en
+  // --- Sélection + déplacement direct (glisser) dans l'aperçu ---
+  // Toucher une photo/décoration la sélectionne (outils affichés dessous) ; la
+  // glisser la déplace. Glisser une photo en grille bascule la page en
   // « disposition libre » (en repartant des positions de la grille).
   const rootRef = useRef(null);
   const drag = useRef(null);
@@ -994,16 +1021,18 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
       return { xf: (c.x + c.w / 2) / lay.pageW, yf: (c.y + c.h / 2) / lay.pageH, scale: c.w / minPage, rot: 0 };
     });
   const startPhoto = (e, i) => {
-    if (!interactive && !onPhotoClick) return;
+    if (!interactive) return;
     e.stopPropagation();
+    onSelect?.('photo', i);
     rootRef.current?.setPointerCapture?.(e.pointerId);
     const boxes = freeValid ? free.map((b) => ({ ...b })) : seedBoxes();
     boxesRef.current = boxes;
-    drag.current = { kind: 'photo', i, x: e.clientX, y: e.clientY, sx: boxes[i].xf, sy: boxes[i].yf, moved: false, wasFree: freeValid };
+    drag.current = { kind: 'photo', i, x: e.clientX, y: e.clientY, sx: boxes[i].xf, sy: boxes[i].yf, moved: false };
   };
   const startDeco = (e, i) => {
     if (!interactive) return;
     e.stopPropagation();
+    onSelect?.('deco', i);
     rootRef.current?.setPointerCapture?.(e.pointerId);
     const items = (deco || []).map((d) => ({ ...d }));
     decosRef.current = items;
@@ -1025,12 +1054,10 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
       onDecoChange?.(decosRef.current.map((x) => ({ ...x })));
     }
   };
-  const onCanvasUp = () => {
-    const d = drag.current;
-    drag.current = null;
-    if (d && !d.moved && d.kind === 'photo') onPhotoClick?.(d.i);
-  };
-  const interactiveCells = interactive || !!onPhotoClick;
+  const onCanvasUp = () => { drag.current = null; };
+  const interactiveCells = interactive;
+  const photoSel = (i) => selected && selected.kind === 'photo' && selected.i === i;
+  const decoSel = (k) => selected && selected.kind === 'deco' && selected.i === k;
 
   const photoInner = (p, containerAr) => {
     return (
@@ -1051,6 +1078,7 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
   return (
     <div
       ref={rootRef}
+      onPointerDown={interactive ? () => onSelect?.(null) : undefined}
       onPointerMove={interactiveCells ? onCanvasMove : undefined}
       onPointerUp={interactiveCells ? onCanvasUp : undefined}
       onPointerCancel={interactiveCells ? onCanvasUp : undefined}
@@ -1087,7 +1115,7 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
             const hPct = ((b.scale * minPage) / ar / lay.pageH) * 100;
             return (
               <div key={i} onPointerDown={interactiveCells ? (e) => startPhoto(e, i) : undefined}
-                className={`absolute overflow-hidden ${interactiveCells ? 'cursor-grab ring-coral-400 hover:ring-2 active:cursor-grabbing' : ''}`}
+                className={`absolute overflow-hidden ${interactiveCells ? 'cursor-grab hover:ring-2 active:cursor-grabbing' : ''} ${photoSel(i) ? 'ring-2 ring-coral-500' : 'ring-coral-400'}`}
                 style={{ left: `${b.xf * 100}%`, top: `${b.yf * 100}%`, width: `${wPct}%`, height: `${hPct}%`, transform: `translate(-50%,-50%) rotate(${b.rot}deg)`, containerType: 'size' }}>
                 {photoInner(p, ar)}
               </div>
@@ -1098,7 +1126,7 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
             if (!c) return null;
             return (
               <div key={i} onPointerDown={interactiveCells ? (e) => startPhoto(e, i) : undefined}
-                className={`absolute overflow-hidden ${interactiveCells ? 'cursor-grab ring-coral-400 hover:ring-2 active:cursor-grabbing' : ''}`}
+                className={`absolute overflow-hidden ${interactiveCells ? 'cursor-grab hover:ring-2 active:cursor-grabbing' : ''} ${photoSel(i) ? 'ring-2 ring-coral-500' : 'ring-coral-400'}`}
                 style={{ left: pct(c.x, lay.pageW), top: pct(c.y, lay.pageH), width: pct(c.w, lay.pageW), height: pct(c.h, lay.pageH), containerType: 'size' }}>
                 {photoInner(p, c.w / c.h)}
               </div>
@@ -1107,7 +1135,7 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
       {/* décorations de page */}
       {(deco || []).map((it, k) => (
         <div key={k} onPointerDown={interactive ? (e) => startDeco(e, k) : undefined}
-          className={`absolute ${interactive ? 'cursor-grab touch-none active:cursor-grabbing' : ''}`}
+          className={`absolute ${interactive ? 'cursor-grab touch-none active:cursor-grabbing' : ''} ${decoSel(k) ? 'outline outline-2 outline-coral-500 outline-offset-1' : ''}`}
           style={{ left: `${it.xf * 100}%`, top: `${it.yf * 100}%`, transform: `translate(-50%,-50%) rotate(${it.rot}deg)` }}>
           <DecoItemView it={it} />
         </div>
@@ -1334,56 +1362,24 @@ function PhotoTile({ photo, onCaption, onRemove, onMoveLeft, onMoveRight, canLef
   );
 }
 
-// Édition rapide d'une photo, ouverte en cliquant la photo dans l'aperçu :
-// regroupe au même endroit l'effet/cadrage, la décoration, la légende, l'ordre
-// et le retrait — sans avoir à retrouver la vignette de la photo.
-function PhotoQuickEdit({ photo, canLeft, canRight, onPatch, onDeco, onCaption, onMove, onRemove, onClose }) {
-  const [fxOpen, setFxOpen] = useState(false);
-  const [decoOpen, setDecoOpen] = useState(false);
-  const effect = getPhotoEffect(photo.effect);
+// Fenêtre « ajouter une décoration » à la page (autocollant, texte, bulle,
+// image, clipart Pixabay). Réutilise le panneau d'ajout partagé.
+function AddDecoSheet({ onAddItem, onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-4">
-      <div className="flex max-h-[100dvh] w-full max-w-md flex-col rounded-t-2xl bg-white shadow-2xl sm:max-h-[90vh] sm:rounded-2xl">
+      <div className="flex max-h-[100dvh] w-full max-w-lg flex-col rounded-t-2xl bg-white shadow-2xl sm:max-h-[90vh] sm:rounded-2xl">
         <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
-          <h3 className="font-semibold text-slate-800">Modifier la photo</h3>
+          <h3 className="font-semibold text-slate-800">Ajouter une décoration</h3>
           <button onClick={onClose} className="-m-2 p-2 text-2xl leading-none text-slate-400 hover:text-slate-700">✕</button>
         </div>
-        <div className="flex-1 space-y-3 overflow-y-auto overscroll-contain px-4 py-3">
-          <div className="mx-auto aspect-[4/3] w-full max-w-xs overflow-hidden rounded-xl bg-slate-100" style={{ containerType: 'size' }}>
-            <PhotoFill photo={photo} containerAr={4 / 3} />
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <button type="button" onClick={() => setFxOpen(true)}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-center text-sm font-medium text-slate-700 hover:bg-slate-50">
-              🎨 Effet &amp; cadrage
-              <span className="mt-0.5 block text-[11px] text-slate-400">{effect.id === 'none' ? 'aucun' : effect.label}</span>
-            </button>
-            <button type="button" onClick={() => setDecoOpen(true)}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-center text-sm font-medium text-slate-700 hover:bg-slate-50">
-              ✨ Décorer
-              <span className="mt-0.5 block text-[11px] text-slate-400">emojis · texte · bulles</span>
-            </button>
-          </div>
-          <input value={photo.caption || ''} onChange={(e) => onCaption(e.target.value)}
-            placeholder="Légende sous la photo"
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-none focus:border-coral-400" />
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex gap-2">
-              <button type="button" onClick={() => onMove(-1)} disabled={!canLeft}
-                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-30" title="Déplacer avant">◀ Avant</button>
-              <button type="button" onClick={() => onMove(1)} disabled={!canRight}
-                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-30" title="Déplacer après">Après ▶</button>
-            </div>
-            <button type="button" onClick={onRemove}
-              className="rounded-lg border border-red-200 px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-50">🗑️ Retirer</button>
-          </div>
+        <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-3">
+          <p className="mb-2 text-xs text-slate-500">L'élément ajouté apparaît au centre de la page ; tu peux ensuite le glisser, le redimensionner et le pivoter directement dans l'aperçu.</p>
+          <DecoAddPanel onAddItem={onAddItem} />
         </div>
         <div className="flex shrink-0 justify-end border-t border-slate-100 px-4 py-3">
           <button onClick={onClose} className="rounded-lg bg-coral-500 px-5 py-2 text-sm font-semibold text-white">Terminé</button>
         </div>
       </div>
-      {fxOpen && <EffectPicker photo={photo} current={effect.id} onChange={onPatch} onClose={() => setFxOpen(false)} />}
-      {decoOpen && <DecorateModal photo={photo} onChange={onDeco} onClose={() => setDecoOpen(false)} />}
     </div>
   );
 }
@@ -1392,7 +1388,10 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
   const fileRef = useRef(null);
   const [bgOpen, setBgOpen] = useState(false);
   const [decoPage, setDecoPage] = useState(null);
-  const [editIdx, setEditIdx] = useState(null); // photo en cours d'édition (clic sur l'aperçu)
+  const [sel, setSel] = useState(null); // élément sélectionné dans l'aperçu : { p, kind:'photo'|'deco', i }
+  const [fxFor, setFxFor] = useState(null); // index global photo : fenêtre effet/cadrage
+  const [decoForPhoto, setDecoForPhoto] = useState(null); // index global photo : décorer la photo
+  const [addOpen, setAddOpen] = useState(false); // fenêtre « ajouter une décoration »
   const [spreadStart, setSpreadStart] = useState(0); // 1re page du duo affiché
   const [aiBusy, setAiBusy] = useState(false);
 
@@ -1440,6 +1439,58 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
     }
     return cov;
   })();
+
+  // --- Édition directe dans l'aperçu : sélection, manipulation, ajout ---
+  const viewStart = Math.min(spreadStart, Math.max(0, pageCount - 2));
+  const pageStartIdx = (p) => chunks.slice(0, p).reduce((a, c) => a + c.length, 0);
+  // Positions « disposition libre » d'une page, calculées depuis la grille.
+  const seedFreeForPage = (p) => {
+    const spec = resolveBg(bg, p, pageCount);
+    const lay = pageLayout(chunks[p], format, { title: entry.title, note: entry.note, firstPage: p === 0, onPlate: spec.type !== 'none' });
+    const minPage = Math.min(lay.pageW, lay.pageH);
+    return chunks[p].map((pp, k) => {
+      const c = lay.cells[k] || { x: lay.pad, y: lay.pad, w: minPage * 0.4, h: minPage * 0.3 };
+      return { xf: (c.x + c.w / 2) / lay.pageW, yf: (c.y + c.h / 2) / lay.pageH, scale: c.w / minPage, rot: 0 };
+    });
+  };
+  // L'objet actuellement sélectionné (photo libre ou décoration), uniformisé.
+  const selObj = (() => {
+    if (!sel) return null;
+    if (sel.kind === 'deco') return (entry.pageDeco?.[sel.p] || [])[sel.i] || null;
+    const boxes = entry.freePages?.[sel.p];
+    const b = (Array.isArray(boxes) && boxes.length === (chunks[sel.p]?.length || 0)) ? boxes[sel.i] : seedFreeForPage(sel.p)[sel.i];
+    if (!b) return null;
+    const ph = chunks[sel.p]?.[sel.i];
+    return { ...b, kind: 'photo', ar: ph?.w && ph?.h ? ph.w / ph.h : 4 / 3 };
+  })();
+  const patchSel = (patch) => {
+    if (!sel) return;
+    if (sel.kind === 'deco') {
+      const items = (entry.pageDeco?.[sel.p] || []).map((d, k) => (k === sel.i ? { ...d, ...patch } : d));
+      update({ pageDeco: { ...(entry.pageDeco || {}), [sel.p]: items } });
+    } else {
+      let boxes = entry.freePages?.[sel.p];
+      if (!Array.isArray(boxes) || boxes.length !== (chunks[sel.p]?.length || 0)) boxes = seedFreeForPage(sel.p);
+      boxes = boxes.map((b, k) => (k === sel.i ? { ...b, ...patch } : b));
+      setPageFree(sel.p, boxes);
+    }
+  };
+  const removeSel = () => {
+    if (!sel) return;
+    if (sel.kind === 'deco') {
+      const items = (entry.pageDeco?.[sel.p] || []).filter((_, k) => k !== sel.i);
+      update({ pageDeco: { ...(entry.pageDeco || {}), [sel.p]: items } });
+    } else {
+      removePhoto(pageStartIdx(sel.p) + sel.i);
+    }
+    setSel(null);
+  };
+  const addDecoItem = (item) => {
+    const p = sel?.p ?? viewStart;
+    const items = [...(entry.pageDeco?.[p] || []), item];
+    update({ pageDeco: { ...(entry.pageDeco || {}), [p]: items } });
+    setSel({ p, kind: 'deco', i: items.length - 1 });
+  };
 
   function setPhotoCaption(pi, caption) {
     const photos = entry.photos.map((p, i) =>
@@ -1777,17 +1828,19 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
         })}
       </div>
 
-      {/* APERÇU des pages : 2 à la fois, avec flèches (vue « double page ») */}
+      {/* APERÇU + ÉDITION DIRECTE : 2 pages, flèches, sélection / glisser */}
       {chunks.some((c) => c.length > 0) && (() => {
-        const start = Math.min(spreadStart, Math.max(0, pageCount - 2));
-        const visible = pageCount <= 1 ? [0] : [start, start + 1].filter((p) => p < pageCount);
-        const pageStart = (p) => chunks.slice(0, p).reduce((a, c) => a + c.length, 0);
+        const visible = pageCount <= 1 ? [0] : [viewStart, viewStart + 1].filter((p) => p < pageCount);
         return (
           <>
-          <p className="mt-3 text-center text-[11px] text-slate-400">👆 Clique une photo pour l'effet/le cadrage/la décorer · glisse les photos et décorations pour les déplacer.</p>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-[11px] text-slate-400">👆 Touche une photo / décoration pour la modifier · glisse pour la déplacer.</p>
+            <button type="button" onClick={() => setAddOpen(true)}
+              className="rounded-lg border border-coral-300 bg-coral-50 px-3 py-1.5 text-xs font-semibold text-coral-700 hover:bg-coral-100">✨ Ajouter (autocollant, texte…)</button>
+          </div>
           <div className="mt-1 flex items-stretch gap-2">
             {pageCount > 2 && (
-              <button type="button" onClick={() => setSpreadStart(Math.max(0, start - 1))} disabled={start <= 0}
+              <button type="button" onClick={() => { setSel(null); setSpreadStart(Math.max(0, viewStart - 1)); }} disabled={viewStart <= 0}
                 className="flex w-8 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-30" title="Pages précédentes">◀</button>
             )}
             <div className="grid min-w-0 flex-1 grid-cols-2 gap-2 sm:gap-3">
@@ -1810,7 +1863,8 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
                     free={entry.freePages?.[p]}
                     width="100%"
                     interactive={coveredBy[p] < 0}
-                    onPhotoClick={coveredBy[p] < 0 ? (li) => setEditIdx(pageStart(p) + li) : undefined}
+                    selected={sel && sel.p === p ? { kind: sel.kind, i: sel.i } : null}
+                    onSelect={coveredBy[p] < 0 ? (kind, i) => setSel(i == null ? null : { p, kind, i }) : undefined}
                     onFreeChange={coveredBy[p] < 0 ? (boxes) => setPageFree(p, boxes) : undefined}
                     onDecoChange={coveredBy[p] < 0 ? (items) => update({ pageDeco: { ...(entry.pageDeco || {}), [p]: items } }) : undefined}
                   />
@@ -1820,10 +1874,33 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
               {visible.length === 1 && <div />}
             </div>
             {pageCount > 2 && (
-              <button type="button" onClick={() => setSpreadStart(Math.min(pageCount - 2, start + 1))} disabled={start >= pageCount - 2}
+              <button type="button" onClick={() => { setSel(null); setSpreadStart(Math.min(pageCount - 2, viewStart + 1)); }} disabled={viewStart >= pageCount - 2}
                 className="flex w-8 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-30" title="Pages suivantes">▶</button>
             )}
           </div>
+
+          {/* Outils de l'élément sélectionné */}
+          {selObj && (
+            <div className="mt-3">
+              {sel.kind === 'photo' && (
+                <div className="mb-2 flex flex-wrap gap-2">
+                  <button type="button" onClick={() => setFxFor(pageStartIdx(sel.p) + sel.i)}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">🎨 Effet &amp; cadrage</button>
+                  <button type="button" onClick={() => setDecoForPhoto(pageStartIdx(sel.p) + sel.i)}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">✨ Décorer la photo</button>
+                  <button type="button" onClick={removeSel}
+                    className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50">🗑️ Retirer</button>
+                </div>
+              )}
+              <DecoItemControls
+                item={selObj}
+                onChange={patchSel}
+                onRemove={removeSel}
+                onResetRot={() => patchSel({ rot: 0 })}
+                allowRemove={sel.kind !== 'photo'}
+              />
+            </div>
+          )}
           </>
         );
       })()}
@@ -1855,18 +1932,25 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
         />
       )}
 
-      {editIdx != null && entry.photos[editIdx] && (
-        <PhotoQuickEdit
-          photo={entry.photos[editIdx]}
-          canLeft={editIdx > 0}
-          canRight={editIdx < entry.photos.length - 1}
-          onPatch={(patch) => setPhotoPatch(editIdx, patch)}
-          onDeco={(d) => setPhotoDeco(editIdx, d)}
-          onCaption={(c) => setPhotoCaption(editIdx, c)}
-          onMove={(dir) => { movePhoto(editIdx, dir); setEditIdx(editIdx + dir); }}
-          onRemove={() => { removePhoto(editIdx); setEditIdx(null); }}
-          onClose={() => setEditIdx(null)}
+      {fxFor != null && entry.photos[fxFor] && (
+        <EffectPicker
+          photo={entry.photos[fxFor]}
+          current={getPhotoEffect(entry.photos[fxFor].effect).id}
+          onChange={(patch) => setPhotoPatch(fxFor, patch)}
+          onClose={() => setFxFor(null)}
         />
+      )}
+
+      {decoForPhoto != null && entry.photos[decoForPhoto] && (
+        <DecorateModal
+          photo={entry.photos[decoForPhoto]}
+          onChange={(d) => setPhotoDeco(decoForPhoto, d)}
+          onClose={() => setDecoForPhoto(null)}
+        />
+      )}
+
+      {addOpen && (
+        <AddDecoSheet onAddItem={addDecoItem} onClose={() => setAddOpen(false)} />
       )}
     </section>
   );
