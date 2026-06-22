@@ -816,7 +816,12 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
     <div className="relative overflow-hidden rounded-lg border border-slate-200 shadow-sm" style={{ width, maxWidth: '100%', aspectRatio: String(lay.pageW / lay.pageH), containerType: 'size', ...baseStyle }}>
       {spec.type === 'photo' && (spec.photo?.display || spec.photo?.full) && (
         <>
-          <img src={spec.photo.display || spec.photo.full} alt="" className="absolute inset-0 h-full w-full object-cover" draggable={false} />
+          {spec.spreadCount > 1 ? (
+            <img src={spec.photo.display || spec.photo.full} alt="" draggable={false}
+              style={{ position: 'absolute', top: 0, height: '100%', width: `${spec.spreadCount * 100}cqw`, maxWidth: 'none', left: `${-spec.spreadIndex * 100}cqw`, objectFit: 'cover' }} />
+          ) : (
+            <img src={spec.photo.display || spec.photo.full} alt="" className="absolute inset-0 h-full w-full object-cover" draggable={false} />
+          )}
           {spec.toned !== false && <div className="absolute inset-0" style={{ backgroundColor: 'rgba(251,248,243,0.80)' }} />}
         </>
       )}
@@ -1085,6 +1090,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
   const fileRef = useRef(null);
   const [bgOpen, setBgOpen] = useState(false);
   const [decoPage, setDecoPage] = useState(null);
+  const [spreadStart, setSpreadStart] = useState(0); // 1re page du duo affiché
 
   const update = (patch) => onChange({ ...entry, ...patch });
 
@@ -1439,35 +1445,48 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
         })}
       </div>
 
-      {/* APERÇU des pages de cette journée/étape */}
-      {chunks.some((c) => c.length > 0) && (
-        <div className="mt-3 flex flex-wrap gap-3">
-          {chunks.map((chunk, p) => (
-            chunk.length > 0 ? (
-              <button key={p} type="button" onClick={() => coveredBy[p] < 0 && setDecoPage(p)} className="text-left" title="Cliquer pour composer / décorer cette page">
-                <PagePreview
-                  photos={chunk}
-                  format={format}
-                  theme={theme}
-                  title={entry.title}
-                  note={entry.note}
-                  firstPage={p === 0}
-                  dayIndex={index}
-                  location={day?.location}
-                  unit={unit}
-                  bg={entry.bg}
-                  pageIndex={p}
-                  pageCount={pageCount}
-                  deco={entry.pageDeco?.[p]}
-                  free={entry.freePages?.[p]}
-                  width="9.5rem"
-                />
-                <span className="mt-1 block text-center text-[10px] text-slate-400">Page {p + 1}</span>
-              </button>
-            ) : null
-          ))}
-        </div>
-      )}
+      {/* APERÇU des pages : 2 à la fois, avec flèches (vue « double page ») */}
+      {chunks.some((c) => c.length > 0) && (() => {
+        const start = Math.min(spreadStart, Math.max(0, pageCount - 2));
+        const visible = pageCount <= 1 ? [0] : [start, start + 1].filter((p) => p < pageCount);
+        return (
+          <div className="mt-3 flex items-stretch gap-2">
+            {pageCount > 2 && (
+              <button type="button" onClick={() => setSpreadStart(Math.max(0, start - 1))} disabled={start <= 0}
+                className="flex w-8 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-30" title="Pages précédentes">◀</button>
+            )}
+            <div className="grid min-w-0 flex-1 grid-cols-2 gap-2 sm:gap-3">
+              {visible.map((p) => (
+                <button key={p} type="button" onClick={() => coveredBy[p] < 0 && setDecoPage(p)} className="min-w-0 text-left" title="Cliquer pour composer / décorer cette page">
+                  <PagePreview
+                    photos={chunks[p]}
+                    format={format}
+                    theme={theme}
+                    title={entry.title}
+                    note={entry.note}
+                    firstPage={p === 0}
+                    dayIndex={index}
+                    location={day?.location}
+                    unit={unit}
+                    bg={entry.bg}
+                    pageIndex={p}
+                    pageCount={pageCount}
+                    deco={entry.pageDeco?.[p]}
+                    free={entry.freePages?.[p]}
+                    width="100%"
+                  />
+                  <span className="mt-1 block text-center text-[11px] text-slate-400">Page {p + 1}</span>
+                </button>
+              ))}
+              {visible.length === 1 && <div />}
+            </div>
+            {pageCount > 2 && (
+              <button type="button" onClick={() => setSpreadStart(Math.min(pageCount - 2, start + 1))} disabled={start >= pageCount - 2}
+                className="flex w-8 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-30" title="Pages suivantes">▶</button>
+            )}
+          </div>
+        );
+      })()}
 
       {decoPage != null && (
         <PageDecorateModal
