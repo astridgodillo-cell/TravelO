@@ -36,6 +36,8 @@ import {
   computeBubble,
   FONT_CHOICES,
   fontCss,
+  getFrameShape,
+  shapeClipCss,
 } from '../lib/albumModel';
 
 // Petit indicateur de chargement animé (réutilisé sur les boutons d'envoi).
@@ -444,6 +446,11 @@ function effectPreview(effect, radiusPx = 10) {
     case 'stamp': Object.assign(wrap, { padding: '7%', background: '#fff', border: '2px dashed #b9b2a3' }); break;
     case 'film': Object.assign(wrap, { padding: '12% 5%', background: '#141414' }); break;
     case 'parchment': Object.assign(wrap, { padding: '6%', background: '#efe2c4', border: '1px solid #cdbd97' }); break;
+    case 'shape': {
+      const sh = getFrameShape(effect.shape);
+      if (sh) imgStyle.clipPath = shapeClipCss(sh.pts);
+      break;
+    }
     default: break;
   }
   return { imgStyle, wrapStyle: wrap };
@@ -455,6 +462,7 @@ export function EffectPicker({ photo, current, onPick, onClose }) {
   const groups = [
     ['Filtres de couleur', PHOTO_EFFECTS.filter((e) => e.cat === 'filtre')],
     ['Cadres', PHOTO_EFFECTS.filter((e) => e.cat === 'cadre')],
+    ['Formes (découpe)', PHOTO_EFFECTS.filter((e) => e.cat === 'forme')],
   ];
   const Tile = ({ e }) => {
     const { imgStyle, wrapStyle } = effectPreview(e, 8);

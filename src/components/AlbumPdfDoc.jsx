@@ -16,9 +16,9 @@
  */
 import {
   Document, Page, View, Text, Image, StyleSheet, Font,
-  Svg, Rect, Circle, Ellipse, Polygon, Polyline, Defs, LinearGradient, Stop,
+  Svg, Rect, Circle, Ellipse, Polygon, Polyline, Defs, ClipPath, LinearGradient, Stop,
 } from '@react-pdf/renderer';
-import { getPhotoEffect, twemojiUrl, splitPhotos, pageLayout, resolveBg, unitLabel, computeBubble, fontPdf } from '../lib/albumModel';
+import { getPhotoEffect, twemojiUrl, splitPhotos, pageLayout, resolveBg, unitLabel, computeBubble, fontPdf, getFrameShape, shapePointsPx } from '../lib/albumModel';
 
 const CDN = 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl';
 
@@ -266,8 +266,34 @@ function PagePattern({ theme, pageW, pageH }) {
   );
 }
 
-function FramedImage({ src, frame, w, h, st }) {
+// Découpe de la photo selon une silhouette (cœur, étoile…). La photo est
+// dessinée en « cover » (sans déformation) puis masquée par le polygone de la
+// forme — exactement comme l'éditeur (clip-path), coins transparents.
+function ShapeFrame({ src, shape, w, h, ar }) {
+  const sh = getFrameShape(shape);
+  if (!sh) return <Image src={src} style={COVER_IMG} />;
+  // Rectangle de dessin couvrant la case w×h en conservant le ratio de l'image.
+  let dw = w; let dh = h; let dx = 0; let dy = 0;
+  if (ar) {
+    const cellAr = w / h;
+    if (ar > cellAr) { dh = h; dw = h * ar; dx = -(dw - w) / 2; }
+    else { dw = w; dh = w / ar; dy = -(dh - h) / 2; }
+  }
+  return (
+    <Svg width={w} height={h}>
+      <Defs>
+        <ClipPath id="shp">
+          <Polygon points={shapePointsPx(sh.pts, w, h)} />
+        </ClipPath>
+      </Defs>
+      <Image src={src} x={dx} y={dy} style={{ width: dw, height: dh }} clipPath="url(#shp)" />
+    </Svg>
+  );
+}
+
+function FramedImage({ src, frame, shape, w, h, ar, st }) {
   if (!frame) return <Image src={src} style={st.mosaicImg} />;
+  if (frame === 'shape') return <ShapeFrame src={src} shape={shape} w={w} h={h} ar={ar} />;
   if (frame === 'stamp') return <StampFrame src={src} w={w} h={h} />;
   if (frame === 'film') return <FilmFrame src={src} w={w} h={h} />;
   if (frame === 'rounded') {
@@ -350,7 +376,8 @@ function PdfPhoto({ photo, st, w, h }) {
   const effect = getPhotoEffect(photo.effect);
   const src = photo._fx || imgFull(photo);
   const deco = photo.deco || [];
-  const framed = <FramedImage src={src} frame={effect.frame} w={w} h={h} st={st} />;
+  const ar = photo.w && photo.h ? photo.w / photo.h : null;
+  const framed = <FramedImage src={src} frame={effect.frame} shape={effect.shape} w={w} h={h} ar={ar} st={st} />;
   if (!deco.length) return framed;
   return (
     <View style={{ width: '100%', height: '100%', position: 'relative' }}>

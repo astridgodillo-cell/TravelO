@@ -235,10 +235,103 @@ export function normalizeBg(bg) {
   return bg || { mode: 'perPage', spread: { type: 'none' }, pages: [] };
 }
 
+// ---------------------------------------------------------------------------
+// Cadres « forme » : la photo est DÉCOUPÉE selon une silhouette (cœur, étoile…).
+// Chaque silhouette est une liste de points en POURCENTAGE (0..100) d'une boîte.
+// Ces mêmes points servent à l'IDENTIQUE :
+//   - dans l'éditeur, via une découpe CSS (clip-path: polygon(...)) ;
+//   - dans le PDF, via un <Polygon> SVG utilisé comme masque (clipPath).
+// → l'aperçu à l'écran et le fichier imprimé sont rigoureusement identiques.
+function ellipsePts(n, start = -Math.PI / 2) {
+  const pts = [];
+  for (let i = 0; i < n; i += 1) {
+    const a = start + (i / n) * Math.PI * 2;
+    pts.push([+(50 + 50 * Math.cos(a)).toFixed(2), +(50 + 50 * Math.sin(a)).toFixed(2)]);
+  }
+  return pts;
+}
+function regularPts(n, rotDeg = -90) {
+  const pts = [];
+  for (let i = 0; i < n; i += 1) {
+    const a = ((rotDeg + (i * 360) / n) * Math.PI) / 180;
+    pts.push([+(50 + 50 * Math.cos(a)).toFixed(2), +(50 + 50 * Math.sin(a)).toFixed(2)]);
+  }
+  return pts;
+}
+function starPts(branches, rIn = 21) {
+  const pts = [];
+  for (let i = 0; i < branches * 2; i += 1) {
+    const r = i % 2 === 0 ? 50 : rIn;
+    const a = ((-90 + (i * 180) / branches) * Math.PI) / 180;
+    pts.push([+(50 + r * Math.cos(a)).toFixed(2), +(50 + r * Math.sin(a)).toFixed(2)]);
+  }
+  return pts;
+}
+function heartPts(n = 56) {
+  const raw = [];
+  for (let i = 0; i < n; i += 1) {
+    const t = (i / n) * Math.PI * 2;
+    raw.push([
+      16 * Math.sin(t) ** 3,
+      13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t),
+    ]);
+  }
+  const xs = raw.map((p) => p[0]);
+  const ys = raw.map((p) => p[1]);
+  const minX = Math.min(...xs); const maxX = Math.max(...xs);
+  const minY = Math.min(...ys); const maxY = Math.max(...ys);
+  return raw.map(([x, y]) => [
+    +(((x - minX) / (maxX - minX)) * 100).toFixed(2),
+    +((1 - (y - minY) / (maxY - minY)) * 100).toFixed(2), // y inversé : pointe en bas
+  ]);
+}
+function flowerPts(petals = 6, n = 72) {
+  const pts = [];
+  for (let i = 0; i < n; i += 1) {
+    const a = (i / n) * Math.PI * 2 - Math.PI / 2;
+    const r = 33 + 17 * Math.cos(petals * a);
+    pts.push([+(50 + r * Math.cos(a)).toFixed(2), +(50 + r * Math.sin(a)).toFixed(2)]);
+  }
+  return pts;
+}
+function archPts() {
+  const pts = [[0, 100], [0, 50]];
+  for (let a = 180; a >= 0; a -= 10) {
+    const r = (a * Math.PI) / 180;
+    pts.push([+(50 + 50 * Math.cos(r)).toFixed(2), +(50 - 50 * Math.sin(r)).toFixed(2)]);
+  }
+  pts.push([100, 100]);
+  return pts;
+}
+
+export const FRAME_SHAPES = {
+  coeur: { label: 'Cœur', pts: heartPts() },
+  etoile: { label: 'Étoile', pts: starPts(5) },
+  etoile6: { label: 'Étoile 6 branches', pts: starPts(6, 27) },
+  cercle: { label: 'Cercle', pts: ellipsePts(48) },
+  hexagone: { label: 'Hexagone', pts: regularPts(6) },
+  octogone: { label: 'Octogone', pts: regularPts(8, -67.5) },
+  losange: { label: 'Losange', pts: [[50, 0], [100, 50], [50, 100], [0, 50]] },
+  fleur: { label: 'Fleur', pts: flowerPts(6) },
+  arche: { label: 'Arche', pts: archPts() },
+  bouclier: { label: 'Blason', pts: [[6, 6], [94, 6], [94, 48], [88, 66], [72, 84], [50, 96], [28, 84], [12, 66], [6, 48]] },
+};
+export function getFrameShape(id) {
+  return FRAME_SHAPES[id] || null;
+}
+// Découpe CSS (éditeur).
+export function shapeClipCss(pts) {
+  return `polygon(${pts.map(([x, y]) => `${x}% ${y}%`).join(', ')})`;
+}
+// Points absolus pour un masque SVG de w×h (PDF).
+export function shapePointsPx(pts, w, h) {
+  return pts.map(([x, y]) => `${((x / 100) * w).toFixed(2)},${((y / 100) * h).toFixed(2)}`).join(' ');
+}
+
 // Effets/filtres applicables à une photo.
-//  - cat   : 'filtre' (couleur) ou 'cadre' (décoratif) — pour le rangement ;
+//  - cat   : 'filtre' (couleur), 'cadre' (décoratif) ou 'forme' (découpe) ;
 //  - css   : filtre couleur (syntaxe CSS, réutilisée pour le canvas) ;
-//  - frame : cadre dessiné dans le PDF.
+//  - frame : cadre dessiné dans le PDF ('shape' = découpe selon `shape`).
 export const PHOTO_EFFECTS = [
   { id: 'none', label: 'Aucun', cat: '', css: '', frame: null },
   // Filtres couleur
@@ -265,6 +358,17 @@ export const PHOTO_EFFECTS = [
   { id: 'stamp', label: 'Timbre', cat: 'cadre', css: '', frame: 'stamp' },
   { id: 'film', label: 'Pellicule', cat: 'cadre', css: '', frame: 'film' },
   { id: 'parchemin', label: 'Parchemin', cat: 'cadre', css: 'sepia(0.6) contrast(0.95) brightness(1.05)', frame: 'parchment' },
+  // Découpes en forme (la photo prend la silhouette ; coins transparents)
+  { id: 'fcoeur', label: 'Cœur', cat: 'forme', css: '', frame: 'shape', shape: 'coeur' },
+  { id: 'fetoile', label: 'Étoile', cat: 'forme', css: '', frame: 'shape', shape: 'etoile' },
+  { id: 'fetoile6', label: 'Étoile 6 branches', cat: 'forme', css: '', frame: 'shape', shape: 'etoile6' },
+  { id: 'fcercle', label: 'Cercle', cat: 'forme', css: '', frame: 'shape', shape: 'cercle' },
+  { id: 'fhexagone', label: 'Hexagone', cat: 'forme', css: '', frame: 'shape', shape: 'hexagone' },
+  { id: 'foctogone', label: 'Octogone', cat: 'forme', css: '', frame: 'shape', shape: 'octogone' },
+  { id: 'flosange', label: 'Losange', cat: 'forme', css: '', frame: 'shape', shape: 'losange' },
+  { id: 'ffleur', label: 'Fleur', cat: 'forme', css: '', frame: 'shape', shape: 'fleur' },
+  { id: 'farche', label: 'Arche', cat: 'forme', css: '', frame: 'shape', shape: 'arche' },
+  { id: 'fbouclier', label: 'Blason', cat: 'forme', css: '', frame: 'shape', shape: 'bouclier' },
 ];
 
 export function getPhotoEffect(id) {
