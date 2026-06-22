@@ -46,8 +46,9 @@ export function Spinner({ className = 'h-4 w-4' }) {
 
 // Aperçu fidèle d'une couverture (avant ou fin) + réglages de mise en page.
 // variant : 'cover' (1re de couverture) ou 'end' (page de fin / 4e de couv).
-export function CoverDesigner({ variant = 'cover', photo, title, dates, note, onChangeNote, format = 'carre', theme = null, layout = {}, onChangeLayout, onChoose, onClear }) {
+export function CoverDesigner({ variant = 'cover', photo, title, dates, note, onChangeNote, format = 'carre', theme = null, layout = {}, onChangeLayout, onChoose, onClear, spreadHalf = null, spreadPhoto = null, compact = false }) {
   const isEnd = variant === 'end';
+  const spreadSrc = spreadHalf && (spreadPhoto?.display || spreadPhoto?.full);
   const dims = FORMAT_DIMS[format] || FORMAT_DIMS.carre;
   const aspect = dims.trimW / dims.trimH;
   const pos = layout.pos || (isEnd ? 'center' : 'bottom');
@@ -69,14 +70,21 @@ export function CoverDesigner({ variant = 'cover', photo, title, dates, note, on
   );
 
   return (
-    <div className="mt-4 flex flex-col gap-4 sm:flex-row">
+    <div className={`mt-4 flex flex-col gap-4 ${compact ? '' : 'sm:flex-row'}`}>
       {/* Aperçu */}
-      <div className="shrink-0">
+      <div className={compact ? '' : 'shrink-0'}>
         <div
-          className="relative w-56 max-w-full overflow-hidden rounded-lg border border-slate-200 shadow-sm"
+          className={`relative ${compact ? 'w-full' : 'w-56'} max-w-full overflow-hidden rounded-lg border border-slate-200 shadow-sm`}
           style={{ aspectRatio: String(aspect), containerType: 'size', backgroundColor: ink }}
         >
-          {src && <img src={src} alt="" className="absolute inset-0 h-full w-full object-cover" draggable={false} />}
+          {spreadSrc ? (
+            <div className="absolute inset-0 overflow-hidden">
+              <img src={spreadSrc} alt="" draggable={false}
+                style={{ position: 'absolute', top: 0, height: '100%', width: '200%', left: spreadHalf === 'right' ? '-100%' : '0', objectFit: 'cover' }} />
+            </div>
+          ) : src ? (
+            <img src={src} alt="" className="absolute inset-0 h-full w-full object-cover" draggable={false} />
+          ) : null}
           {isEnd
             ? <div className="absolute inset-0" style={{ backgroundColor: 'rgba(15,22,22,0.58)' }} />
             : <div className="absolute inset-x-0 bottom-0 h-3/5" style={{ background: `linear-gradient(to top, ${ink}, transparent)` }} />}
@@ -96,13 +104,15 @@ export function CoverDesigner({ variant = 'cover', photo, title, dates, note, on
             </div>
           </div>
         </div>
-        <div className="mt-2 flex gap-2">
-          <button type="button" onClick={onChoose}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">🖼️ {photo ? 'Changer' : 'Choisir'}</button>
-          {photo && onClear && (
-            <button type="button" onClick={onClear} className="text-xs font-medium text-slate-400 hover:text-red-600">Enlever</button>
-          )}
-        </div>
+        {!spreadHalf && (
+          <div className="mt-2 flex gap-2">
+            <button type="button" onClick={onChoose}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">🖼️ {photo ? 'Changer' : 'Choisir'}</button>
+            {photo && onClear && (
+              <button type="button" onClick={onClear} className="text-xs font-medium text-slate-400 hover:text-red-600">Enlever</button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Réglages de mise en page */}
@@ -139,6 +149,99 @@ export function CoverDesigner({ variant = 'cover', photo, title, dates, note, on
         <p className="text-[11px] text-slate-400">Le titre affiché est le titre de l'album (modifiable en haut).</p>
       </div>
     </div>
+  );
+}
+
+// Section « Couvertures » : 1re et 4e de couverture côte à côte, option photo
+// unique étendue sur les deux, et réglage de la page d'ouverture (après la 2e
+// de couverture, utilisée s'il n'y a pas de carte).
+export function CoversSection({ album, format, theme, dates, hasMap, onPatch, onPick }) {
+  const spread = album.coverSpread || {};
+  const spreadOn = !!spread.enabled;
+  const opening = album.opening || { type: 'blank' };
+  const setSpread = (patch) => onPatch({ coverSpread: { ...spread, ...patch } });
+  const setOpening = (patch) => onPatch({ opening: { ...opening, ...patch } });
+  const segOpen = (val, label) => (
+    <button type="button" onClick={() => setOpening({ type: val })}
+      className={`rounded-md px-2.5 py-1 text-xs font-semibold ${(opening.type || 'blank') === val ? 'bg-coral-500 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
+      {label}
+    </button>
+  );
+
+  return (
+    <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+      <h2 className="text-lg font-semibold text-slate-900">Couvertures</h2>
+      <label className="mt-2 flex items-center gap-2 text-sm text-slate-700">
+        <input type="checkbox" checked={spreadOn} onChange={(e) => setSpread({ enabled: e.target.checked })} />
+        Une seule photo étendue sur les deux couvertures (gauche = 1re, droite = 4e)
+      </label>
+
+      {spreadOn && (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <button type="button" onClick={() => onPick('spread')}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+            🖼️ {spread.photo ? 'Changer la photo des couvertures' : 'Choisir la photo des couvertures'}
+          </button>
+          {spread.photo && (
+            <button type="button" onClick={() => setSpread({ photo: null })} className="text-xs font-medium text-slate-400 hover:text-red-600">Enlever</button>
+          )}
+        </div>
+      )}
+
+      <div className="mt-2 grid grid-cols-1 gap-5 sm:grid-cols-2">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-coral-600">1re de couverture (avant)</p>
+          <CoverDesigner
+            variant="cover" compact
+            photo={album.cover} title={album.title} dates={dates}
+            format={format} theme={theme}
+            layout={album.coverLayout || {}}
+            onChangeLayout={(l) => onPatch({ coverLayout: l })}
+            onChoose={() => onPick('cover')}
+            onClear={album.cover ? () => onPatch({ cover: null }) : null}
+            spreadHalf={spreadOn ? 'left' : null}
+            spreadPhoto={spread.photo}
+          />
+        </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-coral-600">4e de couverture (page de fin)</p>
+          <CoverDesigner
+            variant="end" compact
+            photo={album.endPhoto} title={album.title} dates={dates}
+            note={album.endNote} onChangeNote={(t) => onPatch({ endNote: t })}
+            format={format} theme={theme}
+            layout={album.endLayout || {}}
+            onChangeLayout={(l) => onPatch({ endLayout: l })}
+            onChoose={() => onPick('end')}
+            onClear={album.endPhoto ? () => onPatch({ endPhoto: null }) : null}
+            spreadHalf={spreadOn ? 'right' : null}
+            spreadPhoto={spread.photo}
+          />
+        </div>
+      </div>
+
+      {/* Page d'ouverture (après la 2e de couverture blanche) */}
+      <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+        <p className="text-sm font-medium text-slate-700">Page d'ouverture</p>
+        <p className="mt-0.5 text-xs text-slate-500">
+          Juste après la couverture (la 2e de couverture est une page blanche imposée).
+          {hasMap ? ' Ici, c’est la carte du voyage qui s’affiche.' : ' Sans carte, choisis ce qui s’affiche :'}
+        </p>
+        {!hasMap && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {segOpen('blank', 'Page blanche')}
+            {segOpen('photo', 'Photo choisie')}
+            {segOpen('random', 'Photo au hasard')}
+            {(opening.type || 'blank') === 'photo' && (
+              <button type="button" onClick={() => onPick('opening')}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                🖼️ {opening.photo ? 'Changer la photo' : 'Choisir la photo'}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -1421,6 +1524,8 @@ export default function AlbumPage() {
         unit: saved?.unit ?? 'jour',
         coverLayout: saved?.coverLayout ?? {},
         endLayout: saved?.endLayout ?? {},
+        coverSpread: saved?.coverSpread ?? {},
+        opening: saved?.opening ?? { type: 'blank' },
         days: daysArr,
       });
       if (saved?.format) setFormat(saved.format);
@@ -1530,6 +1635,8 @@ export default function AlbumPage() {
           format,
           coverLayout: album.coverLayout || {},
           endLayout: album.endLayout || {},
+          coverSpread: album.coverSpread || {},
+          opening: album.opening || { type: 'blank' },
           days: album.days,
           updatedAt: new Date().toISOString(),
         },
@@ -1614,6 +1721,8 @@ export default function AlbumPage() {
           format,
           coverLayout: nextAlbum.coverLayout || {},
           endLayout: nextAlbum.endLayout || {},
+          coverSpread: nextAlbum.coverSpread || {},
+          opening: nextAlbum.opening || { type: 'blank' },
           days: nextAlbum.days,
           updatedAt: new Date().toISOString(),
         },
@@ -1683,6 +1792,14 @@ export default function AlbumPage() {
       }
       const albumForPdf = { ...album, days: bakedDays };
 
+      // Page d'ouverture « au hasard » : on choisit une photo au moment de
+      // fabriquer le fichier.
+      let openingForPdf = album.opening || { type: 'blank' };
+      if (openingForPdf.type === 'random') {
+        const all = album.days.flatMap((d) => d.photos || []).filter((p) => p.full || p.display);
+        openingForPdf = { ...openingForPdf, photo: all.length ? all[Math.floor(Math.random() * all.length)] : null };
+      }
+
       const blob = await pdf(
         <AlbumPdfDoc
           album={albumForPdf}
@@ -1694,6 +1811,8 @@ export default function AlbumPage() {
           unit={album.unit}
           coverLayout={album.coverLayout}
           endLayout={album.endLayout}
+          coverSpread={album.coverSpread}
+          opening={openingForPdf}
           endNote={album.endNote}
           endPhoto={album.endPhoto}
           theme={getTheme(album.theme)}
@@ -1738,25 +1857,20 @@ export default function AlbumPage() {
   // composants qui n'ont besoin que du lieu (sélecteur de photo, etc.).
   const sections = album?.days || [];
   const days = sections.map((s) => ({ location: s.location || '' }));
-  // Photo de couverture par défaut (1re photo dispo) pour l'aperçu.
-  const coverFallback = (() => {
-    for (const s of sections) {
-      const p = (s.photos || []).find((x) => x && (x.full || x.display));
-      if (p) return p;
-    }
-    return null;
-  })();
   // Numéro de page réel (1 = couverture) de la 1re page de chaque section, pour
   // indiquer si une double page tombe bien en vis‑à‑vis. La carte du voyage
   // occupe une page si des coordonnées existent.
   const hasMapPage = (Array.isArray(trip?.itinerary?.days) ? trip.itinerary.days : [])
     .some((d) => d?.coordinates && typeof d.coordinates.lat === 'number');
   const sectionPageCounts = sections.map((s) => splitPhotos(s.photos, s.split).filter((c) => c.length > 0).length);
+  // Avant les sections : 1re de couv + 2e de couv (blanche) + page d'ouverture
+  // (carte OU page blanche/photo) = 3 pages.
+  const BEFORE = 3;
   const dayOffsets = sectionPageCounts.map(
-    (_, i) => 1 + (hasMapPage ? 1 : 0) + sectionPageCounts.slice(0, i).reduce((a, b) => a + b, 0) + 1
+    (_, i) => BEFORE + sectionPageCounts.slice(0, i).reduce((a, b) => a + b, 0) + 1
   );
-  // Total = couverture + carte éventuelle + pages des sections + page de fin.
-  const totalPages = 1 + (hasMapPage ? 1 : 0) + sectionPageCounts.reduce((a, b) => a + b, 0) + 1;
+  // Total = 3 (avant) + pages des sections + 3e de couv (blanche) + 4e de couv.
+  const totalPages = BEFORE + sectionPageCounts.reduce((a, b) => a + b, 0) + 2;
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -1812,17 +1926,15 @@ export default function AlbumPage() {
         <span className="text-xs text-slate-500">Regroupe plusieurs journées d'une même étape avec « Fusionner ».</span>
       </div>
 
-      {/* Photo de couverture + mise en page */}
-      <CoverDesigner
-        photo={album.cover || coverFallback}
-        title={album.title}
-        dates={formatDateRange(trip?.itinerary?.summary?.start_date, trip?.itinerary?.summary?.end_date)}
+      {/* Couvertures (1re + 4e côte à côte) + page d'ouverture */}
+      <CoversSection
+        album={album}
         format={format}
         theme={getTheme(album.theme)}
-        layout={album.coverLayout || {}}
-        onChangeLayout={(l) => { setAlbum((prev) => ({ ...prev, coverLayout: l })); setDirty(true); }}
-        onChoose={() => setPickerFor({ kind: 'cover' })}
-        onClear={album.cover ? () => { setAlbum((prev) => ({ ...prev, cover: null })); setDirty(true); } : null}
+        dates={formatDateRange(trip?.itinerary?.summary?.start_date, trip?.itinerary?.summary?.end_date)}
+        hasMap={hasMapPage}
+        onPatch={(patch) => { setAlbum((prev) => ({ ...prev, ...patch })); setDirty(true); }}
+        onPick={(target) => setPickerFor({ kind: target })}
       />
 
       <p className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
@@ -1908,27 +2020,6 @@ export default function AlbumPage() {
         </p>
       )}
 
-      {/* PAGE DE FIN */}
-      <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-        <h2 className="text-lg font-semibold text-slate-900">Page de fin (4ᵉ de couverture)</h2>
-        <p className="mt-1 text-sm text-slate-600">
-          La toute dernière page de l'album : aperçu et mise en page comme la couverture.
-        </p>
-        <CoverDesigner
-          variant="end"
-          photo={album.endPhoto}
-          title={album.title}
-          dates={formatDateRange(trip?.itinerary?.summary?.start_date, trip?.itinerary?.summary?.end_date)}
-          note={album.endNote}
-          onChangeNote={(t) => { setAlbum((prev) => ({ ...prev, endNote: t })); setDirty(true); }}
-          format={format}
-          theme={getTheme(album.theme)}
-          layout={album.endLayout || {}}
-          onChangeLayout={(l) => { setAlbum((prev) => ({ ...prev, endLayout: l })); setDirty(true); }}
-          onChoose={() => setPickerFor({ kind: 'end' })}
-          onClear={album.endPhoto ? () => { setAlbum((prev) => ({ ...prev, endPhoto: null })); setDirty(true); } : null}
-        />
-      </section>
 
       {/* EXPORT IMPRIMABLE */}
       <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
@@ -1949,38 +2040,7 @@ export default function AlbumPage() {
           des pages pour la découpe.
         </p>
 
-        <div className="mt-4">
-          <p className="mb-2 text-sm font-medium text-slate-700">Choisis le format :</p>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-            {Object.entries(FORMAT_LABELS).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => {
-                  setFormat(key);
-                  if (pdfUrl) {
-                    URL.revokeObjectURL(pdfUrl);
-                    setPdfUrl(null);
-                  }
-                }}
-                className={`rounded-xl border px-4 py-3 text-left text-sm font-medium transition ${
-                  format === key
-                    ? 'border-coral-400 bg-coral-50 text-coral-700 ring-2 ring-coral-200'
-                    : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
-                }`}
-              >
-                <span className="block">{label}</span>
-                <span className="mt-0.5 block text-xs font-normal text-slate-500">
-                  {key === 'carre'
-                    ? 'Le format classique des livres photo, carré.'
-                    : key === 'a4paysage'
-                      ? 'Format allongé, comme une feuille A4 couchée.'
-                      : 'Format vertical, comme une feuille A4 debout.'}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
+        <p className="mt-2 text-xs text-slate-500">Format : <span className="font-semibold text-slate-700">{FORMAT_LABELS[format]}</span> (modifiable tout en haut de la page).</p>
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <button
@@ -2026,8 +2086,14 @@ export default function AlbumPage() {
         let title = 'Choisir la photo de couverture';
         let current = album.cover;
         if (kind === 'end') {
-          title = 'Choisir la photo de fond';
+          title = 'Choisir la photo de la 4e de couverture';
           current = album.endPhoto;
+        } else if (kind === 'spread') {
+          title = 'Photo étendue sur les deux couvertures';
+          current = album.coverSpread?.photo;
+        } else if (kind === 'opening') {
+          title = "Photo de la page d'ouverture";
+          current = album.opening?.photo;
         } else if (kind === 'dayBg') {
           const bg = normalizeBg(album.days[pickerFor.i]?.bg);
           title = `Fond · ${unitLabel(album.unit)} ${pickerFor.i + 1}`;
@@ -2061,6 +2127,10 @@ export default function AlbumPage() {
                   daysArr[i] = { ...entry, bg: { ...bg } };
                   return { ...prev, days: daysArr };
                 });
+              } else if (kind === 'spread') {
+                setAlbum((prev) => ({ ...prev, coverSpread: { ...(prev.coverSpread || {}), photo } }));
+              } else if (kind === 'opening') {
+                setAlbum((prev) => ({ ...prev, opening: { ...(prev.opening || { type: 'photo' }), photo } }));
               } else {
                 const field = kind === 'end' ? 'endPhoto' : 'cover';
                 setAlbum((prev) => ({ ...prev, [field]: photo }));

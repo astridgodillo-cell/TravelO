@@ -10,7 +10,7 @@ import {
 import { renderRouteMapImage } from '../lib/staticMapImage';
 import AlbumPdfDoc from '../components/AlbumPdfDoc';
 import PdfPagesPreview from '../components/PdfPagesPreview';
-import { DayCard, CoverPicker, ThemePicker, Spinner, CoverDesigner, FormatPicker } from './AlbumPage';
+import { DayCard, CoverPicker, ThemePicker, Spinner, CoversSection, FormatPicker } from './AlbumPage';
 import { FORMAT_LABELS, normalizeBg, bakePhotoEffects, getTheme, unitLabel, splitPhotos, computeSplit, bgIsEmpty, autoBgFromPhotos, formatDateRange } from '../lib/albumModel';
 
 const emptyDay = () => ({ title: '', note: '', photos: [], bg: null, split: null });
@@ -76,6 +76,8 @@ export default function StandaloneAlbumPage() {
         unit: c.unit ?? 'jour',
         coverLayout: c.coverLayout ?? {},
         endLayout: c.endLayout ?? {},
+        coverSpread: c.coverSpread ?? {},
+        opening: c.opening ?? { type: 'blank' },
         days: Array.isArray(c.days) && c.days.length ? c.days : [emptyDay()],
         map: c.map ?? { enabled: false, stops: [] },
       });
@@ -178,6 +180,8 @@ export default function StandaloneAlbumPage() {
       format,
       coverLayout: a.coverLayout || {},
       endLayout: a.endLayout || {},
+      coverSpread: a.coverSpread || {},
+      opening: a.opening || { type: 'blank' },
       days: a.days,
       map: a.map || { enabled: false, stops: [] },
     };
@@ -280,6 +284,11 @@ export default function StandaloneAlbumPage() {
       const bakedDays = [];
       for (const d of album.days) bakedDays.push({ ...d, photos: await bakePhotoEffects(d.photos) });
       const albumForPdf = { ...album, days: bakedDays };
+      let openingForPdf = album.opening || { type: 'blank' };
+      if (openingForPdf.type === 'random') {
+        const all = album.days.flatMap((d) => d.photos || []).filter((p) => p.full || p.display);
+        openingForPdf = { ...openingForPdf, photo: all.length ? all[Math.floor(Math.random() * all.length)] : null };
+      }
       const blob = await pdf(
         <AlbumPdfDoc
           album={albumForPdf}
@@ -294,6 +303,8 @@ export default function StandaloneAlbumPage() {
           unit={album.unit}
           coverLayout={album.coverLayout}
           endLayout={album.endLayout}
+          coverSpread={album.coverSpread}
+          opening={openingForPdf}
         />
       ).toBlob();
       if (pdfUrl) URL.revokeObjectURL(pdfUrl);
@@ -321,21 +332,15 @@ export default function StandaloneAlbumPage() {
   }
 
   // Numéro de page réel (1 = couverture) de la 1re page de chaque section, pour
-  // l'indicateur « double page en vis‑à‑vis ». La carte occupe une page si elle
-  // est activée et a au moins une étape.
-  const coverFallback = (() => {
-    for (const s of album.days) {
-      const p = (s.photos || []).find((x) => x && (x.full || x.display));
-      if (p) return p;
-    }
-    return null;
-  })();
+  // l'indicateur « double page en vis‑à‑vis ».
   const hasMapPage = !!album.map?.enabled && (album.map.stops || []).some((s) => s.name?.trim());
   const dayPageCounts = album.days.map((s) => splitPhotos(s.photos, s.split).filter((c) => c.length > 0).length);
+  // Avant les sections : 1re de couv + 2e de couv (blanche) + page d'ouverture.
+  const BEFORE = 3;
   const dayOffsets = dayPageCounts.map(
-    (_, i) => 1 + (hasMapPage ? 1 : 0) + dayPageCounts.slice(0, i).reduce((a, b) => a + b, 0) + 1
+    (_, i) => BEFORE + dayPageCounts.slice(0, i).reduce((a, b) => a + b, 0) + 1
   );
-  const totalPages = 1 + (hasMapPage ? 1 : 0) + dayPageCounts.reduce((a, b) => a + b, 0) + 1;
+  const totalPages = BEFORE + dayPageCounts.reduce((a, b) => a + b, 0) + 2;
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -389,17 +394,15 @@ export default function StandaloneAlbumPage() {
         <span className="text-xs text-slate-500">Pratique pour regrouper plusieurs journées d'une même étape.</span>
       </div>
 
-      {/* Couverture + mise en page */}
-      <CoverDesigner
-        photo={album.cover || coverFallback}
-        title={album.title}
-        dates={formatDateRange(album.dateStart, album.dateEnd)}
+      {/* Couvertures (1re + 4e côte à côte) + page d'ouverture */}
+      <CoversSection
+        album={album}
         format={format}
         theme={getTheme(album.theme)}
-        layout={album.coverLayout || {}}
-        onChangeLayout={(l) => patch({ coverLayout: l })}
-        onChoose={() => setPickerFor({ kind: 'cover' })}
-        onClear={album.cover ? () => patch({ cover: null }) : null}
+        dates={formatDateRange(album.dateStart, album.dateEnd)}
+        hasMap={hasMapPage}
+        onPatch={(p) => patch(p)}
+        onPick={(target) => setPickerFor({ kind: target })}
       />
 
       {error && <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
@@ -465,25 +468,6 @@ export default function StandaloneAlbumPage() {
       {/* Carte */}
       <MapSection map={album.map} onChange={(map) => patch({ map })} />
 
-      {/* Page de fin */}
-      <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-        <h2 className="text-lg font-semibold text-slate-900">Page de fin (4ᵉ de couverture)</h2>
-        <CoverDesigner
-          variant="end"
-          photo={album.endPhoto}
-          title={album.title}
-          dates={formatDateRange(album.dateStart, album.dateEnd)}
-          note={album.endNote}
-          onChangeNote={(t) => patch({ endNote: t })}
-          format={format}
-          theme={getTheme(album.theme)}
-          layout={album.endLayout || {}}
-          onChangeLayout={(l) => patch({ endLayout: l })}
-          onChoose={() => setPickerFor({ kind: 'end' })}
-          onClear={album.endPhoto ? () => patch({ endPhoto: null }) : null}
-        />
-      </section>
-
       {/* Export */}
       <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
         <div className="flex items-start justify-between gap-2">
@@ -493,15 +477,7 @@ export default function StandaloneAlbumPage() {
         <p className="mt-1 text-sm font-medium text-slate-700">
           📖 {totalPages} pages au total (couverture, carte éventuelle et page de fin comprises).
         </p>
-        <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
-          {Object.entries(FORMAT_LABELS).map(([key, label]) => (
-            <button key={key} type="button"
-              onClick={() => { setFormat(key); if (pdfUrl) { URL.revokeObjectURL(pdfUrl); setPdfUrl(null); setPdfBlob(null); } }}
-              className={`rounded-xl border px-4 py-3 text-left text-sm font-medium transition ${format === key ? 'border-coral-400 bg-coral-50 text-coral-700 ring-2 ring-coral-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'}`}>
-              {label}
-            </button>
-          ))}
-        </div>
+        <p className="mt-2 text-xs text-slate-500">Format : <span className="font-semibold text-slate-700">{FORMAT_LABELS[format]}</span> (modifiable tout en haut de la page).</p>
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <button onClick={generatePdf} disabled={generating || photoCount === 0}
             className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow disabled:cursor-not-allowed disabled:opacity-60">
@@ -527,7 +503,9 @@ export default function StandaloneAlbumPage() {
         const kind = pickerFor.kind;
         let title = 'Choisir la photo de couverture';
         let current = album.cover;
-        if (kind === 'end') { title = 'Choisir la photo de fond'; current = album.endPhoto; }
+        if (kind === 'end') { title = 'Choisir la photo de la 4e de couverture'; current = album.endPhoto; }
+        else if (kind === 'spread') { title = 'Photo étendue sur les deux couvertures'; current = album.coverSpread?.photo; }
+        else if (kind === 'opening') { title = "Photo de la page d'ouverture"; current = album.opening?.photo; }
         else if (kind === 'dayBg') {
           const bg = normalizeBg(album.days[pickerFor.i]?.bg);
           title = `Fond · ${unitLabel(album.unit)} ${pickerFor.i + 1}`;
@@ -556,6 +534,10 @@ export default function StandaloneAlbumPage() {
                   days[i] = { ...days[i], bg: { ...bg } };
                   return { ...prev, days };
                 });
+              } else if (kind === 'spread') {
+                patch({ coverSpread: { ...(album.coverSpread || {}), photo } });
+              } else if (kind === 'opening') {
+                patch({ opening: { ...(album.opening || { type: 'photo' }), photo } });
               } else {
                 patch(kind === 'end' ? { endPhoto: photo } : { cover: photo });
               }

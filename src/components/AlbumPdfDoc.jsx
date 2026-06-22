@@ -367,7 +367,31 @@ function CoverFade({ color = '#1C2B2D' }) {
   );
 }
 
-export default function AlbumPdfDoc({ album, days = [], format = 'carre', summary = null, routeMap = null, stops = [], endNote = '', endPhoto = null, theme = null, unit = 'jour', coverLayout = {}, endLayout = {} }) {
+// Photo de couverture : soit normale (pleine page), soit la MOITIÉ d'une photo
+// étendue sur la 1re et la 4e de couverture (half 'left' = 1re, 'right' = 4e).
+function CoverPhoto({ photo, spread, half, pageW, pageH, st }) {
+  if (spread) {
+    const src = imgFull(spread);
+    const idx = half === 'right' ? 1 : 0;
+    return (
+      <View style={st.coverImgWrap}>
+        <View style={{ position: 'absolute', top: 0, left: -idx * pageW, width: pageW * 2, height: pageH }}>
+          <Image src={src} style={{ width: pageW * 2, height: pageH, objectFit: 'cover' }} />
+        </View>
+      </View>
+    );
+  }
+  return photo && imgFull(photo) ? (
+    <View style={st.coverImgWrap}><Image src={imgFull(photo)} style={st.coverImg} /></View>
+  ) : null;
+}
+
+// Page blanche (2e et 3e de couverture, souvent imposées par les imprimeurs).
+function BlankPage({ pageW, pageH }) {
+  return <Page size={[pageW, pageH]} style={{ width: pageW, height: pageH, backgroundColor: '#FFFFFF' }} />;
+}
+
+export default function AlbumPdfDoc({ album, days = [], format = 'carre', summary = null, routeMap = null, stops = [], endNote = '', endPhoto = null, theme = null, unit = 'jour', coverLayout = {}, endLayout = {}, coverSpread = {}, opening = {} }) {
   const coverPos = coverLayout.pos || 'bottom';
   const coverAlign = coverLayout.align || 'left';
   const coverKicker = coverLayout.kicker != null ? coverLayout.kicker : 'Album de voyage';
@@ -411,15 +435,13 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
     }
   }
 
+  const spreadOn = !!(coverSpread.enabled && imgFull(coverSpread.photo));
+
   return (
     <Document title={`${album?.title || 'Album'} — TravelO`} author="TravelO">
-      {/* COUVERTURE — photo pleine page jusqu'au fond perdu */}
+      {/* 1RE DE COUVERTURE — photo pleine page jusqu'au fond perdu */}
       <Page size={[pageW, pageH]} style={st.coverPage}>
-        {cover && (
-          <View style={st.coverImgWrap}>
-            <Image src={imgFull(cover)} style={st.coverImg} />
-          </View>
-        )}
+        <CoverPhoto photo={cover} spread={spreadOn ? coverSpread.photo : null} half="left" pageW={pageW} pageH={pageH} st={st} />
         <CoverFade color={P.ink} />
         <View
           style={{
@@ -445,8 +467,12 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
         </View>
       </Page>
 
-      {/* CARTE DU VOYAGE */}
-      {routeMap && (() => {
+      {/* 2E DE COUVERTURE — page blanche imposée */}
+      <BlankPage pageW={pageW} pageH={pageH} />
+
+      {/* PAGE D'OUVERTURE : la carte si elle existe, sinon page blanche /
+          photo choisie / photo au hasard selon le réglage. */}
+      {routeMap ? (() => {
         const nStops = stops.filter(Boolean).length;
         // Hauteur réservée à la liste des étapes (2 colonnes) + à l'en-tête,
         // pour donner à la carte une hauteur FIXE (sinon l'image s'affiche à sa
@@ -478,6 +504,17 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
             )}
           </Page>
         );
+      })() : (() => {
+        const type = opening.type || 'blank';
+        const photo = type === 'photo' || type === 'random' ? opening.photo : null;
+        if (photo && imgFull(photo)) {
+          return (
+            <Page size={[pageW, pageH]} style={st.coverPage}>
+              <View style={st.coverImgWrap}><Image src={imgFull(photo)} style={st.coverImg} /></View>
+            </Page>
+          );
+        }
+        return <BlankPage pageW={pageW} pageH={pageH} />;
       })()}
 
       {/* UNE OU PLUSIEURS PAGES PAR JOURNÉE */}
@@ -537,17 +574,25 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
         });
       })}
 
-      {/* PAGE DE FIN — quatrième de couverture (personnalisable) */}
+      {/* 3E DE COUVERTURE — page blanche imposée */}
+      <BlankPage pageW={pageW} pageH={pageH} />
+
+      {/* 4E DE COUVERTURE — page de fin (photo de fond ou moitié droite de la
+          photo étendue sur les deux couvertures) */}
       <Page size={[pageW, pageH]} style={st.endPage}>
-        {endPhoto && imgFull(endPhoto) && (
+        {spreadOn ? (
+          <>
+            <CoverPhoto photo={null} spread={coverSpread.photo} half="right" pageW={pageW} pageH={pageH} st={st} />
+            <View style={st.endScrim} />
+          </>
+        ) : endPhoto && imgFull(endPhoto) ? (
           <>
             <View style={st.endImgWrap}>
               <Image src={imgFull(endPhoto)} style={st.coverImg} />
             </View>
-            {/* voile sombre pour garder le texte lisible sur la photo */}
             <View style={st.endScrim} />
           </>
-        )}
+        ) : null}
         <View
           style={{
             position: 'absolute',
