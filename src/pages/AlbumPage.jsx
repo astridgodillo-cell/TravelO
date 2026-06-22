@@ -779,6 +779,89 @@ function themePatternStyle(theme) {
   return {};
 }
 
+// Aperçu STATIQUE d'une page (même mise en page que l'éditeur/PDF) : fond,
+// en-tête, photos (grille ou disposition libre), légendes, décorations.
+export function PagePreview({ photos, format, theme, title, note, firstPage, dayIndex, location, unit = 'jour', bg, pageIndex, pageCount, deco, free, width = '11rem' }) {
+  const spec = resolveBg(bg, pageIndex, pageCount);
+  const onPlate = spec.type !== 'none';
+  const lay = pageLayout(photos, format, { title, note, firstPage, onPlate });
+  const pct = (v, total) => `${(v / total) * 100}%`;
+  const ink = theme?.ink || '#1C2B2D';
+  const accent = theme?.accent || '#C8643C';
+  const minPage = Math.min(lay.pageW, lay.pageH);
+  const freeValid = Array.isArray(free) && free.length === photos.length && photos.length > 0;
+  let baseStyle = { backgroundColor: theme?.paper || '#FBF8F3', ...themePatternStyle(theme) };
+  if (spec.type === 'color') baseStyle = { backgroundColor: spec.color };
+
+  const photoInner = (p) => {
+    const { imgStyle, wrapStyle } = effectPreview(getPhotoEffect(p.effect));
+    return (
+      <>
+        <div className="flex h-full w-full items-center justify-center overflow-hidden" style={wrapStyle}>
+          <img src={p.display || p.full} alt="" className="h-full w-full object-cover" style={imgStyle} draggable={false} />
+        </div>
+        {(p.deco || []).map((it, k) => (
+          <div key={k} className="absolute" style={{ left: `${it.xf * 100}%`, top: `${it.yf * 100}%`, transform: `translate(-50%,-50%) rotate(${it.rot}deg)` }}>
+            <DecoItemView it={it} />
+          </div>
+        ))}
+        {p.caption ? (
+          <div className="absolute inset-x-0 bottom-0 px-1 py-0.5 text-center italic text-white" style={{ backgroundColor: 'rgba(0,0,0,0.45)', fontSize: '3cqmin' }}>{p.caption}</div>
+        ) : null}
+      </>
+    );
+  };
+
+  return (
+    <div className="relative overflow-hidden rounded-lg border border-slate-200 shadow-sm" style={{ width, maxWidth: '100%', aspectRatio: String(lay.pageW / lay.pageH), containerType: 'size', ...baseStyle }}>
+      {spec.type === 'photo' && (spec.photo?.display || spec.photo?.full) && (
+        <>
+          <img src={spec.photo.display || spec.photo.full} alt="" className="absolute inset-0 h-full w-full object-cover" draggable={false} />
+          {spec.toned !== false && <div className="absolute inset-0" style={{ backgroundColor: 'rgba(251,248,243,0.80)' }} />}
+        </>
+      )}
+      {/* en-tête */}
+      <div className="absolute overflow-hidden" style={{ left: pct(lay.pad, lay.pageW), top: pct(lay.pad, lay.pageH), width: pct(lay.contentW, lay.pageW), height: pct(lay.headerH, lay.pageH) }}>
+        <div style={{ display: 'inline-block', maxWidth: '100%', ...(onPlate ? { backgroundColor: 'rgba(251,248,243,0.85)', borderRadius: '4px', padding: '1.5% 2.2%' } : {}) }}>
+          <div style={{ color: accent, fontSize: '1.45cqmin', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase' }}>
+            {unitLabel(unit)} {dayIndex + 1}{location ? ` · ${location}` : ''}{!firstPage ? ' · suite' : ''}
+          </div>
+          {firstPage && title ? <div style={{ color: ink, fontSize: '3.7cqmin', fontWeight: 700, lineHeight: 1.1, fontFamily: 'Georgia, serif' }}>{title}</div> : null}
+          {firstPage && note ? <div style={{ color: '#41433F', fontSize: '1.75cqmin', lineHeight: 1.45, marginTop: '1%' }}>{note}</div> : null}
+        </div>
+      </div>
+      {/* photos */}
+      {freeValid
+        ? photos.map((p, i) => {
+            const b = free[i];
+            const ar = p.w && p.h ? p.w / p.h : 4 / 3;
+            const wPct = ((b.scale * minPage) / lay.pageW) * 100;
+            const hPct = ((b.scale * minPage) / ar / lay.pageH) * 100;
+            return (
+              <div key={i} className="absolute overflow-hidden" style={{ left: `${b.xf * 100}%`, top: `${b.yf * 100}%`, width: `${wPct}%`, height: `${hPct}%`, transform: `translate(-50%,-50%) rotate(${b.rot}deg)`, containerType: 'size' }}>
+                {photoInner(p)}
+              </div>
+            );
+          })
+        : photos.map((p, i) => {
+            const c = lay.cells[i];
+            if (!c) return null;
+            return (
+              <div key={i} className="absolute overflow-hidden" style={{ left: pct(c.x, lay.pageW), top: pct(c.y, lay.pageH), width: pct(c.w, lay.pageW), height: pct(c.h, lay.pageH), containerType: 'size' }}>
+                {photoInner(p)}
+              </div>
+            );
+          })}
+      {/* décorations de page */}
+      {(deco || []).map((it, k) => (
+        <div key={k} className="absolute" style={{ left: `${it.xf * 100}%`, top: `${it.yf * 100}%`, transform: `translate(-50%,-50%) rotate(${it.rot}deg)` }}>
+          <DecoItemView it={it} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // Décorer LA PAGE : le fond du canevas reproduit EXACTEMENT la page imprimée
 // (fond, en-tête titre/description, photos disposées avec cadres et légendes),
 // pour que rien ne se décale ensuite dans le PDF.
@@ -1355,6 +1438,36 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
           );
         })}
       </div>
+
+      {/* APERÇU des pages de cette journée/étape */}
+      {chunks.some((c) => c.length > 0) && (
+        <div className="mt-3 flex flex-wrap gap-3">
+          {chunks.map((chunk, p) => (
+            chunk.length > 0 ? (
+              <button key={p} type="button" onClick={() => coveredBy[p] < 0 && setDecoPage(p)} className="text-left" title="Cliquer pour composer / décorer cette page">
+                <PagePreview
+                  photos={chunk}
+                  format={format}
+                  theme={theme}
+                  title={entry.title}
+                  note={entry.note}
+                  firstPage={p === 0}
+                  dayIndex={index}
+                  location={day?.location}
+                  unit={unit}
+                  bg={entry.bg}
+                  pageIndex={p}
+                  pageCount={pageCount}
+                  deco={entry.pageDeco?.[p]}
+                  free={entry.freePages?.[p]}
+                  width="9.5rem"
+                />
+                <span className="mt-1 block text-center text-[10px] text-slate-400">Page {p + 1}</span>
+              </button>
+            ) : null
+          ))}
+        </div>
+      )}
 
       {decoPage != null && (
         <PageDecorateModal
