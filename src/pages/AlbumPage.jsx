@@ -77,19 +77,21 @@ export function CoverDesigner({ variant = 'cover', photo, title, dates, note, on
           className={`relative ${compact ? 'w-full' : 'w-56'} max-w-full overflow-hidden rounded-lg border border-slate-200 shadow-sm`}
           style={{ aspectRatio: String(aspect), containerType: 'size', backgroundColor: ink }}
         >
-          {spreadSrc ? (
-            <div className="absolute inset-0 overflow-hidden">
-              <img src={spreadSrc} alt="" draggable={false}
-                style={{ position: 'absolute', top: 0, height: '100%', width: '200%', left: spreadHalf === 'right' ? '-100%' : '0', objectFit: 'cover' }} />
-            </div>
+          {spreadHalf ? (
+            spreadSrc ? (
+              <div className="absolute inset-0 overflow-hidden">
+                <img src={spreadSrc} alt="" draggable={false}
+                  style={{ position: 'absolute', top: 0, height: '100%', width: '200%', left: spreadHalf === 'right' ? '-100%' : '0', objectFit: 'cover' }} />
+              </div>
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center px-4 text-center text-[11px] text-white/70">Choisis la photo des couvertures ↑</div>
+            )
           ) : src ? (
             <img src={src} alt="" className="absolute inset-0 h-full w-full object-cover" draggable={false} />
           ) : null}
-          {isEnd
-            ? <div className="absolute inset-0" style={{ backgroundColor: 'rgba(15,22,22,0.58)' }} />
-            : <div className="absolute inset-x-0 bottom-0 h-3/5" style={{ background: `linear-gradient(to top, ${ink}, transparent)` }} />}
+          <div className="absolute inset-x-0 bottom-0 h-3/5" style={{ background: `linear-gradient(to top, ${ink}, transparent)` }} />
           <div className="absolute inset-0 flex flex-col p-[6%]" style={{ justifyContent: justify, alignItems: items }}>
-            <div style={{ textAlign: align, maxWidth: '100%', ...(isEnd ? {} : { backgroundColor: 'rgba(18,26,26,0.52)', padding: '4% 5%', borderRadius: 4 }) }}>
+            <div style={{ textAlign: align, maxWidth: '100%', backgroundColor: 'rgba(18,26,26,0.52)', padding: '4% 5%', borderRadius: 4 }}>
               {kicker ? <div style={{ color: accent, fontSize: '2.4cqmin', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase' }}>{kicker}</div> : null}
               <div style={{ color: '#fff', fontFamily: 'Georgia, serif', fontWeight: 600, fontSize: isEnd ? '6cqmin' : '8cqmin', lineHeight: 1.05, marginTop: '3%' }}>{title || 'Mon voyage'}</div>
               {showDates && dates ? <div style={{ color: '#fff', opacity: 0.9, fontSize: '2.6cqmin', marginTop: '3%' }}>{dates}</div> : null}
@@ -173,7 +175,7 @@ export function CoversSection({ album, format, theme, dates, hasMap, onPatch, on
       <h2 className="text-lg font-semibold text-slate-900">Couvertures</h2>
       <label className="mt-2 flex items-center gap-2 text-sm text-slate-700">
         <input type="checkbox" checked={spreadOn} onChange={(e) => setSpread({ enabled: e.target.checked })} />
-        Une seule photo étendue sur les deux couvertures (gauche = 1re, droite = 4e)
+        Une seule photo étendue sur les deux couvertures (moitié gauche → 4e, moitié droite → 1re)
       </label>
 
       {spreadOn && (
@@ -199,7 +201,7 @@ export function CoversSection({ album, format, theme, dates, hasMap, onPatch, on
             onChangeLayout={(l) => onPatch({ coverLayout: l })}
             onChoose={() => onPick('cover')}
             onClear={album.cover ? () => onPatch({ cover: null }) : null}
-            spreadHalf={spreadOn ? 'left' : null}
+            spreadHalf={spreadOn ? 'right' : null}
             spreadPhoto={spread.photo}
           />
         </div>
@@ -214,7 +216,7 @@ export function CoversSection({ album, format, theme, dates, hasMap, onPatch, on
             onChangeLayout={(l) => onPatch({ endLayout: l })}
             onChoose={() => onPick('end')}
             onClear={album.endPhoto ? () => onPatch({ endPhoto: null }) : null}
-            spreadHalf={spreadOn ? 'right' : null}
+            spreadHalf={spreadOn ? 'left' : null}
             spreadPhoto={spread.photo}
           />
         </div>

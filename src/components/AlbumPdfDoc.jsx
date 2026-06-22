@@ -441,7 +441,7 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
     <Document title={`${album?.title || 'Album'} — TravelO`} author="TravelO">
       {/* 1RE DE COUVERTURE — photo pleine page jusqu'au fond perdu */}
       <Page size={[pageW, pageH]} style={st.coverPage}>
-        <CoverPhoto photo={cover} spread={spreadOn ? coverSpread.photo : null} half="left" pageW={pageW} pageH={pageH} st={st} />
+        <CoverPhoto photo={cover} spread={spreadOn ? coverSpread.photo : null} half="right" pageW={pageW} pageH={pageH} st={st} />
         <CoverFade color={P.ink} />
         <View
           style={{
@@ -577,20 +577,20 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
       {/* 3E DE COUVERTURE — page blanche imposée */}
       <BlankPage pageW={pageW} pageH={pageH} />
 
-      {/* 4E DE COUVERTURE — page de fin (photo de fond ou moitié droite de la
+      {/* 4E DE COUVERTURE — page de fin (photo de fond ou moitié GAUCHE de la
           photo étendue sur les deux couvertures) */}
       <Page size={[pageW, pageH]} style={st.endPage}>
         {spreadOn ? (
           <>
-            <CoverPhoto photo={null} spread={coverSpread.photo} half="right" pageW={pageW} pageH={pageH} st={st} />
-            <View style={st.endScrim} />
+            <CoverPhoto photo={null} spread={coverSpread.photo} half="left" pageW={pageW} pageH={pageH} st={st} />
+            <CoverFade color={P.ink} />
           </>
         ) : endPhoto && imgFull(endPhoto) ? (
           <>
             <View style={st.endImgWrap}>
               <Image src={imgFull(endPhoto)} style={st.coverImg} />
             </View>
-            <View style={st.endScrim} />
+            <CoverFade color={P.ink} />
           </>
         ) : null}
         <View
@@ -605,7 +605,7 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
             alignItems: endAlign === 'left' ? 'flex-start' : endAlign === 'right' ? 'flex-end' : 'center',
           }}
         >
-          <View style={[st.endInner, endAlign === 'left' ? { alignItems: 'flex-start' } : endAlign === 'right' ? { alignItems: 'flex-end' } : null]}>
+          <View style={[st.endInner, (spreadOn || (endPhoto && imgFull(endPhoto))) ? { backgroundColor: 'rgba(18,26,26,0.52)', borderRadius: 6, paddingVertical: 14, paddingHorizontal: 16 } : null, endAlign === 'left' ? { alignItems: 'flex-start' } : endAlign === 'right' ? { alignItems: 'flex-end' } : null]}>
             <Text style={st.endKicker}>{endKicker}</Text>
             <Text style={[st.endTitle, endAlign === 'left' ? { textAlign: 'left' } : endAlign === 'right' ? { textAlign: 'right' } : null]}>{album?.title || 'Mon voyage'}</Text>
             {endShowDates && dateRange ? <Text style={st.endDates}>{dateRange}</Text> : null}
