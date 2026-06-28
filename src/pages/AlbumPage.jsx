@@ -1404,6 +1404,36 @@ function useIsMobile(breakpoint = 640) {
   return isMobile;
 }
 
+// Champ « nombre de photos sur cette page ». On laisse l'utilisateur taper
+// librement (texte local) et on ne recalcule la répartition qu'à la validation
+// (quand on quitte la case ou qu'on appuie sur Entrée) : sinon chaque frappe
+// était bridée et la valeur retombait toujours sur le minimum ou le maximum.
+function PageCountInput({ value, min = 1, max, onCommit }) {
+  const [text, setText] = useState(String(value));
+  const [editing, setEditing] = useState(false);
+  useEffect(() => { if (!editing) setText(String(value)); }, [value, editing]);
+  const commit = () => {
+    setEditing(false);
+    const n = parseInt(text, 10);
+    if (Number.isFinite(n)) onCommit(n);
+    else setText(String(value));
+  };
+  return (
+    <input
+      type="number"
+      inputMode="numeric"
+      min={min}
+      max={max}
+      value={text}
+      onFocus={(e) => { setEditing(true); e.target.select(); }}
+      onChange={(e) => { setEditing(true); setText(e.target.value); }}
+      onBlur={commit}
+      onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+      className="w-14 rounded-md border border-slate-300 px-2 py-1 text-center"
+    />
+  );
+}
+
 export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhoto, busy, progress = null, format = 'carre', onFormatChange = null, theme = null, unit = 'jour', pageOffset = null }) {
   const fileRef = useRef(null);
   const [bgOpen, setBgOpen] = useState(false);
@@ -1673,13 +1703,11 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
             {splitCounts.map((c, p) => (
               <label key={p} className="flex items-center gap-1.5 text-xs text-slate-600">
                 Page {p + 1}
-                <input
-                  type="number"
-                  min={1}
-                  max={total}
+                <PageCountInput
                   value={c}
-                  onChange={(e) => setPageValue(p, parseInt(e.target.value, 10))}
-                  className="w-14 rounded-md border border-slate-300 px-2 py-1 text-center"
+                  min={1}
+                  max={total - (splitCounts.length - 1)}
+                  onCommit={(n) => setPageValue(p, n)}
                 />
               </label>
             ))}
