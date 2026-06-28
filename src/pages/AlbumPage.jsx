@@ -1384,6 +1384,26 @@ function AddDecoSheet({ onAddItem, onClose }) {
   );
 }
 
+// Vrai quand l'écran est étroit (téléphone) : sert à cibler la bonne page
+// quand l'aperçu n'affiche qu'une seule page à la fois.
+function useIsMobile(breakpoint = 640) {
+  const query = `(max-width: ${breakpoint - 1}px)`;
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia(query).matches
+      : false
+  );
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
+    const mq = window.matchMedia(query);
+    const onChange = (e) => setIsMobile(e.matches);
+    setIsMobile(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, [query]);
+  return isMobile;
+}
+
 export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhoto, busy, progress = null, format = 'carre', onFormatChange = null, theme = null, unit = 'jour', pageOffset = null }) {
   const fileRef = useRef(null);
   const [bgOpen, setBgOpen] = useState(false);
@@ -1393,7 +1413,9 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
   const [decoForPhoto, setDecoForPhoto] = useState(null); // index global photo : décorer la photo
   const [addOpen, setAddOpen] = useState(false); // fenêtre « ajouter une décoration »
   const [spreadStart, setSpreadStart] = useState(0); // 1re page du duo affiché
+  const [mPage, setMPage] = useState(0); // page affichée seule en grand (mobile)
   const [aiBusy, setAiBusy] = useState(false);
+  const isMobile = useIsMobile();
 
   const update = (patch) => onChange({ ...entry, ...patch });
 
@@ -1486,7 +1508,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
     setSel(null);
   };
   const addDecoItem = (item) => {
-    const p = sel?.p ?? viewStart;
+    const p = sel?.p ?? (isMobile ? Math.min(mPage, Math.max(0, pageCount - 1)) : viewStart);
     const items = [...(entry.pageDeco?.[p] || []), item];
     update({ pageDeco: { ...(entry.pageDeco || {}), [p]: items } });
     setSel({ p, kind: 'deco', i: items.length - 1 });
@@ -1831,6 +1853,32 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
       {/* APERÇU + ÉDITION DIRECTE : 2 pages, flèches, sélection / glisser */}
       {chunks.some((c) => c.length > 0) && (() => {
         const visible = pageCount <= 1 ? [0] : [viewStart, viewStart + 1].filter((p) => p < pageCount);
+        const mp = Math.min(mPage, pageCount - 1); // page affichée seule (mobile), bornée
+        // Aperçu interactif d'une page, réutilisé sur mobile (1 page) et ordi (2 pages).
+        const renderPreview = (p) => (
+          <PagePreview
+            photos={chunks[p]}
+            format={format}
+            theme={theme}
+            title={entry.title}
+            note={entry.note}
+            firstPage={p === 0}
+            dayIndex={index}
+            location={day?.location}
+            unit={unit}
+            bg={entry.bg}
+            pageIndex={p}
+            pageCount={pageCount}
+            deco={entry.pageDeco?.[p]}
+            free={entry.freePages?.[p]}
+            width="100%"
+            interactive={coveredBy[p] < 0}
+            selected={sel && sel.p === p ? { kind: sel.kind, i: sel.i } : null}
+            onSelect={coveredBy[p] < 0 ? (kind, i) => setSel(i == null ? null : { p, kind, i }) : undefined}
+            onFreeChange={coveredBy[p] < 0 ? (boxes) => setPageFree(p, boxes) : undefined}
+            onDecoChange={coveredBy[p] < 0 ? (items) => update({ pageDeco: { ...(entry.pageDeco || {}), [p]: items } }) : undefined}
+          />
+        );
         return (
           <>
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
@@ -1838,36 +1886,32 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
             <button type="button" onClick={() => setAddOpen(true)}
               className="rounded-lg border border-coral-300 bg-coral-50 px-3 py-1.5 text-xs font-semibold text-coral-700 hover:bg-coral-100">✨ Ajouter (autocollant, texte…)</button>
           </div>
-          <div className="mt-1 flex items-stretch gap-2">
+
+          {/* MOBILE : une seule page en grand (pleine largeur) + navigation page par page */}
+          <div className="mt-1 sm:hidden">
+            {pageCount > 1 && (
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <button type="button" onClick={() => { setSel(null); setMPage(Math.max(0, mp - 1)); }} disabled={mp <= 0}
+                  className="flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-30" title="Page précédente">◀ Préc.</button>
+                <span className="text-xs font-semibold text-slate-600">Page {mp + 1} / {pageCount}</span>
+                <button type="button" onClick={() => { setSel(null); setMPage(Math.min(pageCount - 1, mp + 1)); }} disabled={mp >= pageCount - 1}
+                  className="flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-30" title="Page suivante">Suiv. ▶</button>
+              </div>
+            )}
+            <div>{renderPreview(mp)}</div>
+            <span className="mt-1 block text-center text-[11px] text-slate-400">Page {mp + 1}</span>
+          </div>
+
+          {/* ORDINATEUR : double page côte à côte */}
+          <div className="mt-1 hidden items-stretch gap-2 sm:flex">
             {pageCount > 2 && (
               <button type="button" onClick={() => { setSel(null); setSpreadStart(Math.max(0, viewStart - 1)); }} disabled={viewStart <= 0}
                 className="flex w-8 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-30" title="Pages précédentes">◀</button>
             )}
-            <div className="grid min-w-0 flex-1 grid-cols-2 gap-2 sm:gap-3">
+            <div className="grid min-w-0 flex-1 grid-cols-2 gap-3">
               {visible.map((p) => (
                 <div key={p} className="min-w-0">
-                  <PagePreview
-                    photos={chunks[p]}
-                    format={format}
-                    theme={theme}
-                    title={entry.title}
-                    note={entry.note}
-                    firstPage={p === 0}
-                    dayIndex={index}
-                    location={day?.location}
-                    unit={unit}
-                    bg={entry.bg}
-                    pageIndex={p}
-                    pageCount={pageCount}
-                    deco={entry.pageDeco?.[p]}
-                    free={entry.freePages?.[p]}
-                    width="100%"
-                    interactive={coveredBy[p] < 0}
-                    selected={sel && sel.p === p ? { kind: sel.kind, i: sel.i } : null}
-                    onSelect={coveredBy[p] < 0 ? (kind, i) => setSel(i == null ? null : { p, kind, i }) : undefined}
-                    onFreeChange={coveredBy[p] < 0 ? (boxes) => setPageFree(p, boxes) : undefined}
-                    onDecoChange={coveredBy[p] < 0 ? (items) => update({ pageDeco: { ...(entry.pageDeco || {}), [p]: items } }) : undefined}
-                  />
+                  {renderPreview(p)}
                   <span className="mt-1 block text-center text-[11px] text-slate-400">Page {p + 1}</span>
                 </div>
               ))}
