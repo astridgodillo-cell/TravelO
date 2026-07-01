@@ -1690,6 +1690,79 @@ export function PhotoSortModal({ photos, onChange, onClose, unit = 'jour' }) {
   );
 }
 
+// Télécharge une liste de fichiers (repli quand le partage natif n'est pas
+// disponible, ex. sur ordinateur).
+function downloadFiles(files) {
+  files.forEach((f) => {
+    const url = URL.createObjectURL(f);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = f.name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  });
+}
+
+// Petite fenêtre de partage : les fichiers sont DÉJÀ prêts. Le partage natif
+// (WhatsApp…) est déclenché ICI, par le clic de l'utilisateur → l'« autorisation »
+// est fraîche, donc le mobile ouvre bien la fenêtre WhatsApp au lieu de se
+// rabattre sur un téléchargement.
+export function ShareSheet({ files, text, onClose }) {
+  const [busy, setBusy] = useState(false);
+  const isPdf = files.length === 1 && files[0].type === 'application/pdf';
+  const canShare =
+    typeof navigator !== 'undefined' && !!navigator.canShare && navigator.canShare({ files });
+  const doShare = async () => {
+    setBusy(true);
+    try {
+      await navigator.share({ files, title: text, text });
+      onClose();
+    } catch (e) {
+      if (e && e.name === 'AbortError') { setBusy(false); return; } // annulé : on reste
+      downloadFiles(files); // autre erreur : on télécharge en secours
+      onClose();
+    }
+  };
+  const doDownload = () => { downloadFiles(files); onClose(); };
+  const label = isPdf ? 'Le fichier PDF est prêt' : `${files.length} image${files.length > 1 ? 's' : ''} prête${files.length > 1 ? 's' : ''}`;
+  return (
+    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/50 sm:items-center sm:p-4" onClick={onClose}>
+      <div className="w-full max-w-sm rounded-t-2xl bg-white p-5 shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-center text-base font-semibold text-slate-800">Prêt à partager</h3>
+        <p className="mt-1 text-center text-xs text-slate-500">{label}. Choisis comment l'envoyer :</p>
+        <div className="mt-4 space-y-2">
+          {canShare && (
+            <button
+              type="button"
+              onClick={doShare}
+              disabled={busy}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 py-3 text-sm font-semibold text-white hover:bg-emerald-600 disabled:opacity-60"
+            >
+              {busy ? <Spinner className="h-4 w-4" /> : <span>📲</span>}
+              Partager (WhatsApp, Messages…)
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={doDownload}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            ⬇️ Télécharger {isPdf ? 'le PDF' : (files.length > 1 ? 'les images' : "l'image")}
+          </button>
+          {!canShare && (
+            <p className="text-center text-[11px] text-slate-500">
+              Le partage direct n'est pas disponible sur ce navigateur (souvent sur ordinateur). Télécharge {isPdf ? 'le fichier' : 'les images'}, puis envoie-les sur WhatsApp.
+            </p>
+          )}
+          <button type="button" onClick={onClose} className="w-full py-2 text-center text-xs text-slate-400 hover:text-slate-600">Annuler</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhoto, busy, progress = null, format = 'carre', onFormatChange = null, theme = null, unit = 'jour', pageOffset = null, onShareDay = null }) {
   const fileRef = useRef(null);
   const [bgOpen, setBgOpen] = useState(false);
@@ -1702,13 +1775,15 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
   const [mPage, setMPage] = useState(0); // page affichée seule en grand (mobile)
   const [aiBusy, setAiBusy] = useState(false);
   const [sortOpen, setSortOpen] = useState(false); // mode « trier en grand »
-  const [sharing, setSharing] = useState(false); // partage de la journée en cours
+  const [sharing, setSharing] = useState(false); // préparation du partage en cours
+  const [shareData, setShareData] = useState(null); // { files, text } prêts à partager
 
   const doShareDay = async () => {
     if (!onShareDay || sharing) return;
     setSharing(true);
     try {
-      await onShareDay();
+      const result = await onShareDay();
+      if (result && result.files && result.files.length) setShareData(result);
     } catch (e) {
       alert(e?.message || "Le partage n'a pas fonctionné. Réessaie dans un instant.");
     } finally {
@@ -1926,6 +2001,10 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
           onClose={() => setSortOpen(false)}
           unit={unit}
         />
+      )}
+
+      {shareData && (
+        <ShareSheet files={shareData.files} text={shareData.text} onClose={() => setShareData(null)} />
       )}
 
       {entry.photos.length > 0 && (
@@ -2477,6 +2556,7 @@ export default function AlbumPage() {
   const [pdfBlob, setPdfBlob] = useState(null);
   const [sharingAll, setSharingAll] = useState(false);
   const [sharingAllPdf, setSharingAllPdf] = useState(false);
+  const [albumShareData, setAlbumShareData] = useState(null); // { files, text } prêts
 
   // Sélecteur de photo : 'cover' (couverture), 'end' (page de fin) ou null.
   const [pickerFor, setPickerFor] = useState(null);
@@ -2863,52 +2943,30 @@ export default function AlbumPage() {
     .replace(/[^a-z0-9]+/gi, '-')
     .toLowerCase()}-${format}.pdf`;
 
-  // Partage un lot de fichiers (images ou PDF) : fenêtre native (WhatsApp…) si
-  // disponible, sinon téléchargement + ouverture de WhatsApp Web avec un texte.
-  async function shareFiles(files, shareText) {
-    if (!files.length) throw new Error("Le fichier n'a pas pu être préparé.");
-    const canShareFiles = typeof navigator !== 'undefined' && navigator.canShare && navigator.canShare({ files });
-    if (canShareFiles) {
-      try {
-        await navigator.share({ files, title: shareText, text: shareText });
-        return;
-      } catch (err) {
-        if (err && err.name === 'AbortError') return; // l'utilisateur a annulé
-        // sinon on bascule sur le téléchargement ci-dessous
-      }
-    }
-    // Repli : on télécharge les images (l'utilisateur les envoie ensuite via WhatsApp).
-    files.forEach((f) => {
-      const url = URL.createObjectURL(f);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = f.name;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 4000);
-    });
-    if (!canShareFiles) {
-      window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank', 'noopener');
-    }
-  }
+  const albumHasContent = () =>
+    (album?.days || []).some((e) => (e.photos?.length || 0) > 0 || (e.note || '').trim());
+  const albumSlug = () =>
+    (album?.title || 'album').replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'album';
 
-  // Partage d'UNE journée sous forme d'images (une par page : une journée sur
-  // plusieurs pages part donc en plusieurs images).
+  // NB : ces fonctions PRÉPARENT seulement les fichiers (fabrication longue) et
+  // renvoient { files, text }. Le partage lui-même (navigator.share) doit être
+  // déclenché par un nouveau clic (ShareSheet), sinon le navigateur mobile
+  // refuse d'ouvrir WhatsApp (l'« autorisation » du 1er clic a expiré pendant
+  // la fabrication) et se rabat sur un simple téléchargement.
+
+  // Prépare le partage d'UNE journée en images (une par page).
   async function shareDay(dayIndex) {
-    if (!album) return;
+    if (!album) return null;
     const entry = album.days[dayIndex];
     if (!entry || !(entry.photos?.length || (entry.note || '').trim())) {
       alert('Ajoute au moins une photo (ou un texte) à cette journée avant de la partager.');
-      return;
+      return null;
     }
-    // 1) On « cuit » les filtres couleur des photos de cette journée seulement.
     const bakedPhotos = await bakePhotoEffects(entry.photos || []);
     const albumForPdf = {
       ...album,
       days: album.days.map((d, i) => (i === dayIndex ? { ...entry, photos: bakedPhotos } : d)),
     };
-    // 2) PDF de la seule journée, puis conversion de chaque page en image.
     const blob = await pdf(
       <AlbumPdfDoc
         album={albumForPdf}
@@ -2921,42 +2979,33 @@ export default function AlbumPage() {
     ).toBlob();
     const label = album.unit === 'etape' ? 'etape' : 'jour';
     const files = await pdfBlobToImageFiles(blob, { baseName: `${label}-${dayIndex + 1}` });
-
     const unitLbl = album.unit === 'etape' ? 'Étape' : 'Jour';
     const where = entry.location ? ` · ${entry.location}` : '';
-    const shareText = `${unitLbl} ${dayIndex + 1}${where} — ${album.title || 'Mon voyage'}`;
-    await shareFiles(files, shareText);
+    return { files, text: `${unitLbl} ${dayIndex + 1}${where} — ${album.title || 'Mon voyage'}` };
   }
 
-  const albumHasContent = () =>
-    (album?.days || []).some((e) => (e.photos?.length || 0) > 0 || (e.note || '').trim());
-  const albumSlug = () =>
-    (album?.title || 'album').replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'album';
-
-  // Partage de TOUT l'album d'un coup, en images (une par page : couverture,
-  // carte, toutes les journées, page de fin).
+  // Prépare le partage de TOUT l'album en images (une par page).
   async function shareAlbum() {
-    if (!album) return;
+    if (!album) return null;
     if (!albumHasContent()) {
       alert('Ajoute au moins une photo à ton album avant de le partager.');
-      return;
+      return null;
     }
     const blob = await buildAlbumBlob();
     const files = await pdfBlobToImageFiles(blob, { baseName: albumSlug(), targetWidth: 1240 });
-    await shareFiles(files, `${album.title || 'Mon voyage'} — album TravelO`);
+    return { files, text: `${album.title || 'Mon voyage'} — album TravelO` };
   }
 
-  // Partage de TOUT l'album en UN SEUL fichier PDF (pratique pour les albums
-  // avec beaucoup de pages : un seul document au lieu de nombreuses images).
+  // Prépare le partage de TOUT l'album en UN SEUL fichier PDF.
   async function shareAlbumPdf() {
-    if (!album) return;
+    if (!album) return null;
     if (!albumHasContent()) {
       alert('Ajoute au moins une photo à ton album avant de le partager.');
-      return;
+      return null;
     }
     const blob = await buildAlbumBlob();
     const file = new File([blob], `${albumSlug()}-${format}.pdf`, { type: 'application/pdf' });
-    await shareFiles([file], `${album.title || 'Mon voyage'} — album TravelO`);
+    return { files: [file], text: `${album.title || 'Mon voyage'} — album TravelO` };
   }
 
   if (loading) {
@@ -3194,7 +3243,8 @@ export default function AlbumPage() {
               if (sharingAll) return;
               setSharingAll(true);
               try {
-                await shareAlbum();
+                const result = await shareAlbum();
+                if (result && result.files?.length) setAlbumShareData(result);
               } catch (e) {
                 setError((e?.message || 'Le partage a échoué.') + ' Réessaie dans un instant.');
               } finally {
@@ -3213,7 +3263,8 @@ export default function AlbumPage() {
               if (sharingAllPdf) return;
               setSharingAllPdf(true);
               try {
-                await shareAlbumPdf();
+                const result = await shareAlbumPdf();
+                if (result && result.files?.length) setAlbumShareData(result);
               } catch (e) {
                 setError((e?.message || 'Le partage a échoué.') + ' Réessaie dans un instant.');
               } finally {
@@ -3243,6 +3294,10 @@ export default function AlbumPage() {
           </div>
         )}
       </section>
+
+      {albumShareData && (
+        <ShareSheet files={albumShareData.files} text={albumShareData.text} onClose={() => setAlbumShareData(null)} />
+      )}
 
       {pickerFor && (() => {
         const kind = pickerFor.kind;

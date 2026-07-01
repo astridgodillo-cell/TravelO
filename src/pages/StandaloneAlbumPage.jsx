@@ -11,7 +11,7 @@ import { renderRouteMapImage } from '../lib/staticMapImage';
 import AlbumPdfDoc from '../components/AlbumPdfDoc';
 import PdfPagesPreview from '../components/PdfPagesPreview';
 import { pdfBlobToImageFiles } from '../lib/pdfToImages';
-import { DayCard, CoverPicker, ThemePicker, Spinner, CoversSection, FormatPicker } from './AlbumPage';
+import { DayCard, CoverPicker, ThemePicker, Spinner, CoversSection, FormatPicker, ShareSheet } from './AlbumPage';
 import { FORMAT_LABELS, normalizeBg, bakePhotoEffects, getTheme, unitLabel, splitPhotos, computeSplit, bgIsEmpty, autoBgFromPhotos, formatDateRange } from '../lib/albumModel';
 
 const emptyDay = () => ({ title: '', note: '', photos: [], bg: null, split: null });
@@ -53,6 +53,7 @@ export default function StandaloneAlbumPage() {
   const [pdfBlob, setPdfBlob] = useState(null);
   const [sharingAll, setSharingAll] = useState(false);
   const [sharingAllPdf, setSharingAllPdf] = useState(false);
+  const [albumShareData, setAlbumShareData] = useState(null); // { files, text } prêts
 
   const [pickerFor, setPickerFor] = useState(null);
   const [repairing, setRepairing] = useState(false);
@@ -310,47 +311,22 @@ export default function StandaloneAlbumPage() {
     ).toBlob();
   }
 
-  // Partage un lot de fichiers (images ou PDF) : fenêtre native (WhatsApp…) si
-  // disponible, sinon téléchargement + ouverture de WhatsApp Web.
-  async function shareFiles(files, shareText) {
-    if (!files.length) throw new Error("Le fichier n'a pas pu être préparé.");
-    const canShareFiles = typeof navigator !== 'undefined' && navigator.canShare && navigator.canShare({ files });
-    if (canShareFiles) {
-      try {
-        await navigator.share({ files, title: shareText, text: shareText });
-        return;
-      } catch (err) {
-        if (err && err.name === 'AbortError') return;
-      }
-    }
-    files.forEach((f) => {
-      const url = URL.createObjectURL(f);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = f.name;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 4000);
-    });
-    if (!canShareFiles) {
-      window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank', 'noopener');
-    }
-  }
-
   const albumHasContent = () =>
     (album?.days || []).some((e) => (e.photos?.length || 0) > 0 || (e.note || '').trim());
   const albumSlug = () =>
     (album?.title || 'album').replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'album';
 
-  // Partage d'UNE journée en images (une par page : une journée sur plusieurs
-  // pages part donc en plusieurs images).
+  // Ces fonctions PRÉPARENT les fichiers et renvoient { files, text }. Le
+  // partage natif est déclenché ensuite par un nouveau clic (ShareSheet), sinon
+  // le mobile refuse d'ouvrir WhatsApp après la longue fabrication.
+
+  // Prépare le partage d'UNE journée en images (une par page).
   async function shareDay(dayIndex) {
-    if (!album) return;
+    if (!album) return null;
     const entry = album.days[dayIndex];
     if (!entry || !(entry.photos?.length || (entry.note || '').trim())) {
       alert('Ajoute au moins une photo (ou un texte) à cette journée avant de la partager.');
-      return;
+      return null;
     }
     const bakedPhotos = await bakePhotoEffects(entry.photos || []);
     const albumForPdf = {
@@ -370,31 +346,31 @@ export default function StandaloneAlbumPage() {
     const label = album.unit === 'etape' ? 'etape' : 'jour';
     const files = await pdfBlobToImageFiles(blob, { baseName: `${label}-${dayIndex + 1}` });
     const unitLbl = album.unit === 'etape' ? 'Étape' : 'Jour';
-    await shareFiles(files, `${unitLbl} ${dayIndex + 1} — ${album.title || 'Mon voyage'}`);
+    return { files, text: `${unitLbl} ${dayIndex + 1} — ${album.title || 'Mon voyage'}` };
   }
 
-  // Partage de TOUT l'album en images (une par page).
+  // Prépare le partage de TOUT l'album en images (une par page).
   async function shareAlbum() {
-    if (!album) return;
+    if (!album) return null;
     if (!albumHasContent()) {
       alert('Ajoute au moins une photo à ton album avant de le partager.');
-      return;
+      return null;
     }
     const blob = await buildAlbumBlob();
     const files = await pdfBlobToImageFiles(blob, { baseName: albumSlug(), targetWidth: 1240 });
-    await shareFiles(files, `${album.title || 'Mon voyage'} — album TravelO`);
+    return { files, text: `${album.title || 'Mon voyage'} — album TravelO` };
   }
 
-  // Partage de TOUT l'album en UN SEUL fichier PDF.
+  // Prépare le partage de TOUT l'album en UN SEUL fichier PDF.
   async function shareAlbumPdf() {
-    if (!album) return;
+    if (!album) return null;
     if (!albumHasContent()) {
       alert('Ajoute au moins une photo à ton album avant de le partager.');
-      return;
+      return null;
     }
     const blob = await buildAlbumBlob();
     const file = new File([blob], `${albumSlug()}-${format}.pdf`, { type: 'application/pdf' });
-    await shareFiles([file], `${album.title || 'Mon voyage'} — album TravelO`);
+    return { files: [file], text: `${album.title || 'Mon voyage'} — album TravelO` };
   }
 
   async function generatePdf() {
@@ -588,7 +564,7 @@ export default function StandaloneAlbumPage() {
             onClick={async () => {
               if (sharingAll) return;
               setSharingAll(true);
-              try { await shareAlbum(); }
+              try { const r = await shareAlbum(); if (r && r.files?.length) setAlbumShareData(r); }
               catch (e) { setError((e?.message || 'Le partage a échoué.') + ' Réessaie dans un instant.'); }
               finally { setSharingAll(false); }
             }}
@@ -603,7 +579,7 @@ export default function StandaloneAlbumPage() {
             onClick={async () => {
               if (sharingAllPdf) return;
               setSharingAllPdf(true);
-              try { await shareAlbumPdf(); }
+              try { const r = await shareAlbumPdf(); if (r && r.files?.length) setAlbumShareData(r); }
               catch (e) { setError((e?.message || 'Le partage a échoué.') + ' Réessaie dans un instant.'); }
               finally { setSharingAllPdf(false); }
             }}
@@ -625,6 +601,10 @@ export default function StandaloneAlbumPage() {
           </div>
         )}
       </section>
+
+      {albumShareData && (
+        <ShareSheet files={albumShareData.files} text={albumShareData.text} onClose={() => setAlbumShareData(null)} />
+      )}
 
       {pickerFor && (() => {
         const kind = pickerFor.kind;
