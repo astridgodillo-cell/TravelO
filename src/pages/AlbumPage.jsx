@@ -1015,32 +1015,69 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
   const drag = useRef(null);
   const boxesRef = useRef(null);
   const decosRef = useRef(null);
+  const holdTimer = useRef(null);
+  // Au doigt, on n'active le glissement qu'après un appui maintenu : pendant ce
+  // temps le défilement de la page reste possible (touch-action pan-y). Une fois
+  // le glissement actif, on bloque le défilement (touch-action none) pour que le
+  // doigt déplace vraiment la photo sans faire défiler la page.
+  const [touchDragging, setTouchDragging] = useState(false);
+  const HOLD_MS = 240;   // durée d'appui avant de pouvoir déplacer
+  const HOLD_TOL = 10;   // si le doigt bouge plus que ça avant l'appui, c'est un défilement
+  const clearHold = () => { if (holdTimer.current) { clearTimeout(holdTimer.current); holdTimer.current = null; } };
   const seedBoxes = () =>
     photos.map((pp, k) => {
       const c = lay.cells[k] || { x: lay.pad, y: lay.pad, w: minPage * 0.4, h: minPage * 0.3 };
       return { xf: (c.x + c.w / 2) / lay.pageW, yf: (c.y + c.h / 2) / lay.pageH, scale: c.w / minPage, rot: 0 };
     });
+  // Amorce un glissement : immédiat à la souris/stylet, après appui maintenu au doigt.
+  const beginDrag = (e, base) => {
+    // Empêche seulement la désélection par le fond (ne bloque pas le défilement,
+    // qui dépend de touch-action / preventDefault, pas de la propagation React).
+    e.stopPropagation();
+    if (e.pointerType === 'touch') {
+      // On mémorise l'intention sans capturer le pointeur : le défilement reste
+      // possible tant que l'appui n'est pas maintenu.
+      const pid = e.pointerId;
+      drag.current = { ...base, x: e.clientX, y: e.clientY, moved: false, active: false, pending: true };
+      clearHold();
+      holdTimer.current = setTimeout(() => {
+        holdTimer.current = null;
+        const d = drag.current;
+        if (!d || !d.pending) return;
+        d.pending = false;
+        d.active = true;
+        rootRef.current?.setPointerCapture?.(pid);
+        setTouchDragging(true);
+      }, HOLD_MS);
+    } else {
+      rootRef.current?.setPointerCapture?.(e.pointerId);
+      drag.current = { ...base, x: e.clientX, y: e.clientY, moved: false, active: true, pending: false };
+    }
+  };
   const startPhoto = (e, i) => {
     if (!interactive) return;
-    e.stopPropagation();
     onSelect?.('photo', i);
-    rootRef.current?.setPointerCapture?.(e.pointerId);
     const boxes = freeValid ? free.map((b) => ({ ...b })) : seedBoxes();
     boxesRef.current = boxes;
-    drag.current = { kind: 'photo', i, x: e.clientX, y: e.clientY, sx: boxes[i].xf, sy: boxes[i].yf, moved: false };
+    beginDrag(e, { kind: 'photo', i, sx: boxes[i].xf, sy: boxes[i].yf });
   };
   const startDeco = (e, i) => {
     if (!interactive) return;
-    e.stopPropagation();
     onSelect?.('deco', i);
-    rootRef.current?.setPointerCapture?.(e.pointerId);
     const items = (deco || []).map((d) => ({ ...d }));
     decosRef.current = items;
-    drag.current = { kind: 'deco', i, x: e.clientX, y: e.clientY, sx: items[i].xf, sy: items[i].yf, moved: false };
+    beginDrag(e, { kind: 'deco', i, sx: items[i].xf, sy: items[i].yf });
   };
   const onCanvasMove = (e) => {
     const d = drag.current;
     if (!d || !rootRef.current) return;
+    if (d.pending) {
+      // Appui pas encore maintenu : si le doigt bouge, l'utilisateur fait défiler
+      // la page → on annule le glissement et on laisse le navigateur défiler.
+      if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > HOLD_TOL) { clearHold(); drag.current = null; }
+      return;
+    }
+    if (!d.active) return;
     if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 6) return;
     d.moved = true;
     const r = rootRef.current.getBoundingClientRect();
@@ -1054,7 +1091,7 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
       onDecoChange?.(decosRef.current.map((x) => ({ ...x })));
     }
   };
-  const onCanvasUp = () => { drag.current = null; };
+  const onCanvasUp = () => { clearHold(); drag.current = null; setTouchDragging(false); };
   const interactiveCells = interactive;
   const photoSel = (i) => selected && selected.kind === 'photo' && selected.i === i;
   const decoSel = (k) => selected && selected.kind === 'deco' && selected.i === k;
@@ -1082,8 +1119,8 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
       onPointerMove={interactiveCells ? onCanvasMove : undefined}
       onPointerUp={interactiveCells ? onCanvasUp : undefined}
       onPointerCancel={interactiveCells ? onCanvasUp : undefined}
-      className={`relative overflow-hidden rounded-lg border border-slate-200 shadow-sm ${interactive ? 'touch-none select-none' : ''}`}
-      style={{ width, maxWidth: '100%', aspectRatio: String(lay.pageW / lay.pageH), containerType: 'size', ...baseStyle }}
+      className={`relative overflow-hidden rounded-lg border border-slate-200 shadow-sm ${interactive ? 'select-none' : ''}`}
+      style={{ width, maxWidth: '100%', aspectRatio: String(lay.pageW / lay.pageH), containerType: 'size', touchAction: interactive ? (touchDragging ? 'none' : 'pan-y') : undefined, ...baseStyle }}
     >
       {spec.type === 'photo' && (spec.photo?.display || spec.photo?.full) && (
         <>
@@ -1135,7 +1172,7 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
       {/* décorations de page */}
       {(deco || []).map((it, k) => (
         <div key={k} onPointerDown={interactive ? (e) => startDeco(e, k) : undefined}
-          className={`absolute ${interactive ? 'cursor-grab touch-none active:cursor-grabbing' : ''} ${decoSel(k) ? 'outline outline-2 outline-coral-500 outline-offset-1' : ''}`}
+          className={`absolute ${interactive ? 'cursor-grab active:cursor-grabbing' : ''} ${decoSel(k) ? 'outline outline-2 outline-coral-500 outline-offset-1' : ''}`}
           style={{ left: `${it.xf * 100}%`, top: `${it.yf * 100}%`, transform: `translate(-50%,-50%) rotate(${it.rot}deg)` }}>
           <DecoItemView it={it} />
         </div>
@@ -1910,7 +1947,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
         return (
           <>
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-            <p className="text-[11px] text-slate-400">👆 Touche une photo / décoration pour la modifier · glisse pour la déplacer.</p>
+            <p className="text-[11px] text-slate-400">👆 Touche une photo / décoration pour la modifier · appuie un instant puis glisse pour la déplacer (au doigt).</p>
             <button type="button" onClick={() => setAddOpen(true)}
               className="rounded-lg border border-coral-300 bg-coral-50 px-3 py-1.5 text-xs font-semibold text-coral-700 hover:bg-coral-100">✨ Ajouter (autocollant, texte…)</button>
           </div>
