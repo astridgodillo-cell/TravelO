@@ -7,6 +7,11 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      // Service worker « auto-destructeur » : il se désinstalle et vide les
+      // caches obsolètes au prochain chargement. Nécessaire pour débloquer les
+      // navigateurs coincés sur une ancienne version (le cache PWA ne se
+      // rafraîchissait pas et masquait les mises à jour).
+      selfDestroying: true,
       includeAssets: ['logo.png'],
       manifest: {
         name: 'TravelO — Itinéraires de voyage sur mesure',
