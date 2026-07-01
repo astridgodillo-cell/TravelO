@@ -10,6 +10,7 @@ import {
 import { renderRouteMapImage } from '../lib/staticMapImage';
 import AlbumPdfDoc from '../components/AlbumPdfDoc';
 import PdfPagesPreview from '../components/PdfPagesPreview';
+import { pdfBlobToImageFiles } from '../lib/pdfToImages';
 import { DayCard, CoverPicker, ThemePicker, Spinner, CoversSection, FormatPicker } from './AlbumPage';
 import { FORMAT_LABELS, normalizeBg, bakePhotoEffects, getTheme, unitLabel, splitPhotos, computeSplit, bgIsEmpty, autoBgFromPhotos, formatDateRange } from '../lib/albumModel';
 
@@ -50,6 +51,8 @@ export default function StandaloneAlbumPage() {
   const [generating, setGenerating] = useState(false);
   const [pdfUrl, setPdfUrl] = useState(null);
   const [pdfBlob, setPdfBlob] = useState(null);
+  const [sharingAll, setSharingAll] = useState(false);
+  const [sharingAllPdf, setSharingAllPdf] = useState(false);
 
   const [pickerFor, setPickerFor] = useState(null);
   const [repairing, setRepairing] = useState(false);
@@ -246,67 +249,160 @@ export default function StandaloneAlbumPage() {
     }
   }
 
+  // Fabrique le PDF complet de l'album et renvoie le fichier. Réutilisé par
+  // l'aperçu/téléchargement ET le partage.
+  async function buildAlbumBlob() {
+    // Carte : on géocode les étapes qui n'ont pas encore de coordonnées.
+    let routeMap = null;
+    const stops = [];
+    if (album.map?.enabled) {
+      const points = [];
+      const updatedStops = [];
+      for (const s of album.map.stops || []) {
+        if (!s.name?.trim()) continue;
+        let coords = s.lat && s.lng ? { lat: s.lat, lng: s.lng } : await geocode(s.name, album.map?.country);
+        updatedStops.push({ ...s, ...(coords || {}) });
+        if (coords) {
+          points.push(coords);
+          stops.push(s.name);
+        }
+      }
+      // On mémorise les coordonnées trouvées pour ne pas re-géocoder.
+      setAlbum((prev) => ({ ...prev, map: { ...prev.map, stops: updatedStops } }));
+      if (points.length) {
+        const mapDims =
+          format === 'a4paysage' ? { width: 1600, height: 1000 }
+            : format === 'a4portrait' ? { width: 1100, height: 1500 }
+              : { width: 1400, height: 1320 };
+        try {
+          routeMap = await renderRouteMapImage(points, { ...mapDims, accent: '#C8643C' });
+        } catch { routeMap = null; }
+      }
+    }
+
+    const days = album.days.map((d) => ({ location: '', day_title: d.title }));
+    // « Cuisson » des filtres couleur dans les photos.
+    const bakedDays = [];
+    for (const d of album.days) bakedDays.push({ ...d, photos: await bakePhotoEffects(d.photos) });
+    const albumForPdf = { ...album, days: bakedDays };
+    let openingForPdf = album.opening || { type: 'blank' };
+    if (openingForPdf.type === 'random') {
+      const all = album.days.flatMap((d) => d.photos || []).filter((p) => p.full || p.display);
+      openingForPdf = { ...openingForPdf, photo: all.length ? all[Math.floor(Math.random() * all.length)] : null };
+    }
+    return pdf(
+      <AlbumPdfDoc
+        album={albumForPdf}
+        days={days}
+        format={format}
+        summary={{ start_date: album.dateStart, end_date: album.dateEnd }}
+        routeMap={routeMap}
+        stops={stops}
+        endNote={album.endNote}
+        endPhoto={album.endPhoto}
+        theme={getTheme(album.theme)}
+        unit={album.unit}
+        coverLayout={album.coverLayout}
+        endLayout={album.endLayout}
+        coverSpread={album.coverSpread}
+        opening={openingForPdf}
+      />
+    ).toBlob();
+  }
+
+  // Partage un lot de fichiers (images ou PDF) : fenêtre native (WhatsApp…) si
+  // disponible, sinon téléchargement + ouverture de WhatsApp Web.
+  async function shareFiles(files, shareText) {
+    if (!files.length) throw new Error("Le fichier n'a pas pu être préparé.");
+    const canShareFiles = typeof navigator !== 'undefined' && navigator.canShare && navigator.canShare({ files });
+    if (canShareFiles) {
+      try {
+        await navigator.share({ files, title: shareText, text: shareText });
+        return;
+      } catch (err) {
+        if (err && err.name === 'AbortError') return;
+      }
+    }
+    files.forEach((f) => {
+      const url = URL.createObjectURL(f);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = f.name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+    });
+    if (!canShareFiles) {
+      window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank', 'noopener');
+    }
+  }
+
+  const albumHasContent = () =>
+    (album?.days || []).some((e) => (e.photos?.length || 0) > 0 || (e.note || '').trim());
+  const albumSlug = () =>
+    (album?.title || 'album').replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'album';
+
+  // Partage d'UNE journée en images (une par page : une journée sur plusieurs
+  // pages part donc en plusieurs images).
+  async function shareDay(dayIndex) {
+    if (!album) return;
+    const entry = album.days[dayIndex];
+    if (!entry || !(entry.photos?.length || (entry.note || '').trim())) {
+      alert('Ajoute au moins une photo (ou un texte) à cette journée avant de la partager.');
+      return;
+    }
+    const bakedPhotos = await bakePhotoEffects(entry.photos || []);
+    const albumForPdf = {
+      ...album,
+      days: album.days.map((d, i) => (i === dayIndex ? { ...entry, photos: bakedPhotos } : d)),
+    };
+    const blob = await pdf(
+      <AlbumPdfDoc
+        album={albumForPdf}
+        days={album.days.map((d) => ({ location: '', day_title: d.title }))}
+        format={format}
+        unit={album.unit}
+        theme={getTheme(album.theme)}
+        onlyDay={dayIndex}
+      />
+    ).toBlob();
+    const label = album.unit === 'etape' ? 'etape' : 'jour';
+    const files = await pdfBlobToImageFiles(blob, { baseName: `${label}-${dayIndex + 1}` });
+    const unitLbl = album.unit === 'etape' ? 'Étape' : 'Jour';
+    await shareFiles(files, `${unitLbl} ${dayIndex + 1} — ${album.title || 'Mon voyage'}`);
+  }
+
+  // Partage de TOUT l'album en images (une par page).
+  async function shareAlbum() {
+    if (!album) return;
+    if (!albumHasContent()) {
+      alert('Ajoute au moins une photo à ton album avant de le partager.');
+      return;
+    }
+    const blob = await buildAlbumBlob();
+    const files = await pdfBlobToImageFiles(blob, { baseName: albumSlug(), targetWidth: 1240 });
+    await shareFiles(files, `${album.title || 'Mon voyage'} — album TravelO`);
+  }
+
+  // Partage de TOUT l'album en UN SEUL fichier PDF.
+  async function shareAlbumPdf() {
+    if (!album) return;
+    if (!albumHasContent()) {
+      alert('Ajoute au moins une photo à ton album avant de le partager.');
+      return;
+    }
+    const blob = await buildAlbumBlob();
+    const file = new File([blob], `${albumSlug()}-${format}.pdf`, { type: 'application/pdf' });
+    await shareFiles([file], `${album.title || 'Mon voyage'} — album TravelO`);
+  }
+
   async function generatePdf() {
     if (!album) return;
     setGenerating(true);
     setError(null);
     try {
-      // Carte : on géocode les étapes qui n'ont pas encore de coordonnées.
-      let routeMap = null;
-      const stops = [];
-      if (album.map?.enabled) {
-        const points = [];
-        const updatedStops = [];
-        for (const s of album.map.stops || []) {
-          if (!s.name?.trim()) continue;
-          let coords = s.lat && s.lng ? { lat: s.lat, lng: s.lng } : await geocode(s.name, album.map?.country);
-          updatedStops.push({ ...s, ...(coords || {}) });
-          if (coords) {
-            points.push(coords);
-            stops.push(s.name);
-          }
-        }
-        // On mémorise les coordonnées trouvées pour ne pas re-géocoder.
-        setAlbum((prev) => ({ ...prev, map: { ...prev.map, stops: updatedStops } }));
-        if (points.length) {
-          const mapDims =
-            format === 'a4paysage' ? { width: 1600, height: 1000 }
-              : format === 'a4portrait' ? { width: 1100, height: 1500 }
-                : { width: 1400, height: 1320 };
-          try {
-            routeMap = await renderRouteMapImage(points, { ...mapDims, accent: '#C8643C' });
-          } catch { routeMap = null; }
-        }
-      }
-
-      const days = album.days.map((d) => ({ location: '', day_title: d.title }));
-      // « Cuisson » des filtres couleur dans les photos.
-      const bakedDays = [];
-      for (const d of album.days) bakedDays.push({ ...d, photos: await bakePhotoEffects(d.photos) });
-      const albumForPdf = { ...album, days: bakedDays };
-      let openingForPdf = album.opening || { type: 'blank' };
-      if (openingForPdf.type === 'random') {
-        const all = album.days.flatMap((d) => d.photos || []).filter((p) => p.full || p.display);
-        openingForPdf = { ...openingForPdf, photo: all.length ? all[Math.floor(Math.random() * all.length)] : null };
-      }
-      const blob = await pdf(
-        <AlbumPdfDoc
-          album={albumForPdf}
-          days={days}
-          format={format}
-          summary={{ start_date: album.dateStart, end_date: album.dateEnd }}
-          routeMap={routeMap}
-          stops={stops}
-          endNote={album.endNote}
-          endPhoto={album.endPhoto}
-          theme={getTheme(album.theme)}
-          unit={album.unit}
-          coverLayout={album.coverLayout}
-          endLayout={album.endLayout}
-          coverSpread={album.coverSpread}
-          opening={openingForPdf}
-        />
-      ).toBlob();
+      const blob = await buildAlbumBlob();
       if (pdfUrl) URL.revokeObjectURL(pdfUrl);
       setPdfUrl(URL.createObjectURL(blob));
       setPdfBlob(blob);
@@ -455,6 +551,7 @@ export default function StandaloneAlbumPage() {
               theme={getTheme(album.theme)}
               unit={album.unit}
               pageOffset={dayOffsets[i]}
+              onShareDay={() => shareDay(i)}
             />
           </div>
         ))}
@@ -487,6 +584,36 @@ export default function StandaloneAlbumPage() {
           {pdfUrl && (
             <a href={pdfUrl} download={fileName} className="rounded-lg border border-brand-600 px-4 py-2 text-sm font-semibold text-brand-700 shadow-sm">⬇️ Télécharger</a>
           )}
+          <button
+            onClick={async () => {
+              if (sharingAll) return;
+              setSharingAll(true);
+              try { await shareAlbum(); }
+              catch (e) { setError((e?.message || 'Le partage a échoué.') + ' Réessaie dans un instant.'); }
+              finally { setSharingAll(false); }
+            }}
+            disabled={sharingAll || generating || photoCount === 0}
+            className="flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 shadow-sm hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+            title="Partager tout l'album en images (WhatsApp, Messages…)"
+          >
+            {sharingAll ? <Spinner /> : <span>📲</span>}
+            {sharingAll ? 'Préparation…' : 'Partager en images'}
+          </button>
+          <button
+            onClick={async () => {
+              if (sharingAllPdf) return;
+              setSharingAllPdf(true);
+              try { await shareAlbumPdf(); }
+              catch (e) { setError((e?.message || 'Le partage a échoué.') + ' Réessaie dans un instant.'); }
+              finally { setSharingAllPdf(false); }
+            }}
+            disabled={sharingAllPdf || generating || photoCount === 0}
+            className="flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 shadow-sm hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+            title="Partager tout l'album en un seul fichier PDF"
+          >
+            {sharingAllPdf ? <Spinner /> : <span>📄</span>}
+            {sharingAllPdf ? 'Préparation…' : 'Partager en 1 PDF'}
+          </button>
           {photoCount === 0 && <span className="text-xs text-slate-500">Ajoute au moins une photo.</span>}
         </div>
         {pdfBlob && (
