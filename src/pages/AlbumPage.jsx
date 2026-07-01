@@ -2475,6 +2475,7 @@ export default function AlbumPage() {
   const [generating, setGenerating] = useState(false);
   const [pdfUrl, setPdfUrl] = useState(null);
   const [pdfBlob, setPdfBlob] = useState(null);
+  const [sharingAll, setSharingAll] = useState(false);
 
   // Sélecteur de photo : 'cover' (couverture), 'end' (page de fin) ou null.
   const [pickerFor, setPickerFor] = useState(null);
@@ -2767,77 +2768,83 @@ export default function AlbumPage() {
     }
   }
 
+  // Fabrique le PDF complet de l'album (couverture, carte, journées, fin) et
+  // renvoie le fichier. Réutilisé par l'aperçu/téléchargement ET le partage.
+  async function buildAlbumBlob() {
+    // Carte du voyage : on assemble une image du parcours à partir des
+    // coordonnées des étapes (mêmes fonds de carte que l'app).
+    let routeMap = null;
+    const stops = [];
+    const points = [];
+    const tripDays = Array.isArray(trip?.itinerary?.days) ? trip.itinerary.days : [];
+    tripDays.forEach((d) => {
+      const c = d?.coordinates;
+      if (c && typeof c.lat === 'number' && typeof c.lng === 'number') {
+        points.push(c);
+        stops.push(d.location || '');
+      }
+    });
+    if (points.length) {
+      // La carte épouse l'orientation du format choisi (sinon une carte
+      // paysage tranche dans un album portrait).
+      const mapDims =
+        format === 'a4paysage'
+          ? { width: 1600, height: 1000 }
+          : format === 'a4portrait'
+            ? { width: 1100, height: 1500 }
+            : { width: 1400, height: 1320 };
+      try {
+        routeMap = await renderRouteMapImage(points, {
+          ...mapDims,
+          accent: '#C8643C',
+        });
+      } catch {
+        routeMap = null;
+      }
+    }
+
+    // « Cuisson » des filtres couleur dans les photos (les cadres, eux, sont
+    // dessinés dans le PDF).
+    const bakedDays = [];
+    for (const e of album.days) {
+      bakedDays.push({ ...e, photos: await bakePhotoEffects(e.photos) });
+    }
+    const albumForPdf = { ...album, days: bakedDays };
+
+    // Page d'ouverture « au hasard » : on choisit une photo au moment de
+    // fabriquer le fichier.
+    let openingForPdf = album.opening || { type: 'blank' };
+    if (openingForPdf.type === 'random') {
+      const all = album.days.flatMap((d) => d.photos || []).filter((p) => p.full || p.display);
+      openingForPdf = { ...openingForPdf, photo: all.length ? all[Math.floor(Math.random() * all.length)] : null };
+    }
+
+    return pdf(
+      <AlbumPdfDoc
+        album={albumForPdf}
+        days={album.days.map((s) => ({ location: s.location || '' }))}
+        format={format}
+        summary={trip?.itinerary?.summary || null}
+        routeMap={routeMap}
+        stops={stops}
+        unit={album.unit}
+        coverLayout={album.coverLayout}
+        endLayout={album.endLayout}
+        coverSpread={album.coverSpread}
+        opening={openingForPdf}
+        endNote={album.endNote}
+        endPhoto={album.endPhoto}
+        theme={getTheme(album.theme)}
+      />
+    ).toBlob();
+  }
+
   async function generatePdf() {
     if (!album) return;
     setGenerating(true);
     setError(null);
     try {
-      // Carte du voyage : on assemble une image du parcours à partir des
-      // coordonnées des étapes (mêmes fonds de carte que l'app).
-      let routeMap = null;
-      const stops = [];
-      const points = [];
-      const tripDays = Array.isArray(trip?.itinerary?.days) ? trip.itinerary.days : [];
-      tripDays.forEach((d) => {
-        const c = d?.coordinates;
-        if (c && typeof c.lat === 'number' && typeof c.lng === 'number') {
-          points.push(c);
-          stops.push(d.location || '');
-        }
-      });
-      if (points.length) {
-        // La carte épouse l'orientation du format choisi (sinon une carte
-        // paysage tranche dans un album portrait).
-        const mapDims =
-          format === 'a4paysage'
-            ? { width: 1600, height: 1000 }
-            : format === 'a4portrait'
-              ? { width: 1100, height: 1500 }
-              : { width: 1400, height: 1320 };
-        try {
-          routeMap = await renderRouteMapImage(points, {
-            ...mapDims,
-            accent: '#C8643C',
-          });
-        } catch {
-          routeMap = null;
-        }
-      }
-
-      // « Cuisson » des filtres couleur dans les photos (les cadres, eux, sont
-      // dessinés dans le PDF).
-      const bakedDays = [];
-      for (const e of album.days) {
-        bakedDays.push({ ...e, photos: await bakePhotoEffects(e.photos) });
-      }
-      const albumForPdf = { ...album, days: bakedDays };
-
-      // Page d'ouverture « au hasard » : on choisit une photo au moment de
-      // fabriquer le fichier.
-      let openingForPdf = album.opening || { type: 'blank' };
-      if (openingForPdf.type === 'random') {
-        const all = album.days.flatMap((d) => d.photos || []).filter((p) => p.full || p.display);
-        openingForPdf = { ...openingForPdf, photo: all.length ? all[Math.floor(Math.random() * all.length)] : null };
-      }
-
-      const blob = await pdf(
-        <AlbumPdfDoc
-          album={albumForPdf}
-          days={album.days.map((s) => ({ location: s.location || '' }))}
-          format={format}
-          summary={trip?.itinerary?.summary || null}
-          routeMap={routeMap}
-          stops={stops}
-          unit={album.unit}
-          coverLayout={album.coverLayout}
-          endLayout={album.endLayout}
-          coverSpread={album.coverSpread}
-          opening={openingForPdf}
-          endNote={album.endNote}
-          endPhoto={album.endPhoto}
-          theme={getTheme(album.theme)}
-        />
-      ).toBlob();
+      const blob = await buildAlbumBlob();
       if (pdfUrl) URL.revokeObjectURL(pdfUrl);
       setPdfUrl(URL.createObjectURL(blob));
       setPdfBlob(blob);
@@ -2855,8 +2862,38 @@ export default function AlbumPage() {
     .replace(/[^a-z0-9]+/gi, '-')
     .toLowerCase()}-${format}.pdf`;
 
-  // Partage d'UNE journée sous forme d'images (une par page). Sur mobile, ouvre
-  // la fenêtre de partage native (WhatsApp, etc.). Sinon, télécharge les images.
+  // Partage un lot d'images : fenêtre native (WhatsApp…) si disponible, sinon
+  // téléchargement des images + ouverture de WhatsApp Web avec un court texte.
+  async function shareImageFiles(files, shareText) {
+    if (!files.length) throw new Error("Les pages n'ont pas pu être transformées en images.");
+    const canShareFiles = typeof navigator !== 'undefined' && navigator.canShare && navigator.canShare({ files });
+    if (canShareFiles) {
+      try {
+        await navigator.share({ files, title: shareText, text: shareText });
+        return;
+      } catch (err) {
+        if (err && err.name === 'AbortError') return; // l'utilisateur a annulé
+        // sinon on bascule sur le téléchargement ci-dessous
+      }
+    }
+    // Repli : on télécharge les images (l'utilisateur les envoie ensuite via WhatsApp).
+    files.forEach((f) => {
+      const url = URL.createObjectURL(f);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = f.name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+    });
+    if (!canShareFiles) {
+      window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank', 'noopener');
+    }
+  }
+
+  // Partage d'UNE journée sous forme d'images (une par page : une journée sur
+  // plusieurs pages part donc en plusieurs images).
   async function shareDay(dayIndex) {
     if (!album) return;
     const entry = album.days[dayIndex];
@@ -2881,42 +2918,28 @@ export default function AlbumPage() {
         onlyDay={dayIndex}
       />
     ).toBlob();
-    const label = (album.unit === 'etape' ? 'etape' : 'jour');
-    const slug = `${label}-${dayIndex + 1}`;
-    const files = await pdfBlobToImageFiles(blob, { baseName: slug });
-    if (!files.length) throw new Error("La page n'a pas pu être transformée en image.");
+    const label = album.unit === 'etape' ? 'etape' : 'jour';
+    const files = await pdfBlobToImageFiles(blob, { baseName: `${label}-${dayIndex + 1}` });
 
     const unitLbl = album.unit === 'etape' ? 'Étape' : 'Jour';
     const where = entry.location ? ` · ${entry.location}` : '';
     const shareText = `${unitLbl} ${dayIndex + 1}${where} — ${album.title || 'Mon voyage'}`;
+    await shareImageFiles(files, shareText);
+  }
 
-    // 3) Partage natif si disponible (WhatsApp apparaît dans la liste), avec
-    //    repli sur le téléchargement des images.
-    const canShareFiles = typeof navigator !== 'undefined' && navigator.canShare && navigator.canShare({ files });
-    if (canShareFiles) {
-      try {
-        await navigator.share({ files, title: shareText, text: shareText });
-        return;
-      } catch (err) {
-        if (err && err.name === 'AbortError') return; // l'utilisateur a annulé
-        // sinon on bascule sur le téléchargement ci-dessous
-      }
+  // Partage de TOUT l'album d'un coup, en images (une par page : couverture,
+  // carte, toutes les journées, page de fin).
+  async function shareAlbum() {
+    if (!album) return;
+    const hasContent = (album.days || []).some((e) => (e.photos?.length || 0) > 0 || (e.note || '').trim());
+    if (!hasContent) {
+      alert('Ajoute au moins une photo à ton album avant de le partager.');
+      return;
     }
-    // Repli : on télécharge les images (l'utilisateur les envoie ensuite via WhatsApp).
-    files.forEach((f) => {
-      const url = URL.createObjectURL(f);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = f.name;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 4000);
-    });
-    // Sur ordinateur, on aide en ouvrant WhatsApp Web avec un petit texte.
-    if (!canShareFiles) {
-      window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank', 'noopener');
-    }
+    const blob = await buildAlbumBlob();
+    const slug = (album.title || 'album').replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'album';
+    const files = await pdfBlobToImageFiles(blob, { baseName: slug, targetWidth: 1240 });
+    await shareImageFiles(files, `${album.title || 'Mon voyage'} — album TravelO`);
   }
 
   if (loading) {
@@ -3149,6 +3172,25 @@ export default function AlbumPage() {
               ⬇️ Télécharger
             </a>
           )}
+          <button
+            onClick={async () => {
+              if (sharingAll) return;
+              setSharingAll(true);
+              try {
+                await shareAlbum();
+              } catch (e) {
+                setError((e?.message || 'Le partage a échoué.') + ' Réessaie dans un instant.');
+              } finally {
+                setSharingAll(false);
+              }
+            }}
+            disabled={sharingAll || generating || photoCount === 0}
+            className="flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 shadow-sm hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+            title="Partager tout l'album en images (WhatsApp, Messages…)"
+          >
+            {sharingAll ? <Spinner /> : <span>📲</span>}
+            {sharingAll ? 'Préparation…' : "Partager tout l'album"}
+          </button>
           {photoCount === 0 && (
             <span className="text-xs text-slate-500">
               Ajoute au moins une photo pour créer le fichier.
