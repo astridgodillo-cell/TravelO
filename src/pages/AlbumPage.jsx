@@ -1471,6 +1471,224 @@ function PageCountInput({ value, min = 1, max, onCommit }) {
   );
 }
 
+// Mode « Trier en grand » : plein écran, photos en grand pour comparer les
+// détails (utile quand on a des doublons), suppression rapide, réorganisation
+// par glisser-déposer, et appui sur une photo pour l'ouvrir en plein écran.
+export function PhotoSortModal({ photos, onChange, onClose, unit = 'jour' }) {
+  const keyer = useRef(0);
+  const [list, setList] = useState(() => photos.map((p) => ({ p, k: keyer.current++ })));
+  const listRef = useRef(list);
+  useEffect(() => { listRef.current = list; }, [list]);
+
+  // Glisser-déposer (pointeur souris + tactile). Au doigt, on n'active le
+  // glissement qu'après un bref appui maintenu, pour que le défilement de la
+  // liste reste possible et qu'on ne déplace pas une photo par erreur.
+  const [dragK, setDragK] = useState(null);
+  const dragKRef = useRef(null);
+  const pending = useRef(null);
+  const holdTimer = useRef(null);
+  const tileEls = useRef({});
+  const [zoom, setZoom] = useState(null); // index affiché en plein écran, ou null
+  const swipe = useRef(null);
+
+  const clearHold = () => { if (holdTimer.current) { clearTimeout(holdTimer.current); holdTimer.current = null; } };
+  const activate = (k, el, pid) => {
+    dragKRef.current = k; setDragK(k);
+    try { el?.setPointerCapture?.(pid); } catch { /* ignore */ }
+  };
+  const onTileDown = (e, k) => {
+    const el = e.currentTarget;
+    pending.current = { k, x: e.clientX, y: e.clientY, el, pid: e.pointerId, touch: e.pointerType === 'touch', moved: false };
+    if (e.pointerType === 'touch') {
+      clearHold();
+      const pid = e.pointerId;
+      holdTimer.current = setTimeout(() => {
+        holdTimer.current = null;
+        if (pending.current && pending.current.k === k) activate(k, el, pid);
+      }, 240);
+    }
+  };
+  const tileAt = (x, y) => {
+    for (const k in tileEls.current) {
+      const el = tileEls.current[k];
+      if (!el) continue;
+      const r = el.getBoundingClientRect();
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return Number(k);
+    }
+    return null;
+  };
+  const reorderTo = (targetK) => {
+    if (targetK == null || targetK === dragKRef.current) return;
+    setList((cur) => {
+      const from = cur.findIndex((x) => x.k === dragKRef.current);
+      const to = cur.findIndex((x) => x.k === targetK);
+      if (from < 0 || to < 0 || from === to) return cur;
+      const next = [...cur];
+      const [it] = next.splice(from, 1);
+      next.splice(to, 0, it);
+      return next;
+    });
+  };
+  const onTileMove = (e) => {
+    if (dragKRef.current != null) {
+      e.preventDefault?.();
+      reorderTo(tileAt(e.clientX, e.clientY));
+      return;
+    }
+    const p = pending.current;
+    if (!p) return;
+    const dist = Math.hypot(e.clientX - p.x, e.clientY - p.y);
+    if (dist > 6) p.moved = true;
+    if (p.touch) {
+      // Le doigt bouge avant l'appui maintenu → c'est un défilement : on annule.
+      if (dist > 10) { clearHold(); pending.current = null; }
+    } else if (dist > 6) {
+      activate(p.k, p.el, p.pid);
+    }
+  };
+  const onTileUp = () => {
+    clearHold();
+    if (dragKRef.current != null) {
+      dragKRef.current = null; setDragK(null);
+      onChange(listRef.current.map((x) => x.p));
+      pending.current = null;
+      return;
+    }
+    const p = pending.current;
+    pending.current = null;
+    if (p && !p.moved) {
+      const idx = listRef.current.findIndex((x) => x.k === p.k);
+      if (idx >= 0) setZoom(idx);
+    }
+  };
+  const onTileCancel = () => {
+    clearHold();
+    if (dragKRef.current != null) { dragKRef.current = null; setDragK(null); }
+    pending.current = null;
+  };
+  const removeAt = (idx) => {
+    const next = listRef.current.filter((_, i) => i !== idx);
+    setList(next);
+    onChange(next.map((x) => x.p));
+    if (zoom != null) {
+      if (next.length === 0) setZoom(null);
+      else setZoom(Math.min(zoom, next.length - 1));
+    }
+  };
+  const go = (d) => setZoom((z) => {
+    if (z == null) return z;
+    const n = z + d;
+    return n >= 0 && n < listRef.current.length ? n : z;
+  });
+
+  useEffect(() => {
+    if (zoom == null) return undefined;
+    const onKey = (e) => {
+      if (e.key === 'ArrowLeft') go(-1);
+      else if (e.key === 'ArrowRight') go(1);
+      else if (e.key === 'Escape') setZoom(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [zoom]);
+
+  const label = unit === 'etape' ? 'étape' : 'journée';
+  const zp = zoom != null ? list[zoom]?.p : null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-slate-900">
+      {/* en-tête fixe */}
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
+        <div className="min-w-0">
+          <h3 className="truncate font-semibold text-white">Trier les photos en grand</h3>
+          <p className="text-[11px] text-white/60">{list.length} photo{list.length > 1 ? 's' : ''} · touche pour agrandir · appuie et glisse pour réordonner</p>
+        </div>
+        <button onClick={onClose} className="shrink-0 rounded-lg bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/20">Terminé</button>
+      </div>
+
+      {/* grille défilable de grandes photos */}
+      <div className="flex-1 overflow-y-auto overscroll-contain p-3">
+        {list.length === 0 ? (
+          <p className="mt-10 text-center text-sm text-white/60">Plus aucune photo dans cette {label}.</p>
+        ) : (
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4">
+            {list.map((it, i) => (
+              <div
+                key={it.k}
+                ref={(el) => { if (el) tileEls.current[it.k] = el; else delete tileEls.current[it.k]; }}
+                onPointerDown={(e) => onTileDown(e, it.k)}
+                onPointerMove={onTileMove}
+                onPointerUp={onTileUp}
+                onPointerCancel={onTileCancel}
+                style={{ touchAction: dragK === it.k ? 'none' : 'pan-y' }}
+                className={`relative select-none overflow-hidden rounded-xl border-2 bg-slate-800 transition-transform ${dragK === it.k ? 'z-10 scale-95 border-coral-400 opacity-80 shadow-2xl' : 'border-transparent'}`}
+              >
+                <div className="aspect-[3/4] w-full" style={{ containerType: 'size' }}>
+                  <PhotoFill photo={it.p} containerAr={3 / 4} />
+                </div>
+                <span className="pointer-events-none absolute left-1.5 top-1.5 flex h-6 min-w-6 items-center justify-center rounded-full bg-black/60 px-1.5 text-[11px] font-bold text-white">{i + 1}</span>
+                {isLowRes(it.p) && (
+                  <span className="pointer-events-none absolute left-1/2 top-1.5 -translate-x-1/2 rounded-md bg-amber-500/90 px-1.5 py-0.5 text-[9px] font-semibold text-white">⚠︎ petite</span>
+                )}
+                <button
+                  type="button"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={() => removeAt(i)}
+                  className="absolute right-1.5 top-1.5 flex h-9 w-9 items-center justify-center rounded-full bg-black/60 text-base text-white hover:bg-red-600"
+                  title="Supprimer cette photo"
+                >
+                  🗑
+                </button>
+                <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 to-transparent px-2 pb-1.5 pt-4 text-center text-[10px] font-medium text-white/85">
+                  👆 agrandir · ⣿ glisser
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* visionneuse plein écran : voir une photo en très grand pour les détails */}
+      {zp && (
+        <div className="fixed inset-0 z-[60] flex flex-col bg-black">
+          <div className="flex shrink-0 items-center justify-between px-4 py-3 text-white">
+            <span className="text-sm font-medium text-white/80">{zoom + 1} / {list.length}</span>
+            <button onClick={() => setZoom(null)} className="rounded-lg bg-white/10 px-3 py-1.5 text-sm font-semibold hover:bg-white/20">✕ Fermer</button>
+          </div>
+          <div
+            className="relative flex flex-1 items-center justify-center overflow-hidden"
+            onPointerDown={(e) => { swipe.current = { x: e.clientX }; }}
+            onPointerUp={(e) => {
+              if (!swipe.current) return;
+              const dx = e.clientX - swipe.current.x;
+              swipe.current = null;
+              if (dx > 45) go(-1);
+              else if (dx < -45) go(1);
+            }}
+          >
+            <img src={zp.full || zp.display} alt="" draggable={false} className="max-h-full max-w-full select-none object-contain" />
+            {zoom > 0 && (
+              <button type="button" onClick={() => go(-1)} className="absolute left-2 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-2xl text-white hover:bg-black/70">‹</button>
+            )}
+            {zoom < list.length - 1 && (
+              <button type="button" onClick={() => go(1)} className="absolute right-2 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-2xl text-white hover:bg-black/70">›</button>
+            )}
+          </div>
+          <div className="flex shrink-0 items-center justify-center gap-3 px-4 py-3">
+            <button
+              type="button"
+              onClick={() => removeAt(zoom)}
+              className="flex items-center gap-2 rounded-xl bg-red-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-red-700"
+            >
+              🗑 Supprimer cette photo
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhoto, busy, progress = null, format = 'carre', onFormatChange = null, theme = null, unit = 'jour', pageOffset = null }) {
   const fileRef = useRef(null);
   const [bgOpen, setBgOpen] = useState(false);
@@ -1482,6 +1700,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
   const [spreadStart, setSpreadStart] = useState(0); // 1re page du duo affiché
   const [mPage, setMPage] = useState(0); // page affichée seule en grand (mobile)
   const [aiBusy, setAiBusy] = useState(false);
+  const [sortOpen, setSortOpen] = useState(false); // mode « trier en grand »
   const isMobile = useIsMobile();
 
   const update = (patch) => onChange({ ...entry, ...patch });
@@ -1659,7 +1878,30 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
       </div>
 
       {entry.photos.length > 0 && (
-        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div className="mt-4 flex items-center justify-between gap-2">
+          <span className="text-xs font-semibold text-slate-500">{entry.photos.length} photo{entry.photos.length > 1 ? 's' : ''}</span>
+          <button
+            type="button"
+            onClick={() => setSortOpen(true)}
+            className="flex items-center gap-1.5 rounded-lg border border-coral-300 bg-coral-50 px-3 py-1.5 text-xs font-semibold text-coral-700 hover:bg-coral-100"
+            title="Voir les photos en grand pour mieux trier et supprimer les doublons"
+          >
+            🔍 Trier en grand
+          </button>
+        </div>
+      )}
+
+      {sortOpen && (
+        <PhotoSortModal
+          photos={entry.photos}
+          onChange={(arr) => update({ photos: arr })}
+          onClose={() => setSortOpen(false)}
+          unit={unit}
+        />
+      )}
+
+      {entry.photos.length > 0 && (
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
           {entry.photos.map((p, pi) => (
             <PhotoTile
               key={pi}
