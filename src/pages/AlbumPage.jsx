@@ -2476,6 +2476,7 @@ export default function AlbumPage() {
   const [pdfUrl, setPdfUrl] = useState(null);
   const [pdfBlob, setPdfBlob] = useState(null);
   const [sharingAll, setSharingAll] = useState(false);
+  const [sharingAllPdf, setSharingAllPdf] = useState(false);
 
   // Sélecteur de photo : 'cover' (couverture), 'end' (page de fin) ou null.
   const [pickerFor, setPickerFor] = useState(null);
@@ -2862,10 +2863,10 @@ export default function AlbumPage() {
     .replace(/[^a-z0-9]+/gi, '-')
     .toLowerCase()}-${format}.pdf`;
 
-  // Partage un lot d'images : fenêtre native (WhatsApp…) si disponible, sinon
-  // téléchargement des images + ouverture de WhatsApp Web avec un court texte.
-  async function shareImageFiles(files, shareText) {
-    if (!files.length) throw new Error("Les pages n'ont pas pu être transformées en images.");
+  // Partage un lot de fichiers (images ou PDF) : fenêtre native (WhatsApp…) si
+  // disponible, sinon téléchargement + ouverture de WhatsApp Web avec un texte.
+  async function shareFiles(files, shareText) {
+    if (!files.length) throw new Error("Le fichier n'a pas pu être préparé.");
     const canShareFiles = typeof navigator !== 'undefined' && navigator.canShare && navigator.canShare({ files });
     if (canShareFiles) {
       try {
@@ -2924,22 +2925,38 @@ export default function AlbumPage() {
     const unitLbl = album.unit === 'etape' ? 'Étape' : 'Jour';
     const where = entry.location ? ` · ${entry.location}` : '';
     const shareText = `${unitLbl} ${dayIndex + 1}${where} — ${album.title || 'Mon voyage'}`;
-    await shareImageFiles(files, shareText);
+    await shareFiles(files, shareText);
   }
+
+  const albumHasContent = () =>
+    (album?.days || []).some((e) => (e.photos?.length || 0) > 0 || (e.note || '').trim());
+  const albumSlug = () =>
+    (album?.title || 'album').replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'album';
 
   // Partage de TOUT l'album d'un coup, en images (une par page : couverture,
   // carte, toutes les journées, page de fin).
   async function shareAlbum() {
     if (!album) return;
-    const hasContent = (album.days || []).some((e) => (e.photos?.length || 0) > 0 || (e.note || '').trim());
-    if (!hasContent) {
+    if (!albumHasContent()) {
       alert('Ajoute au moins une photo à ton album avant de le partager.');
       return;
     }
     const blob = await buildAlbumBlob();
-    const slug = (album.title || 'album').replace(/[^a-z0-9]+/gi, '-').toLowerCase() || 'album';
-    const files = await pdfBlobToImageFiles(blob, { baseName: slug, targetWidth: 1240 });
-    await shareImageFiles(files, `${album.title || 'Mon voyage'} — album TravelO`);
+    const files = await pdfBlobToImageFiles(blob, { baseName: albumSlug(), targetWidth: 1240 });
+    await shareFiles(files, `${album.title || 'Mon voyage'} — album TravelO`);
+  }
+
+  // Partage de TOUT l'album en UN SEUL fichier PDF (pratique pour les albums
+  // avec beaucoup de pages : un seul document au lieu de nombreuses images).
+  async function shareAlbumPdf() {
+    if (!album) return;
+    if (!albumHasContent()) {
+      alert('Ajoute au moins une photo à ton album avant de le partager.');
+      return;
+    }
+    const blob = await buildAlbumBlob();
+    const file = new File([blob], `${albumSlug()}-${format}.pdf`, { type: 'application/pdf' });
+    await shareFiles([file], `${album.title || 'Mon voyage'} — album TravelO`);
   }
 
   if (loading) {
@@ -3189,7 +3206,26 @@ export default function AlbumPage() {
             title="Partager tout l'album en images (WhatsApp, Messages…)"
           >
             {sharingAll ? <Spinner /> : <span>📲</span>}
-            {sharingAll ? 'Préparation…' : "Partager tout l'album"}
+            {sharingAll ? 'Préparation…' : "Partager en images"}
+          </button>
+          <button
+            onClick={async () => {
+              if (sharingAllPdf) return;
+              setSharingAllPdf(true);
+              try {
+                await shareAlbumPdf();
+              } catch (e) {
+                setError((e?.message || 'Le partage a échoué.') + ' Réessaie dans un instant.');
+              } finally {
+                setSharingAllPdf(false);
+              }
+            }}
+            disabled={sharingAllPdf || generating || photoCount === 0}
+            className="flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 shadow-sm hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+            title="Partager tout l'album en un seul fichier PDF (WhatsApp, Mail…)"
+          >
+            {sharingAllPdf ? <Spinner /> : <span>📄</span>}
+            {sharingAllPdf ? 'Préparation…' : 'Partager en 1 PDF'}
           </button>
           {photoCount === 0 && (
             <span className="text-xs text-slate-500">
