@@ -466,7 +466,7 @@ function BlankPage({ pageW, pageH }) {
   return <Page size={[pageW, pageH]} style={{ width: pageW, height: pageH, backgroundColor: '#FFFFFF' }} />;
 }
 
-export default function AlbumPdfDoc({ album, days = [], format = 'carre', summary = null, routeMap = null, stops = [], endNote = '', endPhoto = null, theme = null, unit = 'jour', coverLayout = {}, endLayout = {}, coverSpread = {}, opening = {} }) {
+export default function AlbumPdfDoc({ album, days = [], format = 'carre', summary = null, routeMap = null, stops = [], endNote = '', endPhoto = null, theme = null, unit = 'jour', coverLayout = {}, endLayout = {}, coverSpread = {}, opening = {}, onlyDay = null }) {
   const coverPos = coverLayout.pos || 'bottom';
   const coverAlign = coverLayout.align || 'left';
   const coverKicker = coverLayout.kicker != null ? coverLayout.kicker : 'Album de voyage';
@@ -511,6 +511,76 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
   }
 
   const spreadOn = !!(coverSpread.enabled && imgFull(coverSpread.photo));
+
+  // Rendu des pages d'une (ou plusieurs) journée(s). Extrait pour être réutilisé
+  // aussi bien dans l'album complet que dans un partage « une seule journée ».
+  const renderDayPages = (list) => list.flatMap((e) => {
+    // On ne garde que les pages contenant réellement des photos → aucune
+    // page vide ne peut apparaître (même si une répartition en prévoyait
+    // une de trop).
+    const chunks = splitPhotos(e.photos, e.split).filter((c) => c.length > 0);
+    const pageCount = chunks.length;
+    return chunks.map((chunk, p) => {
+      const spec = resolveBg(e.bg, p, pageCount);
+      const firstPage = p === 0;
+      const onPlate = spec.type !== 'none';
+      const lay = pageLayout(chunk, format, { title: e.title, note: e.note, firstPage, onPlate });
+      const free = e.freePages?.[p];
+      const freeValid = Array.isArray(free) && free.length === chunk.length && chunk.length > 0;
+      const minPage = Math.min(pageW, pageH);
+      return (
+        <Page key={`${e.i}-${p}`} size={[pageW, pageH]} style={st.dayPage}>
+          {spec.type === 'none' && <PagePattern theme={theme} pageW={pageW} pageH={pageH} />}
+          <PageBackground spec={spec} pageW={pageW} pageH={pageH} st={st} />
+          <View style={{ position: 'absolute', left: lay.pad, top: lay.pad, width: lay.contentW, height: lay.headerH, overflow: 'hidden' }}>
+            <View style={onPlate ? st.headerPlate : st.header}>
+              <Text style={st.dayKicker}>
+                {unitLabel(unit)} {e.i + 1}{e.location ? ` · ${e.location}` : ''}
+                {!firstPage ? ' · suite' : ''}
+              </Text>
+              {firstPage && e.title ? <Text style={st.dayTitle}>{e.title}</Text> : null}
+              {firstPage && e.note ? <Text style={st.note}>{e.note}</Text> : null}
+            </View>
+          </View>
+          {freeValid ? (
+            chunk.map((photo, i) => {
+              const b = free[i];
+              const ar = photo.w && photo.h ? photo.w / photo.h : 4 / 3;
+              const bw = b.scale * minPage;
+              const bh = bw / ar;
+              return (
+                <View key={i} style={{ position: 'absolute', left: b.xf * pageW - bw / 2, top: b.yf * pageH - bh / 2, width: bw, height: bh, transform: `rotate(${b.rot}deg)`, transformOrigin: 'center' }}>
+                  <PdfPhoto photo={photo} st={st} w={bw} h={bh} />
+                  {photo.caption ? (
+                    <View style={st.capWrap}><Text style={st.capTxt}>{photo.caption}</Text></View>
+                  ) : null}
+                </View>
+              );
+            })
+          ) : (
+            <Mosaic cells={lay.cells} photos={chunk} st={st} />
+          )}
+          {e.pageDeco?.[p]?.length ? (
+            <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
+              <DecoLayer items={e.pageDeco[p]} w={pageW} h={pageH} />
+            </View>
+          ) : null}
+        </Page>
+      );
+    });
+  });
+
+  // Partage d'UNE seule journée : uniquement ses pages (sans couverture, carte,
+  // ni page de fin). Si la journée n'a ni photo ni texte, une page blanche.
+  if (onlyDay != null) {
+    const only = entries.filter((e) => e.i === onlyDay);
+    const pages = renderDayPages(only);
+    return (
+      <Document title={`${album?.title || 'Album'} — TravelO`} author="TravelO">
+        {pages.length ? pages : <BlankPage pageW={pageW} pageH={pageH} />}
+      </Document>
+    );
+  }
 
   return (
     <Document title={`${album?.title || 'Album'} — TravelO`} author="TravelO">
@@ -593,61 +663,7 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
       })()}
 
       {/* UNE OU PLUSIEURS PAGES PAR JOURNÉE */}
-      {entries.flatMap((e) => {
-        // On ne garde que les pages contenant réellement des photos → aucune
-        // page vide ne peut apparaître (même si une répartition en prévoyait
-        // une de trop).
-        const chunks = splitPhotos(e.photos, e.split).filter((c) => c.length > 0);
-        const pageCount = chunks.length;
-        return chunks.map((chunk, p) => {
-          const spec = resolveBg(e.bg, p, pageCount);
-          const firstPage = p === 0;
-          const onPlate = spec.type !== 'none';
-          const lay = pageLayout(chunk, format, { title: e.title, note: e.note, firstPage, onPlate });
-          const free = e.freePages?.[p];
-          const freeValid = Array.isArray(free) && free.length === chunk.length && chunk.length > 0;
-          const minPage = Math.min(pageW, pageH);
-          return (
-            <Page key={`${e.i}-${p}`} size={[pageW, pageH]} style={st.dayPage}>
-              {spec.type === 'none' && <PagePattern theme={theme} pageW={pageW} pageH={pageH} />}
-              <PageBackground spec={spec} pageW={pageW} pageH={pageH} st={st} />
-              <View style={{ position: 'absolute', left: lay.pad, top: lay.pad, width: lay.contentW, height: lay.headerH, overflow: 'hidden' }}>
-                <View style={onPlate ? st.headerPlate : st.header}>
-                  <Text style={st.dayKicker}>
-                    {unitLabel(unit)} {e.i + 1}{e.location ? ` · ${e.location}` : ''}
-                    {!firstPage ? ' · suite' : ''}
-                  </Text>
-                  {firstPage && e.title ? <Text style={st.dayTitle}>{e.title}</Text> : null}
-                  {firstPage && e.note ? <Text style={st.note}>{e.note}</Text> : null}
-                </View>
-              </View>
-              {freeValid ? (
-                chunk.map((photo, i) => {
-                  const b = free[i];
-                  const ar = photo.w && photo.h ? photo.w / photo.h : 4 / 3;
-                  const bw = b.scale * minPage;
-                  const bh = bw / ar;
-                  return (
-                    <View key={i} style={{ position: 'absolute', left: b.xf * pageW - bw / 2, top: b.yf * pageH - bh / 2, width: bw, height: bh, transform: `rotate(${b.rot}deg)`, transformOrigin: 'center' }}>
-                      <PdfPhoto photo={photo} st={st} w={bw} h={bh} />
-                      {photo.caption ? (
-                        <View style={st.capWrap}><Text style={st.capTxt}>{photo.caption}</Text></View>
-                      ) : null}
-                    </View>
-                  );
-                })
-              ) : (
-                <Mosaic cells={lay.cells} photos={chunk} st={st} />
-              )}
-              {e.pageDeco?.[p]?.length ? (
-                <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}>
-                  <DecoLayer items={e.pageDeco[p]} w={pageW} h={pageH} />
-                </View>
-              ) : null}
-            </Page>
-          );
-        });
-      })}
+      {renderDayPages(entries)}
 
       {/* 3E DE COUVERTURE — page blanche imposée */}
       <BlankPage pageW={pageW} pageH={pageH} />

@@ -12,6 +12,7 @@ import { renderRouteMapImage } from '../lib/staticMapImage';
 import { writeAlbumText, pixabaySearch, pixabayFetch } from '../lib/ai';
 import AlbumPdfDoc from '../components/AlbumPdfDoc';
 import PdfPagesPreview from '../components/PdfPagesPreview';
+import { pdfBlobToImageFiles } from '../lib/pdfToImages';
 import {
   FORMAT_LABELS,
   PHOTOS_PER_PAGE,
@@ -1689,7 +1690,7 @@ export function PhotoSortModal({ photos, onChange, onClose, unit = 'jour' }) {
   );
 }
 
-export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhoto, busy, progress = null, format = 'carre', onFormatChange = null, theme = null, unit = 'jour', pageOffset = null }) {
+export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhoto, busy, progress = null, format = 'carre', onFormatChange = null, theme = null, unit = 'jour', pageOffset = null, onShareDay = null }) {
   const fileRef = useRef(null);
   const [bgOpen, setBgOpen] = useState(false);
   const [decoPage, setDecoPage] = useState(null);
@@ -1701,6 +1702,19 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
   const [mPage, setMPage] = useState(0); // page affichée seule en grand (mobile)
   const [aiBusy, setAiBusy] = useState(false);
   const [sortOpen, setSortOpen] = useState(false); // mode « trier en grand »
+  const [sharing, setSharing] = useState(false); // partage de la journée en cours
+
+  const doShareDay = async () => {
+    if (!onShareDay || sharing) return;
+    setSharing(true);
+    try {
+      await onShareDay();
+    } catch (e) {
+      alert(e?.message || "Le partage n'a pas fonctionné. Réessaie dans un instant.");
+    } finally {
+      setSharing(false);
+    }
+  };
   const isMobile = useIsMobile();
 
   const update = (patch) => onChange({ ...entry, ...patch });
@@ -1878,16 +1892,30 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
       </div>
 
       {entry.photos.length > 0 && (
-        <div className="mt-4 flex items-center justify-between gap-2">
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
           <span className="text-xs font-semibold text-slate-500">{entry.photos.length} photo{entry.photos.length > 1 ? 's' : ''}</span>
-          <button
-            type="button"
-            onClick={() => setSortOpen(true)}
-            className="flex items-center gap-1.5 rounded-lg border border-coral-300 bg-coral-50 px-3 py-1.5 text-xs font-semibold text-coral-700 hover:bg-coral-100"
-            title="Voir les photos en grand pour mieux trier et supprimer les doublons"
-          >
-            🔍 Trier en grand
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {onShareDay && (
+              <button
+                type="button"
+                onClick={doShareDay}
+                disabled={sharing}
+                className="flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-60"
+                title="Partager cette journée en images (WhatsApp, Messages…)"
+              >
+                {sharing ? <Spinner className="h-3.5 w-3.5" /> : <span>📲</span>}
+                {sharing ? 'Préparation…' : 'Partager'}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setSortOpen(true)}
+              className="flex items-center gap-1.5 rounded-lg border border-coral-300 bg-coral-50 px-3 py-1.5 text-xs font-semibold text-coral-700 hover:bg-coral-100"
+              title="Voir les photos en grand pour mieux trier et supprimer les doublons"
+            >
+              🔍 Trier en grand
+            </button>
+          </div>
         </div>
       )}
 
@@ -2827,6 +2855,70 @@ export default function AlbumPage() {
     .replace(/[^a-z0-9]+/gi, '-')
     .toLowerCase()}-${format}.pdf`;
 
+  // Partage d'UNE journée sous forme d'images (une par page). Sur mobile, ouvre
+  // la fenêtre de partage native (WhatsApp, etc.). Sinon, télécharge les images.
+  async function shareDay(dayIndex) {
+    if (!album) return;
+    const entry = album.days[dayIndex];
+    if (!entry || !(entry.photos?.length || (entry.note || '').trim())) {
+      alert('Ajoute au moins une photo (ou un texte) à cette journée avant de la partager.');
+      return;
+    }
+    // 1) On « cuit » les filtres couleur des photos de cette journée seulement.
+    const bakedPhotos = await bakePhotoEffects(entry.photos || []);
+    const albumForPdf = {
+      ...album,
+      days: album.days.map((d, i) => (i === dayIndex ? { ...entry, photos: bakedPhotos } : d)),
+    };
+    // 2) PDF de la seule journée, puis conversion de chaque page en image.
+    const blob = await pdf(
+      <AlbumPdfDoc
+        album={albumForPdf}
+        days={album.days.map((s) => ({ location: s.location || '' }))}
+        format={format}
+        unit={album.unit}
+        theme={getTheme(album.theme)}
+        onlyDay={dayIndex}
+      />
+    ).toBlob();
+    const label = (album.unit === 'etape' ? 'etape' : 'jour');
+    const slug = `${label}-${dayIndex + 1}`;
+    const files = await pdfBlobToImageFiles(blob, { baseName: slug });
+    if (!files.length) throw new Error("La page n'a pas pu être transformée en image.");
+
+    const unitLbl = album.unit === 'etape' ? 'Étape' : 'Jour';
+    const where = entry.location ? ` · ${entry.location}` : '';
+    const shareText = `${unitLbl} ${dayIndex + 1}${where} — ${album.title || 'Mon voyage'}`;
+
+    // 3) Partage natif si disponible (WhatsApp apparaît dans la liste), avec
+    //    repli sur le téléchargement des images.
+    const canShareFiles = typeof navigator !== 'undefined' && navigator.canShare && navigator.canShare({ files });
+    if (canShareFiles) {
+      try {
+        await navigator.share({ files, title: shareText, text: shareText });
+        return;
+      } catch (err) {
+        if (err && err.name === 'AbortError') return; // l'utilisateur a annulé
+        // sinon on bascule sur le téléchargement ci-dessous
+      }
+    }
+    // Repli : on télécharge les images (l'utilisateur les envoie ensuite via WhatsApp).
+    files.forEach((f) => {
+      const url = URL.createObjectURL(f);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = f.name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+    });
+    // Sur ordinateur, on aide en ouvrant WhatsApp Web avec un petit texte.
+    if (!canShareFiles) {
+      window.open(`https://wa.me/?text=${encodeURIComponent(shareText)}`, '_blank', 'noopener');
+    }
+  }
+
   if (loading) {
     return (
       <div className="mx-auto max-w-3xl p-8 text-center text-slate-500">
@@ -2995,6 +3087,7 @@ export default function AlbumPage() {
                 theme={getTheme(album.theme)}
                 unit={album.unit}
                 pageOffset={dayOffsets[i]}
+                onShareDay={() => shareDay(i)}
               />
             </div>
           );
