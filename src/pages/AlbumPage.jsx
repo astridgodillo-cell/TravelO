@@ -1026,6 +1026,22 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
   const [touchDragging, setTouchDragging] = useState(false);
   const HOLD_MS = 240;   // durée d'appui avant de pouvoir déplacer
   const HOLD_TOL = 10;   // si le doigt bouge plus que ça avant l'appui, c'est un défilement
+  // IMPORTANT : changer touch-action en cours de geste ne suffit pas — le
+  // navigateur l'a figé au moment où le doigt s'est posé. Si on le laisse
+  // faire, il « vole » le geste pour défiler la page et coupe le glissement
+  // (pointercancel) : la photo bougeait un peu puis se figeait. On bloque donc
+  // nous-mêmes le défilement (preventDefault sur touchmove, listener non
+  // passif) tant qu'un glissement est actif.
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el || !interactive) return undefined;
+    const onTouchMove = (e) => {
+      const d = drag.current;
+      if (d && d.active) e.preventDefault();
+    };
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    return () => el.removeEventListener('touchmove', onTouchMove);
+  }, [interactive]);
   const clearHold = () => { if (holdTimer.current) { clearTimeout(holdTimer.current); holdTimer.current = null; } };
   const seedBoxes = () =>
     photos.map((pp, k) => {
@@ -1507,6 +1523,14 @@ export function PhotoSortModal({ photos, onChange, onClose, unit = 'jour' }) {
     // Petite vibration : on SENT que la photo est prise et déplaçable.
     try { navigator.vibrate?.(15); } catch { /* non supporté */ }
   };
+  // Pendant un glissement actif, on empêche le navigateur de récupérer le
+  // geste pour défiler (sinon il coupe le glissement : photo figée). Voir le
+  // même correctif dans PagePreview.
+  useEffect(() => {
+    const onTouchMove = (e) => { if (dragKRef.current != null) e.preventDefault(); };
+    document.addEventListener('touchmove', onTouchMove, { passive: false });
+    return () => document.removeEventListener('touchmove', onTouchMove);
+  }, []);
   const onTileDown = (e, k) => {
     const el = e.currentTarget;
     pending.current = { k, x: e.clientX, y: e.clientY, el, pid: e.pointerId, touch: e.pointerType === 'touch', moved: false };
