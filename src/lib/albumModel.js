@@ -208,6 +208,22 @@ export function pageLayout(photos, format, opts = {}) {
   return { pageW, pageH, pad, gap, contentW, headerH, cells };
 }
 
+// Boîtes de « disposition libre » initialisées depuis la grille. En libre, la
+// boîte garde le RATIO de la photo (photo entière, non recadrée) : sa taille
+// doit donc être calculée avec ce ratio pour tenir DANS la case de la grille
+// (et donc dans la page). Avant, seule la largeur de la case était reprise :
+// une photo verticale posée dans une case horizontale devenait bien trop haute
+// et débordait de la page (coupée à l'écran comme à l'impression).
+export function seedFreeBoxes(photos, lay) {
+  const minPage = Math.min(lay.pageW, lay.pageH);
+  return (photos || []).map((p, k) => {
+    const c = lay.cells[k] || { x: lay.pad, y: lay.pad, w: minPage * 0.4, h: minPage * 0.3 };
+    const ar = p.w && p.h ? p.w / p.h : 4 / 3;
+    const w = Math.min(c.w, c.h * ar); // largeur max qui tient dans la case en gardant le ratio
+    return { xf: (c.x + c.w / 2) / lay.pageW, yf: (c.y + c.h / 2) / lay.pageH, scale: w / minPage, rot: 0 };
+  });
+}
+
 // Palette de couleurs de fond proposée : neutres/beiges en tête, puis un large
 // éventail de teintes (chaudes, froides, pastel, foncées).
 export const BG_COLORS = [

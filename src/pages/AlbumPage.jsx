@@ -28,6 +28,7 @@ import {
   STICKER_CATEGORIES,
   splitPhotos,
   pageLayout,
+  seedFreeBoxes,
   resolveBg,
   unitLabel,
   bgIsEmpty,
@@ -1043,11 +1044,7 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
     return () => el.removeEventListener('touchmove', onTouchMove);
   }, [interactive]);
   const clearHold = () => { if (holdTimer.current) { clearTimeout(holdTimer.current); holdTimer.current = null; } };
-  const seedBoxes = () =>
-    photos.map((pp, k) => {
-      const c = lay.cells[k] || { x: lay.pad, y: lay.pad, w: minPage * 0.4, h: minPage * 0.3 };
-      return { xf: (c.x + c.w / 2) / lay.pageW, yf: (c.y + c.h / 2) / lay.pageH, scale: c.w / minPage, rot: 0 };
-    });
+  const seedBoxes = () => seedFreeBoxes(photos, lay);
   // Amorce un glissement : immédiat à la souris/stylet, après appui maintenu au doigt.
   const beginDrag = (e, base) => {
     // Empêche seulement la désélection par le fond (ne bloque pas le défilement,
@@ -1262,18 +1259,7 @@ export function PageDecorateModal({
   const freeValid = Array.isArray(initialFree) && initialFree.length === photos.length && photos.length > 0;
 
   // Passage en disposition libre : on initialise les boîtes depuis la grille.
-  const enableFree = () => {
-    const boxes = photos.map((p, i) => {
-      const c = lay.cells[i] || { x: lay.pad, y: lay.pad, w: minPage * 0.4, h: minPage * 0.3 };
-      return {
-        xf: (c.x + c.w / 2) / lay.pageW,
-        yf: (c.y + c.h / 2) / lay.pageH,
-        scale: c.w / minPage,
-        rot: 0,
-      };
-    });
-    onChangeFree(boxes);
-  };
+  const enableFree = () => onChangeFree(seedFreeBoxes(photos, lay));
   const disableFree = () => onChangeFree(null);
 
   // Fond de la page
@@ -1893,6 +1879,18 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
       {isLocked(p) ? '🔒 Verrouillée' : '🔓 Verrouiller'}
     </button>
   );
+  // Remise en grille automatique d'une page passée en disposition libre
+  // (répare aussi une page dont une photo déborderait du cadre).
+  const gridBtn = (p) => (entry.freePages?.[p] && !isLocked(p) ? (
+    <button
+      type="button"
+      onClick={() => { setSel(null); setPageFree(p, null); }}
+      className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500 hover:bg-slate-200"
+      title="Réorganiser automatiquement cette page en grille (annule les positions déplacées à la main)"
+    >
+      ↺ Grille auto
+    </button>
+  ) : null);
   // Change le nombre de pages (réparti équitablement, toujours valide).
   const setPagesCount = (n) =>
     update({ split: balancedSplit(total, Math.max(1, Math.min(total, n))) });
@@ -1933,11 +1931,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
   const seedFreeForPage = (p) => {
     const spec = resolveBg(bg, p, pageCount);
     const lay = pageLayout(chunks[p], format, { title: entry.title, note: entry.note, firstPage: p === 0, onPlate: spec.type !== 'none' });
-    const minPage = Math.min(lay.pageW, lay.pageH);
-    return chunks[p].map((pp, k) => {
-      const c = lay.cells[k] || { x: lay.pad, y: lay.pad, w: minPage * 0.4, h: minPage * 0.3 };
-      return { xf: (c.x + c.w / 2) / lay.pageW, yf: (c.y + c.h / 2) / lay.pageH, scale: c.w / minPage, rot: 0 };
-    });
+    return seedFreeBoxes(chunks[p], lay);
   };
   // L'objet actuellement sélectionné (photo libre ou décoration), uniformisé.
   const selObj = (() => {
@@ -2419,6 +2413,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
             <div className="mt-1 flex items-center justify-center gap-2">
               <span className="text-[11px] text-slate-400">Page {mp + 1}</span>
               {coveredBy[mp] < 0 && lockBtn(mp)}
+              {coveredBy[mp] < 0 && gridBtn(mp)}
             </div>
           </div>
 
@@ -2435,6 +2430,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
                   <div className="mt-1 flex items-center justify-center gap-2">
                     <span className="text-[11px] text-slate-400">Page {p + 1}</span>
                     {coveredBy[p] < 0 && lockBtn(p)}
+                    {coveredBy[p] < 0 && gridBtn(p)}
                   </div>
                 </div>
               ))}
