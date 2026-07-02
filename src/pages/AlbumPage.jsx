@@ -1892,16 +1892,38 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
     </button>
   ) : null);
   // Change le nombre de pages (réparti équitablement, toujours valide).
-  const setPagesCount = (n) =>
-    update({ split: balancedSplit(total, Math.max(1, Math.min(total, n))) });
-  // Fixe le nombre de photos d'une page : les autres pages sont réajustées
-  // pour que le total reste égal au nombre de photos (jamais d'état invalide).
+  // Les photos sont réparties EN SÉQUENCE : changer le nombre d'une page décale
+  // les photos de toutes les pages suivantes. Donc pour vraiment protéger une
+  // page verrouillée, on fige tout ce qui va jusqu'à la DERNIÈRE page
+  // verrouillée. Seules les pages APRÈS peuvent être réajustées.
+  const lastLocked = splitCounts.reduce((m, _c, k) => (isLocked(k) ? k : m), -1);
+  const frozenCount = lastLocked + 1;                 // nb de pages figées (au début)
+  const frozenSum = splitCounts.slice(0, frozenCount).reduce((a, b) => a + b, 0);
+  const freePhotos = total - frozenSum;               // photos réajustables (pages libres)
+
+  // Change le nombre de PAGES : on garde les pages figées, on répartit le reste
+  // des photos sur le nombre de pages libres demandé.
+  const setPagesCount = (n) => {
+    if (freePhotos <= 0) return; // tout est verrouillé jusqu'à la fin
+    const freePages = Math.max(1, Math.min(freePhotos, n - frozenCount));
+    const rest = balancedSplit(freePhotos, freePages);
+    update({ split: [...splitCounts.slice(0, frozenCount), ...rest] });
+  };
+  // Fixe le nombre de photos d'une page LIBRE : les autres pages libres sont
+  // réajustées ; les pages figées (verrou) ne bougent pas.
   const setPageValue = (p, val) => {
-    const pages = splitCounts.length;
-    const v = Math.max(1, Math.min(Number.isFinite(val) ? val : 1, total - (pages - 1)));
-    const rest = balancedSplit(total - v, pages - 1);
+    if (p < frozenCount) return; // page figée : on n'y touche pas
+    const others = splitCounts.map((_c, k) => k).filter((k) => k >= frozenCount && k !== p);
+    const v = others.length === 0
+      ? freePhotos
+      : Math.max(1, Math.min(Number.isFinite(val) ? val : 1, freePhotos - others.length));
+    const rest = balancedSplit(freePhotos - v, others.length);
     let ri = 0;
-    const arr = splitCounts.map((_, k) => (k === p ? v : rest[ri++]));
+    const arr = splitCounts.map((c, k) => {
+      if (k < frozenCount) return c;
+      if (k === p) return v;
+      return rest[ri++];
+    });
     update({ split: arr });
   };
   const setBg = (next) => update({ bg: next });
@@ -2152,7 +2174,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
               <button
                 type="button"
                 onClick={() => setPagesCount(pageCount - 1)}
-                disabled={pageCount <= 1}
+                disabled={freePhotos <= 0 || pageCount <= frozenCount + 1}
                 className="h-6 w-6 rounded border border-slate-300 bg-white font-bold text-slate-700 disabled:opacity-40"
               >
                 −
@@ -2161,7 +2183,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
               <button
                 type="button"
                 onClick={() => setPagesCount(pageCount + 1)}
-                disabled={pageCount >= total}
+                disabled={freePhotos <= 0 || pageCount >= frozenCount + freePhotos}
                 className="h-6 w-6 rounded border border-slate-300 bg-white font-bold text-slate-700 disabled:opacity-40"
               >
                 +
@@ -2170,26 +2192,42 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
           </div>
 
           <div className="mt-2 flex flex-wrap gap-3">
-            {splitCounts.map((c, p) => (
-              <label key={p} className="flex items-center gap-1.5 text-xs text-slate-600">
-                Page {p + 1}
-                <PageCountInput
-                  value={c}
-                  min={1}
-                  max={total - (splitCounts.length - 1)}
-                  onCommit={(n) => setPageValue(p, n)}
-                />
-              </label>
-            ))}
+            {splitCounts.map((c, p) => {
+              const frozen = p < frozenCount;
+              return (
+                <label key={p} className={`flex items-center gap-1.5 text-xs ${frozen ? 'text-amber-600' : 'text-slate-600'}`}>
+                  Page {p + 1}{frozen ? ' 🔒' : ''}
+                  {frozen ? (
+                    <span className="w-14 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-center font-semibold text-amber-700">{c}</span>
+                  ) : (
+                    <PageCountInput
+                      value={c}
+                      min={1}
+                      max={freePhotos - (splitCounts.length - frozenCount - 1)}
+                      onCommit={(n) => setPageValue(p, n)}
+                    />
+                  )}
+                </label>
+              );
+            })}
           </div>
 
           <div className="mt-2 flex items-center justify-between gap-2">
             <p className="text-xs text-slate-400">
-              Mets le nombre que tu veux par page (aucune limite). Modifier une case réajuste les autres pour garder {total} photos.
+              {frozenCount > 0
+                ? `Les pages verrouillées (🔒) sont figées. Tu ajustes librement les autres.`
+                : 'Mets le nombre que tu veux par page (aucune limite). Modifier une case réajuste les autres pour garder les ' + total + ' photos.'}
             </p>
             <button
               type="button"
-              onClick={() => update({ split: null })}
+              onClick={() => {
+                if (frozenCount > 0) {
+                  const rest = balancedSplit(freePhotos, Math.max(1, Math.ceil(freePhotos / PHOTOS_PER_PAGE)));
+                  update({ split: [...splitCounts.slice(0, frozenCount), ...rest] });
+                } else {
+                  update({ split: null });
+                }
+              }}
               className="text-xs font-medium text-brand-700 hover:underline"
             >
               Répartition automatique (max {PHOTOS_PER_PAGE}/page)
@@ -2810,12 +2848,20 @@ export default function AlbumPage() {
       setAlbum((prev) => {
         const days = [...prev.days];
         const entry = days[i];
-        const photos = [...entry.photos, ...uploaded.map((u) => ({ ...u, caption: '' }))];
+        const added = uploaded.map((u) => ({ ...u, caption: '' }));
+        const photos = [...entry.photos, ...added];
+        // Si une répartition manuelle existe (souvent avec des pages
+        // verrouillées), on la conserve et on met les NOUVELLES photos sur une
+        // page en plus, pour ne pas décaler les photos des pages existantes.
+        let split = entry.split;
+        if (Array.isArray(entry.split) && entry.split.reduce((a, b) => a + b, 0) === entry.photos.length) {
+          split = [...entry.split, added.length];
+        }
         // Par défaut : si aucun fond n'a été choisi, on met en fond de chaque
         // page une photo du jour, tirée au hasard et toutes différentes.
-        const pages = computeSplit(photos.length, entry.split).length;
+        const pages = computeSplit(photos.length, split).length;
         const bg = bgIsEmpty(entry.bg) ? autoBgFromPhotos(photos, pages) : entry.bg;
-        days[i] = { ...entry, photos, bg };
+        days[i] = { ...entry, photos, bg, split };
         return { ...prev, days };
       });
       setDirty(true);
