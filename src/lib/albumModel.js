@@ -18,9 +18,9 @@ export function balancedSplit(total, pages) {
   return Array.from({ length: p }, (_, k) => base + (k < rem ? 1 : 0));
 }
 
-// Nombre de photos par page : choix manuel valide, sinon réparti équitablement.
+// Nombre de photos par page : choix manuel valide TOUJOURS prioritaire (aucune
+// limite par page) ; sinon répartition automatique à PHOTOS_PER_PAGE max.
 export function computeSplit(total, manual) {
-  if (total <= PHOTOS_PER_PAGE) return [total];
   if (
     Array.isArray(manual) &&
     manual.length &&
@@ -29,6 +29,7 @@ export function computeSplit(total, manual) {
   ) {
     return manual;
   }
+  if (total <= PHOTOS_PER_PAGE) return [total];
   return balancedSplit(total, Math.ceil(total / PHOTOS_PER_PAGE));
 }
 

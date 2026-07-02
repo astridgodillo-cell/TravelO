@@ -1089,6 +1089,24 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
     decosRef.current = items;
     beginDrag(e, { kind: 'deco', i, sx: items[i].xf, sy: items[i].yf });
   };
+  // Repères d'alignement : pendant un glissement, si le centre de l'élément
+  // arrive au niveau du centre de la page ou du centre d'un autre élément, une
+  // ligne rouge apparaît et l'élément s'aimante doucement dessus.
+  const [guides, setGuides] = useState(null); // { v: xf | null, h: yf | null }
+  const SNAP = 0.018; // distance (en fraction de page) d'aimantation
+  const snapTargets = (d) => {
+    const xs = [0.5];
+    const ys = [0.5];
+    if (d.kind === 'photo') {
+      (boxesRef.current || []).forEach((b, k) => { if (k !== d.i && b) { xs.push(b.xf); ys.push(b.yf); } });
+      (deco || []).forEach((it) => { xs.push(it.xf); ys.push(it.yf); });
+    } else {
+      (decosRef.current || []).forEach((it, k) => { if (k !== d.i && it) { xs.push(it.xf); ys.push(it.yf); } });
+      if (freeValid) free.forEach((b) => { xs.push(b.xf); ys.push(b.yf); });
+      else lay.cells.forEach((c) => { xs.push((c.x + c.w / 2) / lay.pageW); ys.push((c.y + c.h / 2) / lay.pageH); });
+    }
+    return { xs, ys };
+  };
   const onCanvasMove = (e) => {
     const d = drag.current;
     if (!d || !rootRef.current) return;
@@ -1102,8 +1120,17 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
     if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 6) return;
     d.moved = true;
     const r = rootRef.current.getBoundingClientRect();
-    const nxf = Math.min(1, Math.max(0, d.sx + (e.clientX - d.x) / r.width));
-    const nyf = Math.min(1, Math.max(0, d.sy + (e.clientY - d.y) / r.height));
+    let nxf = Math.min(1, Math.max(0, d.sx + (e.clientX - d.x) / r.width));
+    let nyf = Math.min(1, Math.max(0, d.sy + (e.clientY - d.y) / r.height));
+    // Aimantation sur le repère le plus proche (axe par axe).
+    const { xs, ys } = snapTargets(d);
+    let bestX = null;
+    for (const t of xs) { const dd = Math.abs(nxf - t); if (dd <= SNAP && (!bestX || dd < bestX.dd)) bestX = { t, dd }; }
+    let bestY = null;
+    for (const t of ys) { const dd = Math.abs(nyf - t); if (dd <= SNAP && (!bestY || dd < bestY.dd)) bestY = { t, dd }; }
+    if (bestX) nxf = bestX.t;
+    if (bestY) nyf = bestY.t;
+    setGuides(bestX || bestY ? { v: bestX ? bestX.t : null, h: bestY ? bestY.t : null } : null);
     if (d.kind === 'photo') {
       boxesRef.current[d.i] = { ...boxesRef.current[d.i], xf: nxf, yf: nyf };
       onFreeChange?.(boxesRef.current.map((b) => ({ ...b })));
@@ -1112,7 +1139,7 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
       onDecoChange?.(decosRef.current.map((x) => ({ ...x })));
     }
   };
-  const onCanvasUp = () => { clearHold(); drag.current = null; setTouchDragging(false); };
+  const onCanvasUp = () => { clearHold(); drag.current = null; setTouchDragging(false); setGuides(null); };
   const interactiveCells = interactive;
   const photoSel = (i) => selected && selected.kind === 'photo' && selected.i === i;
   const decoSel = (k) => selected && selected.kind === 'deco' && selected.i === k;
@@ -1202,6 +1229,15 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
           <DecoItemView it={it} />
         </div>
       ))}
+      {/* repères d'alignement (lignes rouges) pendant un glissement */}
+      {guides?.v != null && (
+        <div className="pointer-events-none absolute inset-y-0 z-20"
+          style={{ left: `calc(${guides.v * 100}% - 1px)`, width: '2px', backgroundColor: '#FF3355', boxShadow: '0 0 0 0.5px rgba(255,255,255,0.8)' }} />
+      )}
+      {guides?.h != null && (
+        <div className="pointer-events-none absolute inset-x-0 z-20"
+          style={{ top: `calc(${guides.h * 100}% - 1px)`, height: '2px', backgroundColor: '#FF3355', boxShadow: '0 0 0 0.5px rgba(255,255,255,0.8)' }} />
+      )}
     </div>
   );
 }
@@ -1839,6 +1875,24 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
     if (boxes) next[p] = boxes; else delete next[p];
     update({ freePages: next });
   };
+  // Verrouillage d'une page : quand la mise en page est terminée, on la fige
+  // pour ne plus rien déplacer par erreur. Déverrouillable à tout moment.
+  const lockedPages = entry.lockedPages || {};
+  const isLocked = (p) => !!lockedPages[p];
+  const toggleLock = (p) => {
+    setSel(null);
+    update({ lockedPages: { ...lockedPages, [p]: !lockedPages[p] } });
+  };
+  const lockBtn = (p) => (
+    <button
+      type="button"
+      onClick={() => toggleLock(p)}
+      className={`rounded-md px-2 py-0.5 text-[11px] font-semibold ${isLocked(p) ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+      title={isLocked(p) ? 'Page verrouillée : les photos ne peuvent plus bouger. Touche pour déverrouiller.' : 'Verrouiller cette page (fige la mise en page, évite les déplacements accidentels)'}
+    >
+      {isLocked(p) ? '🔒 Verrouillée' : '🔓 Verrouiller'}
+    </button>
+  );
   // Change le nombre de pages (réparti équitablement, toujours valide).
   const setPagesCount = (n) =>
     update({ split: balancedSplit(total, Math.max(1, Math.min(total, n))) });
@@ -2091,8 +2145,9 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
         }}
       />
 
-      {/* RÉPARTITION DES PHOTOS SUR LES PAGES (si plus de 6 photos) */}
-      {total > PHOTOS_PER_PAGE && (
+      {/* RÉPARTITION DES PHOTOS SUR LES PAGES (dès 2 photos ; aucun maximum
+          par page — l'automatique, lui, reste à 6 max par page) */}
+      {total >= 2 && (
         <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm font-medium text-slate-700">
@@ -2136,14 +2191,14 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
 
           <div className="mt-2 flex items-center justify-between gap-2">
             <p className="text-xs text-slate-400">
-              Modifier une case réajuste les autres pour garder {total} photos.
+              Mets le nombre que tu veux par page (aucune limite). Modifier une case réajuste les autres pour garder {total} photos.
             </p>
             <button
               type="button"
               onClick={() => update({ split: null })}
               className="text-xs font-medium text-brand-700 hover:underline"
             >
-              Répartition automatique
+              Répartition automatique (max {PHOTOS_PER_PAGE}/page)
             </button>
           </div>
         </div>
@@ -2284,6 +2339,15 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
               </span>
             );
           }
+          if (isLocked(p)) {
+            return (
+              <button key={p} type="button" onClick={() => toggleLock(p)}
+                className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-700 hover:bg-amber-100"
+                title="Page verrouillée par toi. Touche pour déverrouiller.">
+                {pageCount > 1 ? `Page ${p + 1}` : 'Cette page'} · 🔒
+              </button>
+            );
+          }
           return (
             <button
               key={p}
@@ -2304,30 +2368,34 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
         const visible = pageCount <= 1 ? [0] : [viewStart, viewStart + 1].filter((p) => p < pageCount);
         const mp = Math.min(mPage, pageCount - 1); // page affichée seule (mobile), bornée
         // Aperçu interactif d'une page, réutilisé sur mobile (1 page) et ordi (2 pages).
-        const renderPreview = (p) => (
-          <PagePreview
-            photos={chunks[p]}
-            format={format}
-            theme={theme}
-            title={entry.title}
-            note={entry.note}
-            firstPage={p === 0}
-            dayIndex={index}
-            location={day?.location}
-            unit={unit}
-            bg={entry.bg}
-            pageIndex={p}
-            pageCount={pageCount}
-            deco={entry.pageDeco?.[p]}
-            free={entry.freePages?.[p]}
-            width="100%"
-            interactive={coveredBy[p] < 0}
-            selected={sel && sel.p === p ? { kind: sel.kind, i: sel.i } : null}
-            onSelect={coveredBy[p] < 0 ? (kind, i) => setSel(i == null ? null : { p, kind, i }) : undefined}
-            onFreeChange={coveredBy[p] < 0 ? (boxes) => setPageFree(p, boxes) : undefined}
-            onDecoChange={coveredBy[p] < 0 ? (items) => update({ pageDeco: { ...(entry.pageDeco || {}), [p]: items } }) : undefined}
-          />
-        );
+        // Une page verrouillée redevient un simple aperçu (rien ne bouge).
+        const renderPreview = (p) => {
+          const editable = coveredBy[p] < 0 && !isLocked(p);
+          return (
+            <PagePreview
+              photos={chunks[p]}
+              format={format}
+              theme={theme}
+              title={entry.title}
+              note={entry.note}
+              firstPage={p === 0}
+              dayIndex={index}
+              location={day?.location}
+              unit={unit}
+              bg={entry.bg}
+              pageIndex={p}
+              pageCount={pageCount}
+              deco={entry.pageDeco?.[p]}
+              free={entry.freePages?.[p]}
+              width="100%"
+              interactive={editable}
+              selected={sel && sel.p === p ? { kind: sel.kind, i: sel.i } : null}
+              onSelect={editable ? (kind, i) => setSel(i == null ? null : { p, kind, i }) : undefined}
+              onFreeChange={editable ? (boxes) => setPageFree(p, boxes) : undefined}
+              onDecoChange={editable ? (items) => update({ pageDeco: { ...(entry.pageDeco || {}), [p]: items } }) : undefined}
+            />
+          );
+        };
         return (
           <>
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
@@ -2348,7 +2416,10 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
               </div>
             )}
             <div>{renderPreview(mp)}</div>
-            <span className="mt-1 block text-center text-[11px] text-slate-400">Page {mp + 1}</span>
+            <div className="mt-1 flex items-center justify-center gap-2">
+              <span className="text-[11px] text-slate-400">Page {mp + 1}</span>
+              {coveredBy[mp] < 0 && lockBtn(mp)}
+            </div>
           </div>
 
           {/* ORDINATEUR : double page côte à côte */}
@@ -2361,7 +2432,10 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
               {visible.map((p) => (
                 <div key={p} className="min-w-0">
                   {renderPreview(p)}
-                  <span className="mt-1 block text-center text-[11px] text-slate-400">Page {p + 1}</span>
+                  <div className="mt-1 flex items-center justify-center gap-2">
+                    <span className="text-[11px] text-slate-400">Page {p + 1}</span>
+                    {coveredBy[p] < 0 && lockBtn(p)}
+                  </div>
                 </div>
               ))}
               {visible.length === 1 && <div />}
@@ -2634,6 +2708,7 @@ export default function AlbumPage() {
           split: Array.isArray(s.split) ? s.split : null,
           pageDeco: s.pageDeco || {},
           freePages: s.freePages || {},
+          lockedPages: s.lockedPages || {},
         }));
       } else {
         daysArr = itDays.map((d, i) => {
@@ -2647,6 +2722,7 @@ export default function AlbumPage() {
             split: Array.isArray(s?.split) ? s.split : null,
             pageDeco: s?.pageDeco || {},
             freePages: s?.freePages || {},
+            lockedPages: s?.lockedPages || {},
           };
         });
       }
@@ -2688,7 +2764,7 @@ export default function AlbumPage() {
       setDirty(true);
       return {
         ...prev,
-        days: [...prev.days, { location: '', title: '', note: '', photos: [], bg: null, split: null, pageDeco: {}, freePages: {} }],
+        days: [...prev.days, { location: '', title: '', note: '', photos: [], bg: null, split: null, pageDeco: {}, freePages: {}, lockedPages: {} }],
       };
     });
   const removeDay = (i) =>
@@ -2711,7 +2787,7 @@ export default function AlbumPage() {
       const a = prev.days[i - 1];
       const b = prev.days[i];
       const note = [a.note, b.title, b.note].map((s) => (s || '').trim()).filter(Boolean).join('\n');
-      const merged = { ...a, photos: [...(a.photos || []), ...(b.photos || [])], note, split: null, pageDeco: {}, freePages: {} };
+      const merged = { ...a, photos: [...(a.photos || []), ...(b.photos || [])], note, split: null, pageDeco: {}, freePages: {}, lockedPages: {} };
       const days = prev.days.filter((_, k) => k !== i);
       days[i - 1] = merged;
       setDirty(true);
