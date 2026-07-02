@@ -570,8 +570,9 @@ export function EffectPicker({ photo, current, onChange, onClose }) {
                 onPointerMove={onPointerMove}
                 onPointerUp={onPointerUp}
                 onPointerCancel={onPointerUp}
+                onContextMenu={(e) => e.preventDefault()}
                 className="relative w-full cursor-move touch-none select-none overflow-hidden rounded-xl bg-slate-100"
-                style={{ aspectRatio: '4 / 3', containerType: 'size' }}
+                style={{ aspectRatio: '4 / 3', containerType: 'size', WebkitTouchCallout: 'none' }}
               >
                 <PhotoFill photo={previewPhoto} containerAr={4 / 3} radiusPx={10} />
               </div>
@@ -915,7 +916,8 @@ export function DecoEditor({ title, aspect, background, initialItems, onChange, 
           <div
             ref={canvasRef}
             className="relative mx-auto select-none touch-none overflow-hidden rounded-lg border border-slate-200 bg-slate-200"
-            style={{ aspectRatio: String(aspect), width: `min(100%, calc(44vh * ${aspect}))`, maxWidth: '100%', containerType: 'size' }}
+            style={{ aspectRatio: String(aspect), width: `min(100%, calc(44vh * ${aspect}))`, maxWidth: '100%', containerType: 'size', WebkitTouchCallout: 'none' }}
+            onContextMenu={(e) => e.preventDefault()}
             onPointerDown={() => setSel(null)}
             onPointerMove={pointerMove}
             onPointerUp={endDrag}
@@ -1049,6 +1051,8 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
         d.active = true;
         rootRef.current?.setPointerCapture?.(pid);
         setTouchDragging(true);
+        // Petite vibration : on SENT que la photo est prise et déplaçable.
+        try { navigator.vibrate?.(15); } catch { /* non supporté */ }
       }, HOLD_MS);
     } else {
       rootRef.current?.setPointerCapture?.(e.pointerId);
@@ -1120,8 +1124,12 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
       onPointerMove={interactiveCells ? onCanvasMove : undefined}
       onPointerUp={interactiveCells ? onCanvasUp : undefined}
       onPointerCancel={interactiveCells ? onCanvasUp : undefined}
+      // Sur la zone d'édition, on désactive le menu « copier/télécharger
+      // l'image » du navigateur (appui long) : sinon il s'ouvre pendant qu'on
+      // essaie de déplacer une photo au doigt.
+      onContextMenu={interactive ? (e) => e.preventDefault() : undefined}
       className={`relative overflow-hidden rounded-lg border border-slate-200 shadow-sm ${interactive ? 'select-none' : ''}`}
-      style={{ width, maxWidth: '100%', aspectRatio: String(lay.pageW / lay.pageH), containerType: 'size', touchAction: interactive ? (touchDragging ? 'none' : 'pan-y') : undefined, ...baseStyle }}
+      style={{ width, maxWidth: '100%', aspectRatio: String(lay.pageW / lay.pageH), containerType: 'size', touchAction: interactive ? (touchDragging ? 'none' : 'pan-y') : undefined, ...(interactive ? { WebkitTouchCallout: 'none', WebkitUserSelect: 'none' } : {}), ...baseStyle }}
     >
       {spec.type === 'photo' && (spec.photo?.display || spec.photo?.full) && (
         <>
@@ -1496,6 +1504,8 @@ export function PhotoSortModal({ photos, onChange, onClose, unit = 'jour' }) {
   const activate = (k, el, pid) => {
     dragKRef.current = k; setDragK(k);
     try { el?.setPointerCapture?.(pid); } catch { /* ignore */ }
+    // Petite vibration : on SENT que la photo est prise et déplaçable.
+    try { navigator.vibrate?.(15); } catch { /* non supporté */ }
   };
   const onTileDown = (e, k) => {
     const el = e.currentTarget;
@@ -1621,7 +1631,8 @@ export function PhotoSortModal({ photos, onChange, onClose, unit = 'jour' }) {
                 onPointerMove={onTileMove}
                 onPointerUp={onTileUp}
                 onPointerCancel={onTileCancel}
-                style={{ touchAction: dragK === it.k ? 'none' : 'pan-y' }}
+                onContextMenu={(e) => e.preventDefault()}
+                style={{ touchAction: dragK === it.k ? 'none' : 'pan-y', WebkitTouchCallout: 'none', WebkitUserSelect: 'none' }}
                 className={`relative select-none overflow-hidden rounded-xl border-2 bg-slate-800 transition-transform ${dragK === it.k ? 'z-10 scale-95 border-coral-400 opacity-80 shadow-2xl' : 'border-transparent'}`}
               >
                 <div className="aspect-[3/4] w-full" style={{ containerType: 'size' }}>
