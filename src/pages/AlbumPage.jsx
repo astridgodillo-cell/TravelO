@@ -849,8 +849,25 @@ function DecoItemControls({ item, onChange, onRemove, onResetScale, onResetRot, 
           <span>Taille</span>
           {onResetScale && <button type="button" onClick={onResetScale} className="text-coral-600 hover:text-coral-700" title="Revenir à la taille initiale">↺ initiale</button>}
         </div>
-        <input type="range" min="0.05" max={item.kind === 'photo' ? '1.3' : '0.6'} step="0.01" value={item.scale}
-          onChange={(e) => onChange({ scale: parseFloat(e.target.value) })} className="w-full" />
+        {/* Curseur + boutons −/+ : les boutons donnent un réglage fin, plus
+            facile au doigt sur téléphone que le curseur. */}
+        {(() => {
+          const maxS = item.kind === 'photo' ? 1.3 : 0.6;
+          const step = item.kind === 'photo' ? 0.02 : 0.01;
+          const setScale = (v) => onChange({ scale: Math.min(maxS, Math.max(0.05, v)) });
+          return (
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={() => setScale((item.scale || 0.05) - step)}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-base font-bold text-slate-700 active:bg-slate-100"
+                title="Réduire un peu">−</button>
+              <input type="range" min="0.05" max={String(maxS)} step="0.01" value={item.scale}
+                onChange={(e) => onChange({ scale: parseFloat(e.target.value) })} className="w-full flex-1" />
+              <button type="button" onClick={() => setScale((item.scale || 0.05) + step)}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-base font-bold text-slate-700 active:bg-slate-100"
+                title="Agrandir un peu">+</button>
+            </div>
+          );
+        })()}
       </div>
       <div className="text-xs text-slate-600">
         <div className="flex items-center justify-between">
