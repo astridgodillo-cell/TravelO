@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { pdf } from '@react-pdf/renderer';
 import {
@@ -691,6 +691,11 @@ function MapSection({ map, onChange }) {
   const stops = map?.stops || [];
   const [dragIndex, setDragIndex] = useState(null);
   const [overIndex, setOverIndex] = useState(null);
+  // Aperçu de la carte en direct : image redessinée automatiquement quelques
+  // instants après chaque changement (étapes, pays, transports).
+  const [preview, setPreview] = useState(null);
+  const [previewBusy, setPreviewBusy] = useState(false);
+  const previewSeq = useRef(0);
   const setStops = (s) => onChange({ ...map, stops: s, enabled });
   const setCountry = (country) => onChange({ ...map, country, enabled, stops });
   // Oublie les coordonnées mémorisées → la carte les recalcule (utile après
@@ -702,6 +707,47 @@ function MapSection({ map, onChange }) {
     next[i] = { ...next[i], transport };
     setStops(next);
   };
+
+  // Aperçu automatique : ~1 s après la dernière modification, on place les
+  // étapes qui n'ont pas encore de position (géocodage, mémorisé) puis on
+  // dessine la carte — même rendu que dans le fichier final.
+  const sig = JSON.stringify((stops || []).map((s) => [s.name, s.country, s.transport, s.lat, s.lng])) + '|' + (map?.country || '') + (enabled ? '1' : '0');
+  useEffect(() => {
+    if (!enabled) return undefined;
+    if (!stops.some((s) => s.name?.trim())) { setPreview(null); return undefined; }
+    const seq = ++previewSeq.current;
+    const timer = setTimeout(async () => {
+      setPreviewBusy(true);
+      try {
+        const resolved = [];
+        let changed = false;
+        for (const s of stops) {
+          if (!s.name?.trim() || (s.lat && s.lng)) { resolved.push(s); continue; }
+          const c = await geocode(s.name, s.country || map?.country);
+          if (seq !== previewSeq.current) return; // une saisie plus récente a repris la main
+          if (c) { resolved.push({ ...s, ...c }); changed = true; }
+          else resolved.push(s);
+        }
+        if (changed) setStops(resolved); // positions mémorisées (pas de re-géocodage ensuite)
+        const placed = resolved.filter((s) => s.name?.trim() && s.lat && s.lng);
+        if (placed.length) {
+          const img = await renderRouteMapImage(placed.map((s) => ({ lat: s.lat, lng: s.lng })), {
+            width: 900,
+            height: 620,
+            accent: '#C8643C',
+            transports: placed.slice(0, -1).map((s) => s.transport || null),
+          });
+          if (seq === previewSeq.current) setPreview(img);
+        } else if (seq === previewSeq.current) {
+          setPreview(null);
+        }
+      } finally {
+        if (seq === previewSeq.current) setPreviewBusy(false);
+      }
+    }, 1000);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sig]);
 
   const moveStop = (from, to) => {
     if (from == null || to == null || from === to) return;
@@ -832,6 +878,26 @@ function MapSection({ map, onChange }) {
             className="mt-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
             ➕ Ajouter une étape
           </button>
+
+          {/* APERÇU EN DIRECT : même dessin que dans le fichier final */}
+          {(preview || previewBusy) && (
+            <div className="mt-4">
+              <div className="mb-1.5 flex items-center gap-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Aperçu de la carte</p>
+                {previewBusy && <Spinner className="h-3.5 w-3.5" />}
+              </div>
+              <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
+                {preview ? (
+                  <img src={preview} alt="Aperçu de la carte du voyage" className={`block w-full ${previewBusy ? 'opacity-60' : ''}`} />
+                ) : (
+                  <div className="flex h-40 items-center justify-center text-sm text-slate-500">Placement des étapes…</div>
+                )}
+              </div>
+              <p className="mt-1 text-[11px] text-slate-400">
+                L'aperçu se met à jour tout seul, environ une seconde après tes changements (étapes, pays, transports).
+              </p>
+            </div>
+          )}
         </div>
       )}
     </section>
