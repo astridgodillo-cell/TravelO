@@ -874,8 +874,18 @@ function DecoItemControls({ item, onChange, onRemove, onResetScale, onResetRot, 
           <span>Rotation {item.rot ? `(${item.rot}°)` : '(0°)'}</span>
           {onResetRot && <button type="button" onClick={onResetRot} className="text-coral-600 hover:text-coral-700" title="Remettre droit">↺ initiale</button>}
         </div>
-        <input type="range" min="-180" max="180" step="1" value={item.rot}
-          onChange={(e) => { const v = parseInt(e.target.value, 10); onChange({ rot: Math.abs(v) <= 3 ? 0 : v }); }} className="w-full" />
+        {/* Curseur (rapide, aimanté à 0°) + boutons −/+ degré par degré (précis).
+            Les boutons n'aimantent pas : on peut poser exactement 1°, 2°… */}
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={() => onChange({ rot: Math.max(-180, (item.rot || 0) - 1) })}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-base font-bold text-slate-700 active:bg-slate-100"
+            title="Tourner de 1° vers la gauche">−</button>
+          <input type="range" min="-180" max="180" step="1" value={item.rot}
+            onChange={(e) => { const v = parseInt(e.target.value, 10); onChange({ rot: Math.abs(v) <= 3 ? 0 : v }); }} className="w-full flex-1" />
+          <button type="button" onClick={() => onChange({ rot: Math.min(180, (item.rot || 0) + 1) })}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-base font-bold text-slate-700 active:bg-slate-100"
+            title="Tourner de 1° vers la droite">+</button>
+        </div>
       </div>
     </div>
   );
