@@ -401,6 +401,20 @@ export function getPhotoEffect(id) {
   return PHOTO_EFFECTS.find((e) => e.id === id) || PHOTO_EFFECTS[0];
 }
 
+// Modes de transport proposés entre deux étapes de la carte du voyage.
+// `dash: true` → trait en pointillés (liaisons aériennes/maritimes).
+export const MAP_TRANSPORTS = [
+  { id: 'avion', emoji: '✈️', label: 'Avion', dash: true },
+  { id: 'voiture', emoji: '🚗', label: 'Voiture' },
+  { id: 'train', emoji: '🚆', label: 'Train' },
+  { id: 'bus', emoji: '🚌', label: 'Bus' },
+  { id: 'bateau', emoji: '⛵', label: 'Bateau', dash: true },
+  { id: 'velo', emoji: '🚲', label: 'Vélo' },
+  { id: 'marche', emoji: '🚶', label: 'À pied' },
+  { id: 'scooter', emoji: '🛵', label: 'Scooter' },
+];
+export const getMapTransport = (id) => MAP_TRANSPORTS.find((t) => t.id === id) || null;
+
 // Cadrage d'une photo DANS sa case : point de mire (fx,fy ∈ 0..1) + zoom
 // (fz ≥ 1). Permet de choisir la zone visible quand la photo est rognée
 // (« cover ») ou découpée par un cadre/forme. Valeurs par défaut = centre.

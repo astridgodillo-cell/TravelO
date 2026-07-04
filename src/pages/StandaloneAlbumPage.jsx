@@ -12,7 +12,7 @@ import AlbumPdfDoc from '../components/AlbumPdfDoc';
 import PdfPagesPreview from '../components/PdfPagesPreview';
 import { pdfBlobToImageFiles } from '../lib/pdfToImages';
 import { DayCard, CoverPicker, ThemePicker, Spinner, CoversSection, FormatPicker, ShareSheet } from './AlbumPage';
-import { FORMAT_LABELS, normalizeBg, bakePhotoEffects, getTheme, unitLabel, splitPhotos, computeSplit, bgIsEmpty, autoBgFromPhotos, formatDateRange } from '../lib/albumModel';
+import { FORMAT_LABELS, normalizeBg, bakePhotoEffects, getTheme, unitLabel, splitPhotos, computeSplit, bgIsEmpty, autoBgFromPhotos, formatDateRange, MAP_TRANSPORTS } from '../lib/albumModel';
 
 const emptyDay = () => ({ title: '', note: '', photos: [], bg: null, split: null });
 
@@ -274,13 +274,16 @@ export default function StandaloneAlbumPage() {
     const stops = [];
     if (album.map?.enabled) {
       const points = [];
+      const placedTransports = []; // transport au départ de chaque étape placée
       const updatedStops = [];
       for (const s of album.map.stops || []) {
         if (!s.name?.trim()) continue;
-        let coords = s.lat && s.lng ? { lat: s.lat, lng: s.lng } : await geocode(s.name, album.map?.country);
+        // Le pays de l'étape (voyages multi-pays) prime sur le pays principal.
+        let coords = s.lat && s.lng ? { lat: s.lat, lng: s.lng } : await geocode(s.name, s.country || album.map?.country);
         updatedStops.push({ ...s, ...(coords || {}) });
         if (coords) {
           points.push(coords);
+          placedTransports.push(s.transport || null);
           stops.push(s.name);
         }
       }
@@ -292,7 +295,12 @@ export default function StandaloneAlbumPage() {
             : format === 'a4portrait' ? { width: 1100, height: 1500 }
               : { width: 1400, height: 1320 };
         try {
-          routeMap = await renderRouteMapImage(points, { ...mapDims, accent: '#C8643C' });
+          routeMap = await renderRouteMapImage(points, {
+            ...mapDims,
+            accent: '#C8643C',
+            // trajets étape i → i+1 : le transport mémorisé sur l'étape de départ
+            transports: placedTransports.slice(0, -1),
+          });
         } catch { routeMap = null; }
       }
     }
@@ -686,8 +694,14 @@ function MapSection({ map, onChange }) {
   const setStops = (s) => onChange({ ...map, stops: s, enabled });
   const setCountry = (country) => onChange({ ...map, country, enabled, stops });
   // Oublie les coordonnées mémorisées → la carte les recalcule (utile après
-  // avoir renseigné/corrigé le pays).
-  const recomputePositions = () => setStops(stops.map((s) => ({ name: s.name })));
+  // avoir renseigné/corrigé le pays). On garde pays/transport de chaque étape.
+  const recomputePositions = () => setStops(stops.map((s) => ({ name: s.name, country: s.country, transport: s.transport })));
+  // Transport du trajet étape i → étape i+1 (mémorisé sur l'étape de départ).
+  const setStopTransport = (i, transport) => {
+    const next = [...stops];
+    next[i] = { ...next[i], transport };
+    setStops(next);
+  };
 
   const moveStop = (from, to) => {
     if (from == null || to == null || from === to) return;
@@ -706,14 +720,14 @@ function MapSection({ map, onChange }) {
       {enabled && (
         <div className="mt-3">
           <p className="text-sm text-slate-600">
-            Liste les villes/étapes, dans l'ordre. Utilise les flèches ▲▼ (ou glisse la poignée ⠿ sur ordinateur) pour les réordonner. La carte se dessine toute seule.
+            Liste les villes/étapes, dans l'ordre. Utilise les flèches ▲▼ (ou glisse la poignée ⠿ sur ordinateur) pour les réordonner. Entre deux étapes, choisis le moyen de transport : il apparaîtra sur le trait de la carte. La carte se dessine toute seule.
           </p>
 
           {/* Pays : fiabilise le placement des villes (ex. plusieurs « Ella »
               dans le monde). */}
           <div className="mt-3 flex flex-wrap items-end gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
             <label className="flex-1 text-xs font-medium text-slate-600">
-              Pays du voyage (recommandé)
+              Pays principal du voyage (recommandé)
               <input
                 value={map?.country || ''}
                 onChange={(e) => setCountry(e.target.value)}
@@ -727,14 +741,14 @@ function MapSection({ map, onChange }) {
               ↻ Recalculer les positions
             </button>
             <p className="w-full text-[11px] text-slate-500">
-              Renseigne le pays pour que les villes soient bien placées, puis « ↻ Recalculer » et refais le fichier.
+              Renseigne le pays pour que les villes soient bien placées, puis « ↻ Recalculer » et refais le fichier. Voyage dans plusieurs pays ? Tu peux préciser un pays différent sur chaque étape (case « Pays »).
             </p>
           </div>
 
           <div className="mt-2 space-y-2">
             {stops.map((s, i) => (
+              <div key={i}>
               <div
-                key={i}
                 onDragOver={(e) => {
                   e.preventDefault();
                   if (overIndex !== i) setOverIndex(i);
@@ -771,14 +785,46 @@ function MapSection({ map, onChange }) {
                   value={s.name || ''}
                   onChange={(e) => {
                     const next = [...stops];
-                    next[i] = { name: e.target.value }; // on oublie d'anciennes coords si le nom change
+                    // on oublie d'anciennes coords si le nom change (pays et transport conservés)
+                    next[i] = { name: e.target.value, country: s.country, transport: s.transport };
                     setStops(next);
                   }}
                   placeholder="Ex : Paris"
                   className="min-w-0 flex-1 rounded-md border border-slate-300 px-2 py-1 text-sm"
                 />
+                <input
+                  value={s.country || ''}
+                  onChange={(e) => {
+                    const next = [...stops];
+                    // pays modifié → coords oubliées (repositionnement au prochain fichier)
+                    next[i] = { name: s.name, country: e.target.value, transport: s.transport };
+                    setStops(next);
+                  }}
+                  placeholder="Pays"
+                  title="Pays de cette étape (utile si le voyage traverse plusieurs pays)"
+                  className="w-24 shrink-0 rounded-md border border-slate-300 px-2 py-1 text-sm sm:w-32"
+                />
                 <button type="button" onClick={() => setStops(stops.filter((_, k) => k !== i))}
                   className="text-slate-400 hover:text-red-600" title="Retirer">✕</button>
+              </div>
+              {/* Trajet vers l'étape suivante : choix du transport (affiché au
+                  milieu du trait sur la carte). Re-toucher = désélectionner. */}
+              {i < stops.length - 1 && (
+                <div className="ml-14 mt-1 flex flex-wrap items-center gap-1">
+                  <span className="mr-1 text-[11px] text-slate-400">↓ trajet :</span>
+                  {MAP_TRANSPORTS.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setStopTransport(i, s.transport === t.id ? null : t.id)}
+                      className={`flex h-7 w-7 items-center justify-center rounded-md border text-sm ${s.transport === t.id ? 'border-coral-400 bg-coral-100' : 'border-transparent bg-slate-100 hover:bg-slate-200'}`}
+                      title={t.label}
+                    >
+                      {t.emoji}
+                    </button>
+                  ))}
+                </div>
+              )}
               </div>
             ))}
           </div>

@@ -4,6 +4,7 @@
 // On assemble les tuiles sur un <canvas>, puis on dessine le tracé + les
 // marqueurs numérotés, et on exporte en PNG.
 import { getTileUrl } from './mapTiles';
+import { getMapTransport } from './albumModel';
 
 const TILE = 256; // les tuiles de l'app sont en 256px (Leaflet par défaut)
 
@@ -90,17 +91,52 @@ export async function renderRouteMapImage(points, opts = {}) {
     y: latToY(p.lat, zoom) * TILE - topLeftY,
   }));
 
-  // Tracé reliant les étapes
+  // Tracé reliant les étapes : chaque segment est une COURBE douce (léger arc)
+  // — pointillés pour les liaisons aériennes/maritimes. `opts.transports[i]`
+  // est le mode de transport du trajet étape i → étape i+1.
+  const transports = Array.isArray(opts.transports) ? opts.transports : [];
+  // Point de contrôle (arc) et milieu de la courbe d'un segment.
+  const segGeom = (a, b) => {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.hypot(dx, dy);
+    const bow = Math.min(len * 0.16, 55); // courbure douce, bornée
+    const cx = (a.x + b.x) / 2 - (dy / (len || 1)) * bow;
+    const cy = (a.y + b.y) / 2 + (dx / (len || 1)) * bow;
+    // milieu de la courbe quadratique (t = 0,5)
+    const mx = 0.25 * a.x + 0.5 * cx + 0.25 * b.x;
+    const my = 0.25 * a.y + 0.5 * cy + 0.25 * b.y;
+    return { cx, cy, mx, my, len };
+  };
   if (proj.length > 1) {
-    ctx.strokeStyle = accent;
-    ctx.lineWidth = 4;
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
-    ctx.globalAlpha = 0.85;
-    ctx.beginPath();
-    proj.forEach((pt, i) => (i ? ctx.lineTo(pt.x, pt.y) : ctx.moveTo(pt.x, pt.y)));
-    ctx.stroke();
-    ctx.globalAlpha = 1;
+    for (let i = 0; i < proj.length - 1; i += 1) {
+      const a = proj[i];
+      const b = proj[i + 1];
+      const t = getMapTransport(transports[i]);
+      const g = segGeom(a, b);
+      // léger halo blanc sous le trait → lisible sur tout fond de carte
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.quadraticCurveTo(g.cx, g.cy, b.x, b.y);
+      ctx.setLineDash([]);
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.lineWidth = 7;
+      ctx.globalAlpha = 0.7;
+      ctx.stroke();
+      // trait principal
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.quadraticCurveTo(g.cx, g.cy, b.x, b.y);
+      ctx.setLineDash(t?.dash ? [11, 9] : []);
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 4;
+      ctx.globalAlpha = 0.9;
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+    }
   }
 
   // Marqueurs numérotés
@@ -118,6 +154,29 @@ export async function renderRouteMapImage(points, opts = {}) {
     ctx.textBaseline = 'middle';
     ctx.fillText(String(i + 1), pt.x, pt.y + 0.5);
   });
+
+  // Pastilles transport : au MILIEU de chaque trajet, un rond blanc avec
+  // l'emoji du mode de transport choisi (dessinées après les marqueurs pour
+  // rester bien visibles).
+  if (proj.length > 1) {
+    for (let i = 0; i < proj.length - 1; i += 1) {
+      const t = getMapTransport(transports[i]);
+      if (!t) continue;
+      const g = segGeom(proj[i], proj[i + 1]);
+      if (g.len < 30) continue; // trajet minuscule : pas la place
+      ctx.beginPath();
+      ctx.arc(g.mx, g.my, 16, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = accent;
+      ctx.stroke();
+      ctx.font = '18px "Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(t.emoji, g.mx, g.my + 1);
+    }
+  }
 
   try {
     return canvas.toDataURL('image/png');
