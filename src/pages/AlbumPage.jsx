@@ -1557,7 +1557,7 @@ function PageCountInput({ value, min = 1, max, onCommit }) {
 // Mode « Trier en grand » : plein écran, photos en grand pour comparer les
 // détails (utile quand on a des doublons), suppression rapide, réorganisation
 // par glisser-déposer, et appui sur une photo pour l'ouvrir en plein écran.
-export function PhotoSortModal({ photos, onChange, onClose, unit = 'jour', frozenCount = 0 }) {
+export function PhotoSortModal({ photos, onChange, onClose, unit = 'jour', frozenFlags = [] }) {
   const keyer = useRef(0);
   const [list, setList] = useState(() => photos.map((p) => ({ p, k: keyer.current++ })));
   const listRef = useRef(list);
@@ -1589,11 +1589,16 @@ export function PhotoSortModal({ photos, onChange, onClose, unit = 'jour', froze
     document.addEventListener('touchmove', onTouchMove, { passive: false });
     return () => document.removeEventListener('touchmove', onTouchMove);
   }, []);
-  // Une photo « figée » (page verrouillée) peut être regardée en grand mais ni
-  // déplacée ni supprimée.
+  // Photos « figées » (pages verrouillées) : visibles en grand, mais ni
+  // déplaçables ni supprimables. `flags[i]` suit la POSITION i dans la liste :
+  // les photos figées ne bougent jamais, et les libres ne permutent qu'entre
+  // deux positions sans photo figée entre elles → chaque page verrouillée
+  // garde exactement ses photos.
+  const flags = useRef([...(frozenFlags || [])]);
+  const frozenAt = (idx) => !!flags.current[idx];
   const isFrozen = (k) => {
     const idx = listRef.current.findIndex((x) => x.k === k);
-    return idx >= 0 && idx < frozenCount;
+    return idx >= 0 && frozenAt(idx);
   };
   const onTileDown = (e, k) => {
     const el = e.currentTarget;
@@ -1623,7 +1628,11 @@ export function PhotoSortModal({ photos, onChange, onClose, unit = 'jour', froze
       const from = cur.findIndex((x) => x.k === dragKRef.current);
       const to = cur.findIndex((x) => x.k === targetK);
       if (from < 0 || to < 0 || from === to) return cur;
-      if (to < frozenCount) return cur; // on ne dépose pas dans la zone verrouillée
+      // Interdit : déposer sur une position figée, ou passer PAR-DESSUS une
+      // photo figée (ça changerait le contenu d'une page verrouillée).
+      const lo = Math.min(from, to);
+      const hi = Math.max(from, to);
+      for (let i = lo; i <= hi; i += 1) if (frozenAt(i)) return cur;
       const next = [...cur];
       const [it] = next.splice(from, 1);
       next.splice(to, 0, it);
@@ -1668,7 +1677,8 @@ export function PhotoSortModal({ photos, onChange, onClose, unit = 'jour', froze
     pending.current = null;
   };
   const removeAt = (idx) => {
-    if (idx < frozenCount) return; // photo d'une page verrouillée : intouchable
+    if (frozenAt(idx)) return; // photo d'une page verrouillée : intouchable
+    flags.current = flags.current.filter((_, i) => i !== idx);
     const next = listRef.current.filter((_, i) => i !== idx);
     setList(next);
     onChange(next.map((x) => x.p));
@@ -1733,7 +1743,7 @@ export function PhotoSortModal({ photos, onChange, onClose, unit = 'jour', froze
                 {isLowRes(it.p) && (
                   <span className="pointer-events-none absolute left-1/2 top-1.5 -translate-x-1/2 rounded-md bg-amber-500/90 px-1.5 py-0.5 text-[9px] font-semibold text-white">⚠︎ petite</span>
                 )}
-                {i < frozenCount ? (
+                {frozenAt(i) ? (
                   <span className="pointer-events-none absolute right-1.5 top-1.5 rounded-full bg-amber-500/90 px-2 py-1 text-[10px] font-bold text-white">🔒</span>
                 ) : (
                   <button
@@ -1747,7 +1757,7 @@ export function PhotoSortModal({ photos, onChange, onClose, unit = 'jour', froze
                   </button>
                 )}
                 <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 to-transparent px-2 pb-1.5 pt-4 text-center text-[10px] font-medium text-white/85">
-                  {i < frozenCount ? '🔒 page verrouillée · 👆 agrandir' : '👆 agrandir · ⣿ glisser'}
+                  {frozenAt(i) ? '🔒 page verrouillée · 👆 agrandir' : '👆 agrandir · ⣿ glisser'}
                 </span>
               </div>
             ))}
@@ -1782,7 +1792,7 @@ export function PhotoSortModal({ photos, onChange, onClose, unit = 'jour', froze
             )}
           </div>
           <div className="flex shrink-0 items-center justify-center gap-3 px-4 py-3">
-            {zoom < frozenCount ? (
+            {frozenAt(zoom) ? (
               <span className="rounded-xl bg-amber-500/20 px-5 py-2.5 text-sm font-semibold text-amber-300">🔒 Photo sur une page verrouillée</span>
             ) : (
               <button
@@ -1945,37 +1955,59 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
     </button>
   ) : null);
   // Change le nombre de pages (réparti équitablement, toujours valide).
-  // Les photos sont réparties EN SÉQUENCE : changer le nombre d'une page décale
-  // les photos de toutes les pages suivantes. Donc pour vraiment protéger une
-  // page verrouillée, on fige tout ce qui va jusqu'à la DERNIÈRE page
-  // verrouillée. Seules les pages APRÈS peuvent être réajustées.
-  const lastLocked = splitCounts.reduce((m, _c, k) => (isLocked(k) ? k : m), -1);
-  const frozenCount = lastLocked + 1;                 // nb de pages figées (au début)
-  const frozenSum = splitCounts.slice(0, frozenCount).reduce((a, b) => a + b, 0);
-  const freePhotos = total - frozenSum;               // photos réajustables (pages libres)
-
-  // Change le nombre de PAGES : on garde les pages figées, on répartit le reste
-  // des photos sur le nombre de pages libres demandé.
-  const setPagesCount = (n) => {
-    if (freePhotos <= 0) return; // tout est verrouillé jusqu'à la fin
-    const freePages = Math.max(1, Math.min(freePhotos, n - frozenCount));
-    const rest = balancedSplit(freePhotos, freePages);
-    update({ split: [...splitCounts.slice(0, frozenCount), ...rest] });
+  // Verrouillage PAR PAGE : chaque page verrouillée garde EXACTEMENT ses
+  // photos. Comme les photos sont réparties en séquence, la règle est : aucune
+  // photo ne traverse jamais une page verrouillée. Les réglages n'agissent
+  // qu'à l'intérieur d'un « segment » (suite de pages contiguës non
+  // verrouillées) — les autres pages, verrouillées ou non, ne bougent pas.
+  const lockedAny = splitCounts.some((_c, k) => isLocked(k));
+  const pageOfIdx = (gi) => {
+    let acc = 0;
+    for (let k = 0; k < splitCounts.length; k += 1) {
+      acc += splitCounts[k];
+      if (gi < acc) return k;
+    }
+    return splitCounts.length - 1;
   };
-  // Fixe le nombre de photos d'une page LIBRE : les autres pages libres sont
-  // réajustées ; les pages figées (verrou) ne bougent pas.
+  const isFrozenPhoto = (gi) => isLocked(pageOfIdx(gi));
+  // Segment de pages non verrouillées contiguës contenant la page p.
+  const segmentOf = (p) => {
+    if (isLocked(p)) return null;
+    let a = p; while (a > 0 && !isLocked(a - 1)) a -= 1;
+    let b = p; while (b < splitCounts.length - 1 && !isLocked(b + 1)) b += 1;
+    return { from: a, to: b };
+  };
+  const segTotalOf = (seg) => splitCounts.slice(seg.from, seg.to + 1).reduce((a, b) => a + b, 0);
+  // Segment libre EN FIN de journée : c'est là qu'on peut ajouter/retirer des
+  // pages sans jamais décaler une page verrouillée.
+  const lastSeg = isLocked(splitCounts.length - 1) ? null : segmentOf(splitCounts.length - 1);
+  const lastSegPages = lastSeg ? lastSeg.to - lastSeg.from + 1 : 0;
+  const lastSegTotal = lastSeg ? segTotalOf(lastSeg) : 0;
+
+  // Change le nombre de PAGES : n'agit que sur le dernier segment libre.
+  const setPagesCount = (n) => {
+    if (!lastSeg) return;
+    const want = Math.max(1, Math.min(lastSegTotal, lastSegPages + (n - pageCount)));
+    const rest = balancedSplit(lastSegTotal, want);
+    update({ split: [...splitCounts.slice(0, lastSeg.from), ...rest] });
+  };
+  // Fixe le nombre de photos d'une page : compensé par les AUTRES pages de son
+  // segment uniquement (le total du segment ne change pas → rien ne traverse
+  // les pages verrouillées).
   const setPageValue = (p, val) => {
-    if (p < frozenCount) return; // page figée : on n'y touche pas
-    const others = splitCounts.map((_c, k) => k).filter((k) => k >= frozenCount && k !== p);
-    const v = others.length === 0
-      ? freePhotos
-      : Math.max(1, Math.min(Number.isFinite(val) ? val : 1, freePhotos - others.length));
-    const rest = balancedSplit(freePhotos - v, others.length);
+    const seg = segmentOf(p);
+    if (!seg) return; // page verrouillée : intouchable
+    const others = [];
+    for (let k = seg.from; k <= seg.to; k += 1) if (k !== p) others.push(k);
+    if (!others.length) return; // seule page de son segment : total imposé
+    const segTotal = segTotalOf(seg);
+    const v = Math.max(1, Math.min(Number.isFinite(val) ? val : 1, segTotal - others.length));
+    const rest = balancedSplit(segTotal - v, others.length);
     let ri = 0;
     const arr = splitCounts.map((c, k) => {
-      if (k < frozenCount) return c;
       if (k === p) return v;
-      return rest[ri++];
+      if (k >= seg.from && k <= seg.to) return rest[ri++];
+      return c;
     });
     update({ split: arr });
   };
@@ -2047,26 +2079,21 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
     setSel({ p, kind: 'deco', i: items.length - 1 });
   };
 
-  // Une photo est « figée » si elle appartient à une page verrouillée (ou à une
-  // page avant la dernière verrouillée) : AUCUNE modification possible tant que
-  // la page n'est pas déverrouillée.
-  const isFrozenPhoto = (gi) => gi < frozenSum;
-  // Retire `count` photo(s) de la page contenant l'index global gi dans la
-  // répartition manuelle (sans toucher aux autres pages) ; les pages vidées
-  // disparaissent. Garde la répartition VALIDE → aucun recalcul automatique
-  // qui déplacerait les photos des pages verrouillées.
+  // Retire des photos (index d'ORIGINE) de leur page dans la répartition : les
+  // autres pages gardent exactement leurs photos. Les pages vidées disparaissent
+  // et les verrous sont renumérotés en conséquence. Retourne { split, lockedPages }.
   const splitAfterRemoval = (removedIdxs) => {
-    if (!Array.isArray(entry.split)) return entry.split;
     const counts = [...splitCounts];
-    for (const gi of removedIdxs) {
-      let acc = 0;
-      for (let k = 0; k < counts.length; k += 1) {
-        if (gi < acc + counts[k]) { counts[k] -= 1; break; }
-        acc += counts[k];
+    for (const gi of removedIdxs) counts[pageOfIdx(gi)] -= 1;
+    const nextCounts = [];
+    const nextLocked = {};
+    counts.forEach((c, k) => {
+      if (c > 0) {
+        if (lockedPages[k]) nextLocked[nextCounts.length] = true;
+        nextCounts.push(c);
       }
-    }
-    const next = counts.filter((c) => c > 0);
-    return next.length ? next : null;
+    });
+    return { split: nextCounts.length ? nextCounts : null, lockedPages: nextLocked };
   };
 
   function setPhotoCaption(pi, caption) {
@@ -2091,7 +2118,8 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
       alert('Cette photo est sur une page verrouillée 🔒. Déverrouille la page pour la modifier.');
       return;
     }
-    update({ photos: entry.photos.filter((_, i) => i !== pi), split: splitAfterRemoval([pi]) });
+    const adj = splitAfterRemoval([pi]);
+    update({ photos: entry.photos.filter((_, i) => i !== pi), split: adj.split, lockedPages: adj.lockedPages });
   }
   function movePhoto(pi, dir) {
     const ni = pi + dir;
@@ -2185,7 +2213,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
       {sortOpen && (
         <PhotoSortModal
           photos={entry.photos}
-          frozenCount={frozenSum}
+          frozenFlags={entry.photos.map((_p, gi) => isFrozenPhoto(gi))}
           onChange={(arr) => {
             // Les photos supprimées sont décomptées de LEUR page dans la
             // répartition manuelle → les autres pages (dont les verrouillées)
@@ -2193,7 +2221,12 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
             const removed = entry.photos
               .map((p, gi) => (arr.includes(p) ? -1 : gi))
               .filter((gi) => gi >= 0);
-            update({ photos: arr, split: removed.length ? splitAfterRemoval(removed) : entry.split });
+            if (removed.length) {
+              const adj = splitAfterRemoval(removed);
+              update({ photos: arr, split: adj.split, lockedPages: adj.lockedPages });
+            } else {
+              update({ photos: arr });
+            }
           }}
           onClose={() => setSortOpen(false)}
           unit={unit}
@@ -2217,8 +2250,8 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
               onRemove={() => removePhoto(pi)}
               onMoveLeft={() => movePhoto(pi, -1)}
               onMoveRight={() => movePhoto(pi, 1)}
-              canLeft={pi > frozenSum}
-              canRight={pi >= frozenSum && pi < entry.photos.length - 1}
+              canLeft={pi > 0 && !isFrozenPhoto(pi) && !isFrozenPhoto(pi - 1)}
+              canRight={pi < entry.photos.length - 1 && !isFrozenPhoto(pi) && !isFrozenPhoto(pi + 1)}
             />
           ))}
         </div>
@@ -2267,7 +2300,8 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
               <button
                 type="button"
                 onClick={() => setPagesCount(pageCount - 1)}
-                disabled={freePhotos <= 0 || pageCount <= frozenCount + 1}
+                disabled={!lastSeg || lastSegPages <= 1}
+                title={!lastSeg ? 'La dernière page est verrouillée : impossible de changer le nombre de pages.' : undefined}
                 className="h-6 w-6 rounded border border-slate-300 bg-white font-bold text-slate-700 disabled:opacity-40"
               >
                 −
@@ -2276,7 +2310,8 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
               <button
                 type="button"
                 onClick={() => setPagesCount(pageCount + 1)}
-                disabled={freePhotos <= 0 || pageCount >= frozenCount + freePhotos}
+                disabled={!lastSeg || lastSegPages >= lastSegTotal}
+                title={!lastSeg ? 'La dernière page est verrouillée : impossible de changer le nombre de pages.' : undefined}
                 className="h-6 w-6 rounded border border-slate-300 bg-white font-bold text-slate-700 disabled:opacity-40"
               >
                 +
@@ -2286,17 +2321,23 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
 
           <div className="mt-2 flex flex-wrap gap-3">
             {splitCounts.map((c, p) => {
-              const frozen = p < frozenCount;
+              const frozen = isLocked(p);
+              const seg = frozen ? null : segmentOf(p);
+              // Seule page de son segment (entourée de verrous) : total imposé.
+              const alone = seg && seg.from === seg.to;
               return (
                 <label key={p} className={`flex items-center gap-1.5 text-xs ${frozen ? 'text-amber-600' : 'text-slate-600'}`}>
                   Page {p + 1}{frozen ? ' 🔒' : ''}
-                  {frozen ? (
-                    <span className="w-14 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-center font-semibold text-amber-700">{c}</span>
+                  {frozen || alone ? (
+                    <span
+                      className={`w-14 rounded-md border px-2 py-1 text-center font-semibold ${frozen ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-slate-200 bg-slate-100 text-slate-500'}`}
+                      title={frozen ? 'Page verrouillée' : 'Cette page est entourée de pages verrouillées : son nombre de photos ne peut pas changer (rien ne doit traverser un verrou).'}
+                    >{c}</span>
                   ) : (
                     <PageCountInput
                       value={c}
                       min={1}
-                      max={freePhotos - (splitCounts.length - frozenCount - 1)}
+                      max={seg ? segTotalOf(seg) - (seg.to - seg.from) : c}
                       onCommit={(n) => setPageValue(p, n)}
                     />
                   )}
@@ -2307,21 +2348,16 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
 
           <div className="mt-2 flex items-center justify-between gap-2">
             <p className="text-xs text-slate-400">
-              {frozenCount > 0
-                ? `Les pages verrouillées (🔒) sont figées. Tu ajustes librement les autres.`
+              {lockedAny
+                ? 'Les pages 🔒 gardent exactement leurs photos. Tu ajustes les autres : les photos ne traversent jamais une page verrouillée.'
                 : 'Mets le nombre que tu veux par page (aucune limite). Modifier une case réajuste les autres pour garder les ' + total + ' photos.'}
             </p>
             <button
               type="button"
-              onClick={() => {
-                if (frozenCount > 0) {
-                  const rest = balancedSplit(freePhotos, Math.max(1, Math.ceil(freePhotos / PHOTOS_PER_PAGE)));
-                  update({ split: [...splitCounts.slice(0, frozenCount), ...rest] });
-                } else {
-                  update({ split: null });
-                }
-              }}
-              className="text-xs font-medium text-brand-700 hover:underline"
+              onClick={() => update({ split: null })}
+              disabled={lockedAny}
+              title={lockedAny ? 'Indisponible tant qu’une page est verrouillée (la redistribution déplacerait ses photos).' : undefined}
+              className="text-xs font-medium text-brand-700 hover:underline disabled:cursor-not-allowed disabled:opacity-40 disabled:no-underline"
             >
               Répartition automatique (max {PHOTOS_PER_PAGE}/page)
             </button>
@@ -2354,15 +2390,15 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
                   />
                   Un fond différent possible pour chaque page
                 </label>
-                <label className={`flex items-center gap-2 ${frozenCount > 0 ? 'opacity-40' : ''}`}>
+                <label className={`flex items-center gap-2 ${lockedAny ? 'opacity-40' : ''}`}>
                   <input
                     type="radio"
                     checked={bg.mode === 'spread'}
-                    disabled={frozenCount > 0}
+                    disabled={lockedAny}
                     onChange={() => setBg({ ...bg, mode: 'spread' })}
                   />
                   Une seule photo étirée sur les {pageCount} pages (panorama)
-                  {frozenCount > 0 ? ' — indisponible (page verrouillée)' : ''}
+                  {lockedAny ? ' — indisponible (page verrouillée)' : ''}
                 </label>
               </div>
             )}
