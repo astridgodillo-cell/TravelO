@@ -1379,13 +1379,13 @@ export function PageDecorateModal({
   );
 }
 
-function PhotoTile({ photo, onCaption, onRemove, onMoveLeft, onMoveRight, canLeft, canRight, onEffect, onDeco }) {
+function PhotoTile({ photo, onCaption, onRemove, onMoveLeft, onMoveRight, canLeft, canRight, onEffect, onDeco, locked = false }) {
   const [fxOpen, setFxOpen] = useState(false);
   const [decoOpen, setDecoOpen] = useState(false);
   const effect = getPhotoEffect(photo.effect);
   const deco = photo.deco || [];
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+    <div className={`overflow-hidden rounded-xl border bg-white ${locked ? 'border-amber-200' : 'border-slate-200'}`}>
       <div className="relative aspect-[4/3] bg-slate-100" style={{ containerType: 'size' }}>
         <PhotoFill photo={photo} containerAr={4 / 3} />
         {/* aperçu des décorations */}
@@ -1395,36 +1395,44 @@ function PhotoTile({ photo, onCaption, onRemove, onMoveLeft, onMoveRight, canLef
             <DecoItemView it={it} />
           </div>
         ))}
-        <button
-          type="button"
-          onClick={onRemove}
-          className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-white hover:bg-black/75"
-          title="Retirer cette photo"
-        >
-          ✕
-        </button>
-        <div className="absolute left-1.5 top-1.5 flex gap-1">
-          <button type="button" onClick={onMoveLeft} disabled={!canLeft}
-            className="flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-white hover:bg-black/75 disabled:opacity-30" title="Déplacer avant">‹</button>
-          <button type="button" onClick={onMoveRight} disabled={!canRight}
-            className="flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-white hover:bg-black/75 disabled:opacity-30" title="Déplacer après">›</button>
-        </div>
-        <button
-          type="button"
-          onClick={() => setFxOpen(true)}
-          className="absolute bottom-1.5 right-1.5 flex items-center gap-1 rounded-full bg-black/55 px-2 py-1 text-[10px] font-semibold text-white hover:bg-black/75"
-          title="Effet / filtre"
-        >
-          🎨 {effect.id === 'none' ? 'Effet' : effect.label}
-        </button>
-        <button
-          type="button"
-          onClick={() => setDecoOpen(true)}
-          className="absolute bottom-1.5 left-1.5 flex items-center gap-1 rounded-full bg-black/55 px-2 py-1 text-[10px] font-semibold text-white hover:bg-black/75"
-          title="Ajouter emojis / stickers / texte"
-        >
-          ✨ Décorer
-        </button>
+        {locked ? (
+          /* Photo d'une page verrouillée : aucune action possible. */
+          <span className="absolute right-1.5 top-1.5 rounded-full bg-amber-500/90 px-2 py-1 text-[10px] font-bold text-white"
+            title="Photo sur une page verrouillée : déverrouille la page pour la modifier.">🔒 page verrouillée</span>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={onRemove}
+              className="absolute right-1.5 top-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-white hover:bg-black/75"
+              title="Retirer cette photo"
+            >
+              ✕
+            </button>
+            <div className="absolute left-1.5 top-1.5 flex gap-1">
+              <button type="button" onClick={onMoveLeft} disabled={!canLeft}
+                className="flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-white hover:bg-black/75 disabled:opacity-30" title="Déplacer avant">‹</button>
+              <button type="button" onClick={onMoveRight} disabled={!canRight}
+                className="flex h-7 w-7 items-center justify-center rounded-full bg-black/55 text-white hover:bg-black/75 disabled:opacity-30" title="Déplacer après">›</button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setFxOpen(true)}
+              className="absolute bottom-1.5 right-1.5 flex items-center gap-1 rounded-full bg-black/55 px-2 py-1 text-[10px] font-semibold text-white hover:bg-black/75"
+              title="Effet / filtre"
+            >
+              🎨 {effect.id === 'none' ? 'Effet' : effect.label}
+            </button>
+            <button
+              type="button"
+              onClick={() => setDecoOpen(true)}
+              className="absolute bottom-1.5 left-1.5 flex items-center gap-1 rounded-full bg-black/55 px-2 py-1 text-[10px] font-semibold text-white hover:bg-black/75"
+              title="Ajouter emojis / stickers / texte"
+            >
+              ✨ Décorer
+            </button>
+          </>
+        )}
         {isLowRes(photo) && (
           <span className="absolute left-1/2 top-1.5 -translate-x-1/2 rounded-md bg-amber-500/90 px-2 py-0.5 text-[10px] font-semibold text-white"
             title="Photo un peu petite : risque de flou à l'impression en grand.">⚠︎ petite</span>
@@ -1434,12 +1442,13 @@ function PhotoTile({ photo, onCaption, onRemove, onMoveLeft, onMoveRight, canLef
         value={photo.caption || ''}
         onChange={(e) => onCaption(e.target.value)}
         placeholder="Légende sous la photo"
-        className="w-full border-t border-slate-100 px-2.5 py-2 text-xs text-slate-700 outline-none"
+        disabled={locked}
+        className="w-full border-t border-slate-100 px-2.5 py-2 text-xs text-slate-700 outline-none disabled:bg-amber-50/50 disabled:text-slate-400"
       />
-      {fxOpen && (
+      {fxOpen && !locked && (
         <EffectPicker photo={photo} current={effect.id} onChange={onEffect} onClose={() => setFxOpen(false)} />
       )}
-      {decoOpen && (
+      {decoOpen && !locked && (
         <DecorateModal photo={photo} onChange={onDeco} onClose={() => setDecoOpen(false)} />
       )}
     </div>
@@ -1521,7 +1530,7 @@ function PageCountInput({ value, min = 1, max, onCommit }) {
 // Mode « Trier en grand » : plein écran, photos en grand pour comparer les
 // détails (utile quand on a des doublons), suppression rapide, réorganisation
 // par glisser-déposer, et appui sur une photo pour l'ouvrir en plein écran.
-export function PhotoSortModal({ photos, onChange, onClose, unit = 'jour' }) {
+export function PhotoSortModal({ photos, onChange, onClose, unit = 'jour', frozenCount = 0 }) {
   const keyer = useRef(0);
   const [list, setList] = useState(() => photos.map((p) => ({ p, k: keyer.current++ })));
   const listRef = useRef(list);
@@ -1553,9 +1562,16 @@ export function PhotoSortModal({ photos, onChange, onClose, unit = 'jour' }) {
     document.addEventListener('touchmove', onTouchMove, { passive: false });
     return () => document.removeEventListener('touchmove', onTouchMove);
   }, []);
+  // Une photo « figée » (page verrouillée) peut être regardée en grand mais ni
+  // déplacée ni supprimée.
+  const isFrozen = (k) => {
+    const idx = listRef.current.findIndex((x) => x.k === k);
+    return idx >= 0 && idx < frozenCount;
+  };
   const onTileDown = (e, k) => {
     const el = e.currentTarget;
     pending.current = { k, x: e.clientX, y: e.clientY, el, pid: e.pointerId, touch: e.pointerType === 'touch', moved: false };
+    if (isFrozen(k)) return; // figée : appui = zoom seulement, pas de glissement
     if (e.pointerType === 'touch') {
       clearHold();
       const pid = e.pointerId;
@@ -1580,6 +1596,7 @@ export function PhotoSortModal({ photos, onChange, onClose, unit = 'jour' }) {
       const from = cur.findIndex((x) => x.k === dragKRef.current);
       const to = cur.findIndex((x) => x.k === targetK);
       if (from < 0 || to < 0 || from === to) return cur;
+      if (to < frozenCount) return cur; // on ne dépose pas dans la zone verrouillée
       const next = [...cur];
       const [it] = next.splice(from, 1);
       next.splice(to, 0, it);
@@ -1599,7 +1616,7 @@ export function PhotoSortModal({ photos, onChange, onClose, unit = 'jour' }) {
     if (p.touch) {
       // Le doigt bouge avant l'appui maintenu → c'est un défilement : on annule.
       if (dist > 10) { clearHold(); pending.current = null; }
-    } else if (dist > 6) {
+    } else if (dist > 6 && !isFrozen(p.k)) {
       activate(p.k, p.el, p.pid);
     }
   };
@@ -1624,6 +1641,7 @@ export function PhotoSortModal({ photos, onChange, onClose, unit = 'jour' }) {
     pending.current = null;
   };
   const removeAt = (idx) => {
+    if (idx < frozenCount) return; // photo d'une page verrouillée : intouchable
     const next = listRef.current.filter((_, i) => i !== idx);
     setList(next);
     onChange(next.map((x) => x.p));
@@ -1688,17 +1706,21 @@ export function PhotoSortModal({ photos, onChange, onClose, unit = 'jour' }) {
                 {isLowRes(it.p) && (
                   <span className="pointer-events-none absolute left-1/2 top-1.5 -translate-x-1/2 rounded-md bg-amber-500/90 px-1.5 py-0.5 text-[9px] font-semibold text-white">⚠︎ petite</span>
                 )}
-                <button
-                  type="button"
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={() => removeAt(i)}
-                  className="absolute right-1.5 top-1.5 flex h-9 w-9 items-center justify-center rounded-full bg-black/60 text-base text-white hover:bg-red-600"
-                  title="Supprimer cette photo"
-                >
-                  🗑
-                </button>
+                {i < frozenCount ? (
+                  <span className="pointer-events-none absolute right-1.5 top-1.5 rounded-full bg-amber-500/90 px-2 py-1 text-[10px] font-bold text-white">🔒</span>
+                ) : (
+                  <button
+                    type="button"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={() => removeAt(i)}
+                    className="absolute right-1.5 top-1.5 flex h-9 w-9 items-center justify-center rounded-full bg-black/60 text-base text-white hover:bg-red-600"
+                    title="Supprimer cette photo"
+                  >
+                    🗑
+                  </button>
+                )}
                 <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 to-transparent px-2 pb-1.5 pt-4 text-center text-[10px] font-medium text-white/85">
-                  👆 agrandir · ⣿ glisser
+                  {i < frozenCount ? '🔒 page verrouillée · 👆 agrandir' : '👆 agrandir · ⣿ glisser'}
                 </span>
               </div>
             ))}
@@ -1733,13 +1755,17 @@ export function PhotoSortModal({ photos, onChange, onClose, unit = 'jour' }) {
             )}
           </div>
           <div className="flex shrink-0 items-center justify-center gap-3 px-4 py-3">
-            <button
-              type="button"
-              onClick={() => removeAt(zoom)}
-              className="flex items-center gap-2 rounded-xl bg-red-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-red-700"
-            >
-              🗑 Supprimer cette photo
-            </button>
+            {zoom < frozenCount ? (
+              <span className="rounded-xl bg-amber-500/20 px-5 py-2.5 text-sm font-semibold text-amber-300">🔒 Photo sur une page verrouillée</span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => removeAt(zoom)}
+                className="flex items-center gap-2 rounded-xl bg-red-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-red-700"
+              >
+                🗑 Supprimer cette photo
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -1994,26 +2020,56 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
     setSel({ p, kind: 'deco', i: items.length - 1 });
   };
 
+  // Une photo est « figée » si elle appartient à une page verrouillée (ou à une
+  // page avant la dernière verrouillée) : AUCUNE modification possible tant que
+  // la page n'est pas déverrouillée.
+  const isFrozenPhoto = (gi) => gi < frozenSum;
+  // Retire `count` photo(s) de la page contenant l'index global gi dans la
+  // répartition manuelle (sans toucher aux autres pages) ; les pages vidées
+  // disparaissent. Garde la répartition VALIDE → aucun recalcul automatique
+  // qui déplacerait les photos des pages verrouillées.
+  const splitAfterRemoval = (removedIdxs) => {
+    if (!Array.isArray(entry.split)) return entry.split;
+    const counts = [...splitCounts];
+    for (const gi of removedIdxs) {
+      let acc = 0;
+      for (let k = 0; k < counts.length; k += 1) {
+        if (gi < acc + counts[k]) { counts[k] -= 1; break; }
+        acc += counts[k];
+      }
+    }
+    const next = counts.filter((c) => c > 0);
+    return next.length ? next : null;
+  };
+
   function setPhotoCaption(pi, caption) {
+    if (isFrozenPhoto(pi)) return;
     const photos = entry.photos.map((p, i) =>
       i === pi ? { ...p, caption } : p
     );
     update({ photos });
   }
   function setPhotoPatch(pi, patch) {
+    if (isFrozenPhoto(pi)) return;
     const photos = entry.photos.map((p, i) => (i === pi ? { ...p, ...patch } : p));
     update({ photos });
   }
   function setPhotoDeco(pi, deco) {
+    if (isFrozenPhoto(pi)) return;
     const photos = entry.photos.map((p, i) => (i === pi ? { ...p, deco } : p));
     update({ photos });
   }
   function removePhoto(pi) {
-    update({ photos: entry.photos.filter((_, i) => i !== pi) });
+    if (isFrozenPhoto(pi)) {
+      alert('Cette photo est sur une page verrouillée 🔒. Déverrouille la page pour la modifier.');
+      return;
+    }
+    update({ photos: entry.photos.filter((_, i) => i !== pi), split: splitAfterRemoval([pi]) });
   }
   function movePhoto(pi, dir) {
     const ni = pi + dir;
     if (ni < 0 || ni >= entry.photos.length) return;
+    if (isFrozenPhoto(pi) || isFrozenPhoto(ni)) return;
     const arr = [...entry.photos];
     [arr[pi], arr[ni]] = [arr[ni], arr[pi]];
     update({ photos: arr });
@@ -2102,7 +2158,16 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
       {sortOpen && (
         <PhotoSortModal
           photos={entry.photos}
-          onChange={(arr) => update({ photos: arr })}
+          frozenCount={frozenSum}
+          onChange={(arr) => {
+            // Les photos supprimées sont décomptées de LEUR page dans la
+            // répartition manuelle → les autres pages (dont les verrouillées)
+            // gardent exactement leurs photos.
+            const removed = entry.photos
+              .map((p, gi) => (arr.includes(p) ? -1 : gi))
+              .filter((gi) => gi >= 0);
+            update({ photos: arr, split: removed.length ? splitAfterRemoval(removed) : entry.split });
+          }}
           onClose={() => setSortOpen(false)}
           unit={unit}
         />
@@ -2118,14 +2183,15 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
             <PhotoTile
               key={pi}
               photo={p}
+              locked={isFrozenPhoto(pi)}
               onCaption={(c) => setPhotoCaption(pi, c)}
               onEffect={(patch) => setPhotoPatch(pi, patch)}
               onDeco={(d) => setPhotoDeco(pi, d)}
               onRemove={() => removePhoto(pi)}
               onMoveLeft={() => movePhoto(pi, -1)}
               onMoveRight={() => movePhoto(pi, 1)}
-              canLeft={pi > 0}
-              canRight={pi < entry.photos.length - 1}
+              canLeft={pi > frozenSum}
+              canRight={pi >= frozenSum && pi < entry.photos.length - 1}
             />
           ))}
         </div>
@@ -2261,13 +2327,15 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
                   />
                   Un fond différent possible pour chaque page
                 </label>
-                <label className="flex items-center gap-2">
+                <label className={`flex items-center gap-2 ${frozenCount > 0 ? 'opacity-40' : ''}`}>
                   <input
                     type="radio"
                     checked={bg.mode === 'spread'}
+                    disabled={frozenCount > 0}
                     onChange={() => setBg({ ...bg, mode: 'spread' })}
                   />
                   Une seule photo étirée sur les {pageCount} pages (panorama)
+                  {frozenCount > 0 ? ' — indisponible (page verrouillée)' : ''}
                 </label>
               </div>
             )}
@@ -2275,9 +2343,14 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
             {entry.photos.length > 0 && bg.mode !== 'spread' && (
               <button
                 type="button"
-                onClick={() => setBg(autoBgFromPhotos(entry.photos, pageCount))}
+                onClick={() => {
+                  // Les pages verrouillées gardent leur fond actuel.
+                  const auto = autoBgFromPhotos(entry.photos, pageCount);
+                  auto.pages = auto.pages.map((s, k) => (isLocked(k) ? getPageSpec(k) : s));
+                  setBg(auto);
+                }}
                 className="rounded-lg border border-coral-300 bg-coral-50 px-3 py-1.5 text-xs font-semibold text-coral-700 hover:bg-coral-100"
-                title="Met en fond de chaque page une photo du jour, au hasard et toutes différentes"
+                title="Met en fond de chaque page une photo du jour, au hasard et toutes différentes (les pages verrouillées gardent leur fond)"
               >
                 🎲 Fonds aléatoires (photos du jour)
               </button>
@@ -2295,6 +2368,11 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
                 />
               </div>
             ) : pageCount === 1 ? (
+              isLocked(0) ? (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-2.5">
+                  <p className="text-xs font-medium text-amber-700">🔒 Page verrouillée : déverrouille-la pour changer son fond.</p>
+                </div>
+              ) : (
               <div className="rounded-lg border border-slate-200 bg-white p-2.5">
                 <BgSpecEditor
                   spec={getPageSpec(0)}
@@ -2302,6 +2380,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
                   onPickPhoto={() => onPickBgPhoto(0)}
                 />
               </div>
+              )
             ) : (
               Array.from({ length: pageCount }).map((_, p) => {
                 if (coveredBy[p] >= 0) {
@@ -2310,6 +2389,13 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
                       <p className="text-xs text-slate-500">
                         Page {p + 1} · ↳ côté droit du panorama de la page {coveredBy[p] + 1}
                       </p>
+                    </div>
+                  );
+                }
+                if (isLocked(p)) {
+                  return (
+                    <div key={p} className="rounded-lg border border-amber-200 bg-amber-50 p-2.5">
+                      <p className="text-xs font-medium text-amber-700">Page {p + 1} · 🔒 verrouillée — déverrouille-la pour changer son fond.</p>
                     </div>
                   );
                 }
@@ -2333,7 +2419,8 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
                             className={`rounded-md px-2 py-1 text-xs font-semibold ${span === 1 ? 'bg-coral-500 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
                             1 page
                           </button>
-                          <button type="button" onClick={() => setPageSpan(p, 2)} disabled={p + 1 >= pageCount}
+                          <button type="button" onClick={() => setPageSpan(p, 2)} disabled={p + 1 >= pageCount || isLocked(p + 1)}
+                            title={isLocked(p + 1) ? 'La page suivante est verrouillée : impossible d’étendre dessus.' : undefined}
                             className={`rounded-md px-2 py-1 text-xs font-semibold disabled:opacity-40 ${span === 2 ? 'bg-coral-500 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
                             2 pages (double page)
                           </button>
@@ -2859,8 +2946,16 @@ export default function AlbumPage() {
         }
         // Par défaut : si aucun fond n'a été choisi, on met en fond de chaque
         // page une photo du jour, tirée au hasard et toutes différentes.
+        // (Les pages verrouillées gardent leur fond tel quel.)
         const pages = computeSplit(photos.length, split).length;
-        const bg = bgIsEmpty(entry.bg) ? autoBgFromPhotos(photos, pages) : entry.bg;
+        let bg = entry.bg;
+        if (bgIsEmpty(entry.bg)) {
+          const auto = autoBgFromPhotos(photos, pages);
+          const lp = entry.lockedPages || {};
+          const cur = normalizeBg(entry.bg);
+          auto.pages = auto.pages.map((s, k) => (lp[k] ? (cur.pages?.[k] || { type: 'none' }) : s));
+          bg = auto;
+        }
         days[i] = { ...entry, photos, bg, split };
         return { ...prev, days };
       });

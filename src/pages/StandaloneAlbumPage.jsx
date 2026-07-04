@@ -154,12 +154,28 @@ export default function StandaloneAlbumPage() {
       setAlbum((prev) => {
         const days = [...prev.days];
         const entry = days[i];
-        const photos = [...entry.photos, ...uploaded.map((u) => ({ ...u, caption: '' }))];
+        const added = uploaded.map((u) => ({ ...u, caption: '' }));
+        const photos = [...entry.photos, ...added];
+        // Si une répartition manuelle existe (souvent avec des pages
+        // verrouillées), on la conserve et les nouvelles photos vont sur une
+        // page en plus : les pages existantes gardent exactement leurs photos.
+        let split = entry.split;
+        if (Array.isArray(entry.split) && entry.split.reduce((a, b) => a + b, 0) === entry.photos.length) {
+          split = [...entry.split, added.length];
+        }
         // Par défaut : fond de chaque page = une photo du jour, au hasard et
-        // toutes différentes (tant qu'aucun fond n'a été choisi).
-        const pages = computeSplit(photos.length, entry.split).length;
-        const bg = bgIsEmpty(entry.bg) ? autoBgFromPhotos(photos, pages) : entry.bg;
-        days[i] = { ...entry, photos, bg };
+        // toutes différentes (tant qu'aucun fond n'a été choisi). Les pages
+        // verrouillées gardent leur fond tel quel.
+        const pages = computeSplit(photos.length, split).length;
+        let bg = entry.bg;
+        if (bgIsEmpty(entry.bg)) {
+          const auto = autoBgFromPhotos(photos, pages);
+          const lp = entry.lockedPages || {};
+          const cur = normalizeBg(entry.bg);
+          auto.pages = auto.pages.map((s, k) => (lp[k] ? (cur.pages?.[k] || { type: 'none' }) : s));
+          bg = auto;
+        }
+        days[i] = { ...entry, photos, bg, split };
         return { ...prev, days };
       });
       setDirty(true);
