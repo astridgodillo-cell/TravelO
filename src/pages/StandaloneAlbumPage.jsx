@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { pdf } from '@react-pdf/renderer';
+import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+import { getTileUrl } from '../lib/mapTiles';
 import {
   getAlbum,
   updateAlbum,
@@ -697,6 +701,107 @@ export default function StandaloneAlbumPage() {
 // Vignette + boutons pour une photo (couverture / fond de fin).
 // Carte optionnelle : liste de villes/étapes (réordonnables par glisser-
 // déposer). Les coordonnées sont trouvées automatiquement à la fabrication.
+// ---- Placement MANUEL d'une étape sur la carte ----
+// Carte interactive plein écran : on se déplace / zoome (pincement à deux
+// doigts), puis on TOUCHE l'endroit exact. Utile quand la recherche
+// automatique ne trouve pas un lieu (hameau, plage, point de vue…).
+
+function PickerClicks({ onPick }) {
+  useMapEvents({ click: (e) => onPick({ lat: e.latlng.lat, lng: e.latlng.lng }) });
+  return null;
+}
+
+// Cadre la carte à l'ouverture : sur l'étape si déjà placée, sinon sur les
+// autres étapes du voyage, sinon vue large (Europe).
+function PickerFit({ points, target }) {
+  const map = useMap();
+  useEffect(() => {
+    const t = setTimeout(() => {
+      map.invalidateSize();
+      if (target) map.setView([target.lat, target.lng], 10);
+      else if (points.length > 1) map.fitBounds(L.latLngBounds(points.map((p) => [p.lat, p.lng])), { padding: [40, 40] });
+      else if (points.length === 1) map.setView([points[0].lat, points[0].lng], 7);
+      else map.setView([46.6, 2.4], 4);
+    }, 80);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return null;
+}
+
+const pickerPin = () => L.divIcon({
+  className: 'travelo-pick-pin',
+  html: `<div style="background:#C8643C;color:#fff;border-radius:50%;width:34px;height:34px;display:grid;place-items:center;font-size:16px;border:3px solid #fff;box-shadow:0 2px 10px rgba(0,0,0,0.4);">📍</div>`,
+  iconSize: [34, 34],
+  iconAnchor: [17, 17],
+});
+const pickerDot = (n) => L.divIcon({
+  className: 'travelo-pick-dot',
+  html: `<div style="background:rgba(100,116,139,0.9);color:#fff;border-radius:50%;width:20px;height:20px;display:grid;place-items:center;font-size:10px;font-weight:700;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,0.35);">${n}</div>`,
+  iconSize: [20, 20],
+  iconAnchor: [10, 10],
+});
+
+function StopPositionPicker({ stop, stopIndex, allStops, onSave, onClose }) {
+  const [pos, setPos] = useState(stop.lat && stop.lng ? { lat: stop.lat, lng: stop.lng } : null);
+  const others = allStops
+    .map((s, i) => ({ ...s, i }))
+    .filter((s, i) => i !== stopIndex && s.lat && s.lng);
+  return (
+    <div className="fixed inset-0 z-[80] flex flex-col bg-white">
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+        <div className="min-w-0">
+          <h3 className="truncate font-semibold text-slate-800">📍 Placer « {stop.name || `étape ${stopIndex + 1}`} »</h3>
+          <p className="text-[11px] text-slate-500">Zoome (deux doigts ou molette), déplace la carte, puis touche l'endroit exact.</p>
+        </div>
+        <button onClick={onClose} className="-m-2 shrink-0 p-2 text-2xl leading-none text-slate-400 hover:text-slate-700">✕</button>
+      </div>
+      <div className="relative min-h-0 flex-1">
+        <MapContainer
+          center={[46.6, 2.4]}
+          zoom={4}
+          scrollWheelZoom
+          touchZoom
+          dragging
+          doubleClickZoom
+          zoomControl
+          attributionControl={false}
+          style={{ height: '100%', width: '100%' }}
+        >
+          <PickerFit points={others} target={pos} />
+          <TileLayer url={getTileUrl()} />
+          <PickerClicks onPick={setPos} />
+          {/* autres étapes déjà placées : petits repères numérotés (contexte) */}
+          {others.map((s) => (
+            <Marker key={s.i} position={[s.lat, s.lng]} icon={pickerDot(s.i + 1)} interactive={false} />
+          ))}
+          {/* position choisie : gros repère, déplaçable au doigt */}
+          {pos && (
+            <Marker
+              position={[pos.lat, pos.lng]}
+              icon={pickerPin()}
+              draggable
+              eventHandlers={{ dragend: (e) => { const ll = e.target.getLatLng(); setPos({ lat: ll.lat, lng: ll.lng }); } }}
+              zIndexOffset={1000}
+            />
+          )}
+        </MapContainer>
+        {!pos && (
+          <div className="pointer-events-none absolute inset-x-0 top-3 z-[500] flex justify-center">
+            <span className="rounded-full bg-slate-900/80 px-4 py-1.5 text-xs font-medium text-white">👆 Touche la carte pour poser le repère</span>
+          </div>
+        )}
+      </div>
+      <div className="flex shrink-0 items-center justify-between gap-2 border-t border-slate-200 px-4 py-3">
+        <button type="button" onClick={onClose}
+          className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">Annuler</button>
+        <button type="button" disabled={!pos} onClick={() => { onSave(pos); onClose(); }}
+          className="rounded-lg bg-coral-500 px-5 py-2 text-sm font-semibold text-white disabled:opacity-40">✅ Utiliser cet endroit</button>
+      </div>
+    </div>
+  );
+}
+
 function MapSection({ map, onChange }) {
   const enabled = !!map?.enabled;
   const stops = map?.stops || [];
@@ -708,6 +813,7 @@ function MapSection({ map, onChange }) {
   const [previewBusy, setPreviewBusy] = useState(false);
   const [unplaced, setUnplaced] = useState([]); // noms d'étapes non placées
   const [retryNonce, setRetryNonce] = useState(0);
+  const [pickIdx, setPickIdx] = useState(null); // étape en cours de placement manuel
   const previewSeq = useRef(0);
   const setStops = (s) => onChange({ ...map, stops: s, enabled });
   const setCountry = (country) => onChange({ ...map, country, enabled, stops });
@@ -870,6 +976,11 @@ function MapSection({ map, onChange }) {
                   title="Pays de cette étape (utile si le voyage traverse plusieurs pays)"
                   className="w-24 shrink-0 rounded-md border border-slate-300 px-2 py-1 text-sm sm:w-32"
                 />
+                <button type="button" onClick={() => setPickIdx(i)}
+                  className={`shrink-0 text-lg ${s.lat && s.lng ? 'text-emerald-600 hover:text-emerald-700' : 'text-slate-400 hover:text-coral-600'}`}
+                  title={s.lat && s.lng ? 'Position trouvée — toucher pour l’ajuster sur la carte' : 'Placer cette étape à la main sur la carte'}>
+                  📍
+                </button>
                 <button type="button" onClick={() => setStops(stops.filter((_, k) => k !== i))}
                   className="text-slate-400 hover:text-red-600" title="Retirer">✕</button>
               </div>
@@ -925,9 +1036,23 @@ function MapSection({ map, onChange }) {
                 </div>
               )}
               <p className="mt-1 text-[11px] text-slate-400">
-                L'aperçu se met à jour tout seul, environ une seconde après tes changements (étapes, pays, transports).
+                L'aperçu se met à jour tout seul, environ une seconde après tes changements (étapes, pays, transports). Une étape mal placée ou introuvable ? Touche son 📍 pour la poser à la main.
               </p>
             </div>
+          )}
+
+          {pickIdx != null && stops[pickIdx] && (
+            <StopPositionPicker
+              stop={stops[pickIdx]}
+              stopIndex={pickIdx}
+              allStops={stops}
+              onSave={(pos) => {
+                const next = [...stops];
+                next[pickIdx] = { ...next[pickIdx], lat: pos.lat, lng: pos.lng };
+                setStops(next); // l'aperçu se redessine tout seul
+              }}
+              onClose={() => setPickIdx(null)}
+            />
           )}
         </div>
       )}
