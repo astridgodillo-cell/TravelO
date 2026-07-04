@@ -20,8 +20,7 @@ const emptyDay = () => ({ title: '', note: '', photos: [], bg: null, split: null
 // seulement au moment de fabriquer le PDF, et en cache dans chaque étape.
 // `country` (facultatif) fiabilise fortement la recherche (ex. « Ella » seul
 // tombe ailleurs dans le monde ; « Ella, Sri Lanka » est correct).
-async function geocode(name, country) {
-  const q = country ? `${name}, ${country}` : name;
+async function geocodeOnce(q) {
   try {
     const r = await fetch(
       `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`,
@@ -33,6 +32,18 @@ async function geocode(name, country) {
     /* hors-ligne ou bloqué : on ignore */
   }
   return null;
+}
+
+async function geocode(name, country) {
+  const n = (name || '').trim();
+  if (!n) return null;
+  // 1) avec le pays/la région si fourni ; 2) sinon (ou si rien trouvé,
+  // ex. « Sardaigne » qui est une région mal comprise), le nom seul.
+  if (country && country.trim()) {
+    const withCountry = await geocodeOnce(`${n}, ${country.trim()}`);
+    if (withCountry) return withCountry;
+  }
+  return geocodeOnce(n);
 }
 
 export default function StandaloneAlbumPage() {
@@ -695,6 +706,8 @@ function MapSection({ map, onChange }) {
   // instants après chaque changement (étapes, pays, transports).
   const [preview, setPreview] = useState(null);
   const [previewBusy, setPreviewBusy] = useState(false);
+  const [unplaced, setUnplaced] = useState([]); // noms d'étapes non placées
+  const [retryNonce, setRetryNonce] = useState(0);
   const previewSeq = useRef(0);
   const setStops = (s) => onChange({ ...map, stops: s, enabled });
   const setCountry = (country) => onChange({ ...map, country, enabled, stops });
@@ -711,18 +724,23 @@ function MapSection({ map, onChange }) {
   // Aperçu automatique : ~1 s après la dernière modification, on place les
   // étapes qui n'ont pas encore de position (géocodage, mémorisé) puis on
   // dessine la carte — même rendu que dans le fichier final.
-  const sig = JSON.stringify((stops || []).map((s) => [s.name, s.country, s.transport, s.lat, s.lng])) + '|' + (map?.country || '') + (enabled ? '1' : '0');
+  const sig = JSON.stringify((stops || []).map((s) => [s.name, s.country, s.transport, s.lat, s.lng])) + '|' + (map?.country || '') + (enabled ? '1' : '0') + '|' + retryNonce;
   useEffect(() => {
     if (!enabled) return undefined;
-    if (!stops.some((s) => s.name?.trim())) { setPreview(null); return undefined; }
+    if (!stops.some((s) => s.name?.trim())) { setPreview(null); setUnplaced([]); return undefined; }
     const seq = ++previewSeq.current;
     const timer = setTimeout(async () => {
       setPreviewBusy(true);
       try {
         const resolved = [];
         let changed = false;
+        let queried = false;
         for (const s of stops) {
           if (!s.name?.trim() || (s.lat && s.lng)) { resolved.push(s); continue; }
+          // Le service de placement gratuit limite la cadence : petite pause
+          // entre deux recherches pour ne pas être rejeté.
+          if (queried) await new Promise((r) => setTimeout(r, 450));
+          queried = true;
           const c = await geocode(s.name, s.country || map?.country);
           if (seq !== previewSeq.current) return; // une saisie plus récente a repris la main
           if (c) { resolved.push({ ...s, ...c }); changed = true; }
@@ -730,6 +748,8 @@ function MapSection({ map, onChange }) {
         }
         if (changed) setStops(resolved); // positions mémorisées (pas de re-géocodage ensuite)
         const placed = resolved.filter((s) => s.name?.trim() && s.lat && s.lng);
+        // Étapes impossibles à placer : on PRÉVIENT au lieu d'ignorer en silence.
+        setUnplaced(resolved.filter((s) => s.name?.trim() && !(s.lat && s.lng)).map((s) => s.name.trim()));
         if (placed.length) {
           const img = await renderRouteMapImage(placed.map((s) => ({ lat: s.lat, lng: s.lng })), {
             width: 900,
@@ -893,6 +913,17 @@ function MapSection({ map, onChange }) {
                   <div className="flex h-40 items-center justify-center text-sm text-slate-500">Placement des étapes…</div>
                 )}
               </div>
+              {unplaced.length > 0 && (
+                <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                  <p className="flex-1 text-xs font-medium text-amber-700">
+                    ⚠️ Étape{unplaced.length > 1 ? 's' : ''} introuvable{unplaced.length > 1 ? 's' : ''} sur la carte : {unplaced.join(', ')}. Vérifie l'orthographe (ou mets le pays, ex. « Italie »), puis réessaie.
+                  </p>
+                  <button type="button" onClick={() => setRetryNonce((n) => n + 1)}
+                    className="rounded-md border border-amber-300 bg-white px-2.5 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-100">
+                    ↻ Réessayer
+                  </button>
+                </div>
+              )}
               <p className="mt-1 text-[11px] text-slate-400">
                 L'aperçu se met à jour tout seul, environ une seconde après tes changements (étapes, pays, transports).
               </p>
