@@ -296,7 +296,7 @@ function ShapeFrame({ src, shape, w, h, ar, focal }) {
   );
 }
 
-function FramedImage({ src, frame, shape, w, h, ar, focal }) {
+function FramedImage({ src, frame, shape, w, h, ar, focal, frameColor }) {
   if (!frame) return <CoverImg src={src} w={w} h={h} ar={ar} focal={focal} />;
   if (frame === 'shape') return <ShapeFrame src={src} shape={shape} w={w} h={h} ar={ar} focal={focal} />;
   if (frame === 'stamp') return <StampFrame src={src} w={w} h={h} ar={ar} focal={focal} />;
@@ -311,7 +311,7 @@ function FramedImage({ src, frame, shape, w, h, ar, focal }) {
   }
   if (frame === 'thin') {
     return (
-      <View style={{ width: '100%', height: '100%', borderWidth: 1.2, borderColor: '#111111' }}>
+      <View style={{ width: '100%', height: '100%', borderWidth: 1.2, borderColor: frameColor || '#111111' }}>
         <CoverImg src={src} w={w} h={h} ar={ar} focal={focal} />
       </View>
     );
@@ -393,7 +393,7 @@ function PdfPhoto({ photo, w, h }) {
   const deco = photo.deco || [];
   const ar = photo.w && photo.h ? photo.w / photo.h : null;
   const focal = photoFocal(photo);
-  const framed = <FramedImage src={src} frame={effect.frame} shape={effect.shape} w={w} h={h} ar={ar} focal={focal} />;
+  const framed = <FramedImage src={src} frame={effect.frame} shape={effect.shape} frameColor={effect.frameColor} w={w} h={h} ar={ar} focal={focal} />;
   if (!deco.length) return framed;
   return (
     <View style={{ width: '100%', height: '100%', position: 'relative' }}>

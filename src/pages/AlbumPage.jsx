@@ -451,7 +451,7 @@ function effectStyles(effect, radiusPx = 10) {
     case 'postcard': Object.assign(frameWrap, { padding: pad, background: '#fff', border: '1px solid #e2ddd0' }); break;
     case 'polaroid': Object.assign(frameWrap, { padding: pad, background: '#fff' }); break;
     case 'rounded': clip.borderRadius = radiusPx; break;
-    case 'thin': clip.border = '2px solid #111'; break;
+    case 'thin': clip.border = `2px solid ${effect.frameColor || '#111'}`; break;
     case 'wood': Object.assign(frameWrap, { padding: pad, background: 'linear-gradient(135deg,#a06a33,#6e4423)' }); break;
     case 'gold': Object.assign(frameWrap, { padding: pad, background: 'linear-gradient(135deg,#e7c66a,#b8901f)' }); break;
     case 'stamp': Object.assign(frameWrap, { padding: pad, background: '#fff', border: '2px dashed #b9b2a3' }); break;
