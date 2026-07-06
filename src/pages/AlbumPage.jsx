@@ -666,9 +666,11 @@ function ObjView({ it }) {
   if (it.kind === 'photo') {
     const p = it.photo;
     const pdeco = p.deco || [];
+    // hs = hauteur du cadre (1 = ratio de la photo ; sinon recadrage).
+    const boxAr = (it.ar || 4 / 3) / (it.hs || 1);
     return (
-      <div className="relative overflow-hidden" style={{ width: `${it.scale * 100}cqmin`, aspectRatio: String(it.ar || 4 / 3), containerType: 'size' }}>
-        <PhotoFill photo={p} containerAr={it.ar || 4 / 3} />
+      <div className="relative overflow-hidden" style={{ width: `${it.scale * 100}cqmin`, aspectRatio: String(boxAr), containerType: 'size' }}>
+        <PhotoFill photo={p} containerAr={boxAr} />
         {pdeco.map((d, k) => (
           <div key={k} className="absolute" style={{ left: `${d.xf * 100}%`, top: `${d.yf * 100}%`, transform: `translate(-50%,-50%) rotate(${d.rot}deg)` }}>
             <DecoItemView it={d} />
@@ -1230,13 +1232,17 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
         ? photos.map((p, i) => {
             const b = free[i];
             const ar = p.w && p.h ? p.w / p.h : 4 / 3;
+            // hs = hauteur du CADRE (1 = ratio de la photo, photo entière ;
+            // autre valeur = la photo est recadrée dans le cadre, avec son
+            // point de mire fx/fy/fz).
+            const hs = b.hs || 1;
             const wPct = ((b.scale * minPage) / lay.pageW) * 100;
-            const hPct = ((b.scale * minPage) / ar / lay.pageH) * 100;
+            const hPct = (((b.scale * minPage) / ar) * hs / lay.pageH) * 100;
             return (
               <div key={i} onPointerDown={interactiveCells ? (e) => startPhoto(e, i) : undefined}
                 className={`absolute overflow-hidden ${interactiveCells ? 'cursor-grab hover:ring-2 active:cursor-grabbing' : ''} ${photoSel(i) ? 'ring-2 ring-coral-500' : 'ring-coral-400'}`}
                 style={{ left: `${b.xf * 100}%`, top: `${b.yf * 100}%`, width: `${wPct}%`, height: `${hPct}%`, transform: `translate(-50%,-50%) rotate(${b.rot}deg)`, containerType: 'size' }}>
-                {photoInner(p, ar)}
+                {photoInner(p, ar / hs)}
               </div>
             );
           })
@@ -1364,7 +1370,7 @@ export function PageDecorateModal({
   const handleChange = (objs) => {
     const decos = objs.filter((o) => o.kind !== 'photo');
     const boxes = freeValid
-      ? objs.filter((o) => o.kind === 'photo').map(({ xf, yf, scale, rot }) => ({ xf, yf, scale, rot }))
+      ? objs.filter((o) => o.kind === 'photo').map(({ xf, yf, scale, rot, hs }) => ({ xf, yf, scale, rot, ...(hs && hs !== 1 ? { hs } : {}) }))
       : undefined;
     // Une SEULE mise à jour (sinon le 2e appel écrase le 1er → décos perdues).
     onChange(decos, boxes);
@@ -2777,6 +2783,57 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
                   )}
                 </div>
               )}
+              {/* RECADRAGE direct : hauteur du cadre + position/zoom de la
+                  photo DANS le cadre. La largeur = curseur « Taille » dessous. */}
+              {sel.kind === 'photo' && (() => {
+                const gIdx = pageStartIdx(sel.p) + sel.i;
+                const ph = entry.photos[gIdx];
+                if (!ph) return null;
+                const f = photoFocal(ph);
+                const hs = selObj.hs || 1;
+                const setHs = (v) => patchSel({ hs: Math.min(2.5, Math.max(0.3, v)) });
+                const setF = (patch) => setPhotoPatch(gIdx, patch);
+                const stepBtn = 'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-base font-bold text-slate-700 active:bg-slate-100';
+                return (
+                  <div className="mb-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <p className="text-xs font-semibold text-slate-600">📐 Recadrage</p>
+                      <button type="button" onClick={() => { patchSel({ hs: 1 }); setF({ fx: 0.5, fy: 0.5, fz: 1 }); }}
+                        className="text-xs font-medium text-coral-600 hover:text-coral-700">↺ réinitialiser</button>
+                    </div>
+                    <div className="text-xs text-slate-600">
+                      Hauteur du cadre {hs !== 1 ? '(photo recadrée)' : '(photo entière)'}
+                      <div className="flex items-center gap-2">
+                        <button type="button" className={stepBtn} onClick={() => setHs(hs - 0.05)} title="Cadre moins haut">−</button>
+                        <input type="range" min="0.3" max="2.5" step="0.01" value={hs}
+                          onChange={(e) => setHs(parseFloat(e.target.value))} className="w-full flex-1" />
+                        <button type="button" className={stepBtn} onClick={() => setHs(hs + 0.05)} title="Cadre plus haut">+</button>
+                      </div>
+                    </div>
+                    <div className="mt-1.5 text-xs text-slate-600">
+                      Zoom de la photo dans le cadre
+                      <div className="flex items-center gap-2">
+                        <button type="button" className={stepBtn} onClick={() => setF({ fz: Math.max(1, f.fz - 0.1) })}>−</button>
+                        <input type="range" min="1" max="3" step="0.05" value={f.fz}
+                          onChange={(e) => setF({ fz: parseFloat(e.target.value) })} className="w-full flex-1" />
+                        <button type="button" className={stepBtn} onClick={() => setF({ fz: Math.min(3, f.fz + 0.1) })}>+</button>
+                      </div>
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <span className="text-xs text-slate-600">Photo dans le cadre :</span>
+                      <button type="button" className={stepBtn} onClick={() => setF({ fx: Math.min(1, f.fx + 0.06) })} title="Décaler la photo vers la gauche">◀</button>
+                      <button type="button" className={stepBtn} onClick={() => setF({ fx: Math.max(0, f.fx - 0.06) })} title="Décaler la photo vers la droite">▶</button>
+                      <button type="button" className={stepBtn} onClick={() => setF({ fy: Math.min(1, f.fy + 0.06) })} title="Décaler la photo vers le haut">▲</button>
+                      <button type="button" className={stepBtn} onClick={() => setF({ fy: Math.max(0, f.fy - 0.06) })} title="Décaler la photo vers le bas">▼</button>
+                      <button type="button" onClick={() => setF({ fx: 0.5, fy: 0.5 })}
+                        className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">🎯 Recentrer</button>
+                    </div>
+                    <p className="mt-1.5 text-[11px] text-slate-400">
+                      Astuce : le déplacement/zoom dans le cadre se voit quand la photo est recadrée (hauteur modifiée, zoom &gt; 1, ou cadre/forme).
+                    </p>
+                  </div>
+                );
+              })()}
               <DecoItemControls
                 item={selObj}
                 onChange={patchSel}

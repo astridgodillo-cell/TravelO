@@ -549,7 +549,9 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
               const b = free[i];
               const ar = photo.w && photo.h ? photo.w / photo.h : 4 / 3;
               const bw = b.scale * minPage;
-              const bh = bw / ar;
+              // hs = hauteur du cadre (1 = ratio de la photo ; sinon la photo
+              // est recadrée dans le cadre) — identique à l'éditeur.
+              const bh = (bw / ar) * (b.hs || 1);
               return (
                 <View key={i} style={{ position: 'absolute', left: b.xf * pageW - bw / 2, top: b.yf * pageH - bh / 2, width: bw, height: bh, transform: `rotate(${b.rot}deg)`, transformOrigin: 'center' }}>
                   <PdfPhoto photo={photo} st={st} w={bw} h={bh} />
