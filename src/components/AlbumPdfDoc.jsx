@@ -515,14 +515,16 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
   // Rendu des pages d'une (ou plusieurs) journée(s). Extrait pour être réutilisé
   // aussi bien dans l'album complet que dans un partage « une seule journée ».
   const renderDayPages = (list) => list.flatMap((e) => {
-    // On ne garde que les pages contenant réellement des photos → aucune
-    // page vide ne peut apparaître (même si une répartition en prévoyait
-    // une de trop).
-    const chunks = splitPhotos(e.photos, e.split).filter((c) => c.length > 0);
+    // Les pages vides (boîtes en cours de composition, mode manuel) ne sont
+    // pas imprimées, mais on CONSERVE les index d'origine : fonds, décorations
+    // et dispositions libres restent alignés avec l'éditeur.
+    const chunks = splitPhotos(e.photos, e.split);
     const pageCount = chunks.length;
+    const firstIdx = chunks.findIndex((c) => c.length > 0);
     return chunks.map((chunk, p) => {
+      if (!chunk.length) return null; // page vide : pas imprimée
       const spec = resolveBg(e.bg, p, pageCount);
-      const firstPage = p === 0;
+      const firstPage = p === firstIdx;
       const onPlate = spec.type !== 'none';
       const lay = pageLayout(chunk, format, { title: e.title, note: e.note, firstPage, onPlate });
       const free = e.freePages?.[p];

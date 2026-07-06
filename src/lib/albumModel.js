@@ -19,18 +19,75 @@ export function balancedSplit(total, pages) {
 }
 
 // Nombre de photos par page : choix manuel valide TOUJOURS prioritaire (aucune
-// limite par page) ; sinon répartition automatique à PHOTOS_PER_PAGE max.
+// limite par page ; 0 autorisé = page vide en cours de composition) ; sinon
+// répartition automatique à PHOTOS_PER_PAGE max.
 export function computeSplit(total, manual) {
   if (
     Array.isArray(manual) &&
     manual.length &&
-    manual.every((n) => n > 0) &&
+    manual.every((n) => Number.isFinite(n) && n >= 0) &&
     manual.reduce((a, b) => a + b, 0) === total
   ) {
     return manual;
   }
   if (total <= PHOTOS_PER_PAGE) return [total];
   return balancedSplit(total, Math.ceil(total / PHOTOS_PER_PAGE));
+}
+
+// ---- Mise en page d'une journée : deux modes ----
+// « auto »   : l'appli répartit toute seule (~PHOTOS_PER_PAGE par page).
+// « manuel » : les pages sont des BOÎTES stables — chaque page garde ses
+//              photos, rien ne se déplace jamais tout seul.
+// Les anciens albums sans champ layoutMode : toute personnalisation
+// (répartition, verrou, disposition libre) => manuel, pour figer l'existant.
+export function isManualLayout(entry) {
+  if (!entry) return false;
+  if (entry.layoutMode === 'manuel') return true;
+  if (entry.layoutMode === 'auto') return false;
+  return (
+    (Array.isArray(entry.split) && entry.split.length > 0) ||
+    Object.values(entry.lockedPages || {}).some(Boolean) ||
+    Object.keys(entry.freePages || {}).length > 0
+  );
+}
+
+// Rend une répartition manuelle VALIDE (somme = nombre de photos), en
+// absorbant tout écart sur la dernière page — jamais de recalcul global.
+export function repairSplit(split, total) {
+  const counts = Array.isArray(split) && split.length && split.every((n) => Number.isFinite(n) && n >= 0)
+    ? [...split]
+    : [Math.max(0, total)];
+  let sum = counts.reduce((a, b) => a + b, 0);
+  if (sum < total) counts[counts.length - 1] += total - sum;
+  else if (sum > total) {
+    let over = sum - total;
+    for (let k = counts.length - 1; k >= 0 && over > 0; k -= 1) {
+      const take = Math.min(counts[k], over);
+      counts[k] -= take;
+      over -= take;
+    }
+  }
+  return counts;
+}
+
+// Ajoute des photos à une journée en respectant son mode :
+// - auto : simple ajout à la fin (la répartition se refait toute seule) ;
+// - manuel : sur la page cible (targetPage) ou sur une NOUVELLE page à la fin
+//   — les pages existantes gardent exactement leurs photos.
+export function addPhotosToEntry(entry, added, targetPage = null) {
+  if (!isManualLayout(entry)) {
+    return { photos: [...(entry.photos || []), ...added], split: null };
+  }
+  const counts = repairSplit(entry.split, (entry.photos || []).length);
+  if (targetPage == null || targetPage < 0 || targetPage >= counts.length) {
+    return { photos: [...(entry.photos || []), ...added], split: [...counts, added.length], layoutMode: 'manuel' };
+  }
+  const at = counts.slice(0, targetPage + 1).reduce((a, b) => a + b, 0); // fin de la page cible
+  const photos = [...(entry.photos || [])];
+  photos.splice(at, 0, ...added);
+  const next = [...counts];
+  next[targetPage] += added.length;
+  return { photos, split: next, layoutMode: 'manuel' };
 }
 
 // ---- Disposition des photos (partagée éditeur ⇄ PDF) ----

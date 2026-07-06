@@ -29,6 +29,9 @@ import {
   splitPhotos,
   pageLayout,
   seedFreeBoxes,
+  isManualLayout,
+  repairSplit,
+  addPhotosToEntry,
   resolveBg,
   unitLabel,
   bgIsEmpty,
@@ -1885,6 +1888,7 @@ export function ShareSheet({ files, text, onClose }) {
 
 export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhoto, busy, progress = null, format = 'carre', onFormatChange = null, theme = null, unit = 'jour', pageOffset = null, onShareDay = null }) {
   const fileRef = useRef(null);
+  const addTarget = useRef(null); // page cible du prochain ajout de photos (mode manuel)
   const [bgOpen, setBgOpen] = useState(false);
   const [decoPage, setDecoPage] = useState(null);
   const [sel, setSel] = useState(null); // élément sélectionné dans l'aperçu : { p, kind:'photo'|'deco', i }
@@ -1916,9 +1920,13 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
 
   const bg = normalizeBg(entry.bg);
   const total = entry.photos.length;
-  const splitCounts = computeSplit(total, entry.split);
+  // Deux modes de mise en page :
+  // - auto   : répartition recalculée toute seule (~6 photos/page) ;
+  // - manuel : les pages sont des boîtes stables, rien ne bouge tout seul.
+  const mode = isManualLayout(entry) ? 'manuel' : 'auto';
+  const splitCounts = mode === 'manuel' ? repairSplit(entry.split, total) : computeSplit(total, null);
   const pageCount = splitCounts.length;
-  const chunks = splitPhotos(entry.photos, entry.split);
+  const chunks = splitPhotos(entry.photos, splitCounts);
   const setPageFree = (p, boxes) => {
     const next = { ...(entry.freePages || {}) };
     if (boxes) next[p] = boxes; else delete next[p];
@@ -1930,6 +1938,12 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
   const isLocked = (p) => !!lockedPages[p];
   const toggleLock = (p) => {
     setSel(null);
+    // Verrouiller = prendre la main : en mode auto, on fige d'abord la mise en
+    // page actuelle (bascule en manuel), puis on pose le verrou.
+    if (!isManualLayout(entry)) {
+      update({ layoutMode: 'manuel', split: [...splitCounts], lockedPages: { ...lockedPages, [p]: true } });
+      return;
+    }
     update({ lockedPages: { ...lockedPages, [p]: !lockedPages[p] } });
   };
   const lockBtn = (p) => (
@@ -1954,12 +1968,28 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
       ↺ Grille auto
     </button>
   ) : null);
+  // Mode manuel : ajouter des photos SUR cette page / supprimer une page vide.
+  const addToPageBtn = (p) => (mode === 'manuel' && !isLocked(p) ? (
+    <button
+      type="button"
+      onClick={() => { addTarget.current = p; fileRef.current?.click(); }}
+      className="rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100"
+      title="Ajouter des photos sur cette page (les autres pages ne bougent pas)"
+    >
+      📷+
+    </button>
+  ) : null);
+  const deletePageBtn = (p) => (mode === 'manuel' && splitCounts[p] === 0 && !isLocked(p) ? (
+    <button
+      type="button"
+      onClick={() => deleteEmptyPage(p)}
+      className="rounded-md bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-600 hover:bg-red-100"
+      title="Supprimer cette page vide"
+    >
+      🗑
+    </button>
+  ) : null);
   // Change le nombre de pages (réparti équitablement, toujours valide).
-  // Verrouillage PAR PAGE : chaque page verrouillée garde EXACTEMENT ses
-  // photos. Comme les photos sont réparties en séquence, la règle est : aucune
-  // photo ne traverse jamais une page verrouillée. Les réglages n'agissent
-  // qu'à l'intérieur d'un « segment » (suite de pages contiguës non
-  // verrouillées) — les autres pages, verrouillées ou non, ne bougent pas.
   const lockedAny = splitCounts.some((_c, k) => isLocked(k));
   const pageOfIdx = (gi) => {
     let acc = 0;
@@ -1970,46 +2000,58 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
     return splitCounts.length - 1;
   };
   const isFrozenPhoto = (gi) => isLocked(pageOfIdx(gi));
-  // Segment de pages non verrouillées contiguës contenant la page p.
-  const segmentOf = (p) => {
-    if (isLocked(p)) return null;
-    let a = p; while (a > 0 && !isLocked(a - 1)) a -= 1;
-    let b = p; while (b < splitCounts.length - 1 && !isLocked(b + 1)) b += 1;
-    return { from: a, to: b };
-  };
-  const segTotalOf = (seg) => splitCounts.slice(seg.from, seg.to + 1).reduce((a, b) => a + b, 0);
-  // Segment libre EN FIN de journée : c'est là qu'on peut ajouter/retirer des
-  // pages sans jamais décaler une page verrouillée.
-  const lastSeg = isLocked(splitCounts.length - 1) ? null : segmentOf(splitCounts.length - 1);
-  const lastSegPages = lastSeg ? lastSeg.to - lastSeg.from + 1 : 0;
-  const lastSegTotal = lastSeg ? segTotalOf(lastSeg) : 0;
 
-  // Change le nombre de PAGES : n'agit que sur le dernier segment libre.
-  const setPagesCount = (n) => {
-    if (!lastSeg) return;
-    const want = Math.max(1, Math.min(lastSegTotal, lastSegPages + (n - pageCount)));
-    const rest = balancedSplit(lastSegTotal, want);
-    update({ split: [...splitCounts.slice(0, lastSeg.from), ...rest] });
+  // --- Actions du mode MANUEL (pages = boîtes stables) ---
+  // Bascule de mode. auto → manuel : on FIGE la mise en page actuelle telle
+  // quelle. manuel → auto : avertissement, tout est réorganisé.
+  const switchToManual = (extra = {}) =>
+    update({ layoutMode: 'manuel', split: [...splitCounts], ...extra });
+  const switchToAuto = () => {
+    if (!window.confirm('Repasser en automatique ? La répartition sera refaite (~6 photos par page) et les verrous/dispositions libres de ces pages seront effacés.')) return;
+    update({ layoutMode: 'auto', split: null, lockedPages: {}, freePages: {} });
   };
-  // Fixe le nombre de photos d'une page : compensé par les AUTRES pages de son
-  // segment uniquement (le total du segment ne change pas → rien ne traverse
-  // les pages verrouillées).
-  const setPageValue = (p, val) => {
-    const seg = segmentOf(p);
-    if (!seg) return; // page verrouillée : intouchable
-    const others = [];
-    for (let k = seg.from; k <= seg.to; k += 1) if (k !== p) others.push(k);
-    if (!others.length) return; // seule page de son segment : total imposé
-    const segTotal = segTotalOf(seg);
-    const v = Math.max(1, Math.min(Number.isFinite(val) ? val : 1, segTotal - others.length));
-    const rest = balancedSplit(segTotal - v, others.length);
-    let ri = 0;
-    const arr = splitCounts.map((c, k) => {
-      if (k === p) return v;
-      if (k >= seg.from && k <= seg.to) return rest[ri++];
-      return c;
-    });
-    update({ split: arr });
+  const addEmptyPage = () => switchToManual({ split: [...splitCounts, 0] });
+  // Renumérote les réglages par page (fonds, décos, verrous, dispositions)
+  // après suppression de la page `removed`.
+  const shiftPageMaps = (removed) => {
+    const remapObj = (o) => {
+      const r = {};
+      Object.keys(o || {}).forEach((k) => {
+        const n = Number(k);
+        if (n === removed) return;
+        r[n > removed ? n - 1 : n] = o[k];
+      });
+      return r;
+    };
+    const pages = [...(bg.pages || [])];
+    if (removed < pages.length) pages.splice(removed, 1);
+    return {
+      freePages: remapObj(entry.freePages),
+      pageDeco: remapObj(entry.pageDeco),
+      lockedPages: remapObj(entry.lockedPages),
+      bg: { ...bg, pages },
+    };
+  };
+  const deleteEmptyPage = (p) => {
+    if (splitCounts[p] !== 0 || isLocked(p)) return;
+    const split = splitCounts.filter((_c, k) => k !== p);
+    setSel(null);
+    update({ layoutMode: 'manuel', split: split.length ? split : null, ...shiftPageMaps(p) });
+  };
+  // Envoie une photo à la FIN d'une autre page. Seules les deux pages
+  // concernées changent — aucune autre ne bouge.
+  const movePhotoToPage = (gi, targetP) => {
+    const src = pageOfIdx(gi);
+    if (isFrozenPhoto(gi) || isLocked(targetP) || src === targetP) return;
+    const photos = [...entry.photos];
+    const [ph] = photos.splice(gi, 1);
+    const counts = [...splitCounts];
+    counts[src] -= 1;
+    const pos = counts.slice(0, targetP + 1).reduce((a, b) => a + b, 0);
+    photos.splice(pos, 0, ph);
+    counts[targetP] += 1;
+    setSel(null);
+    update({ layoutMode: 'manuel', photos, split: counts });
   };
   const setBg = (next) => update({ bg: next });
   const getPageSpec = (p) => bg.pages?.[p] || { type: 'none' };
@@ -2079,21 +2121,14 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
     setSel({ p, kind: 'deco', i: items.length - 1 });
   };
 
-  // Retire des photos (index d'ORIGINE) de leur page dans la répartition : les
-  // autres pages gardent exactement leurs photos. Les pages vidées disparaissent
-  // et les verrous sont renumérotés en conséquence. Retourne { split, lockedPages }.
+  // Retire des photos (index d'ORIGINE) de leur page : les autres pages
+  // gardent exactement leurs photos. En manuel, une page vidée RESTE (boîte
+  // stable, à supprimer soi-même si voulu) ; en auto, la répartition se refait.
   const splitAfterRemoval = (removedIdxs) => {
+    if (mode !== 'manuel') return { split: null, lockedPages };
     const counts = [...splitCounts];
     for (const gi of removedIdxs) counts[pageOfIdx(gi)] -= 1;
-    const nextCounts = [];
-    const nextLocked = {};
-    counts.forEach((c, k) => {
-      if (c > 0) {
-        if (lockedPages[k]) nextLocked[nextCounts.length] = true;
-        nextCounts.push(c);
-      }
-    });
-    return { split: nextCounts.length ? nextCounts : null, lockedPages: nextLocked };
+    return { split: counts, lockedPages, layoutMode: 'manuel' };
   };
 
   function setPhotoCaption(pi, caption) {
@@ -2119,7 +2154,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
       return;
     }
     const adj = splitAfterRemoval([pi]);
-    update({ photos: entry.photos.filter((_, i) => i !== pi), split: adj.split, lockedPages: adj.lockedPages });
+    update({ photos: entry.photos.filter((_, i) => i !== pi), ...adj });
   }
   function movePhoto(pi, dir) {
     const ni = pi + dir;
@@ -2222,8 +2257,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
               .map((p, gi) => (arr.includes(p) ? -1 : gi))
               .filter((gi) => gi >= 0);
             if (removed.length) {
-              const adj = splitAfterRemoval(removed);
-              update({ photos: arr, split: adj.split, lockedPages: adj.lockedPages });
+              update({ photos: arr, ...splitAfterRemoval(removed) });
             } else {
               update({ photos: arr });
             }
@@ -2270,6 +2304,8 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
               ? `Ajout des photos… ${progress.done}/${progress.total}`
               : 'Ajout des photos…'}
           </>
+        ) : mode === 'manuel' ? (
+          '📷 Ajouter des photos (sur une nouvelle page)'
         ) : (
           `📷 Ajouter des photos à cette ${unit === 'etape' ? 'étape' : 'journée'}`
         )}
@@ -2283,85 +2319,39 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
         onChange={(e) => {
           const files = Array.from(e.target.files || []);
           e.target.value = '';
-          if (files.length) onAddPhotos(files);
+          const target = addTarget.current;
+          addTarget.current = null;
+          if (files.length) onAddPhotos(files, target);
         }}
       />
 
-      {/* RÉPARTITION DES PHOTOS SUR LES PAGES (dès 2 photos ; aucun maximum
-          par page — l'automatique, lui, reste à 6 max par page) */}
-      {total >= 2 && (
+      {/* MISE EN PAGE : deux modes, simple et clair. */}
+      {total > 0 && (
         <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm font-medium text-slate-700">
-              Répartition des {total} photos
-            </p>
-            <div className="flex items-center gap-2 text-xs">
-              <span className="text-slate-500">Pages :</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-medium text-slate-700">Mise en page :</span>
+            <div className="flex overflow-hidden rounded-lg border border-slate-300">
               <button
                 type="button"
-                onClick={() => setPagesCount(pageCount - 1)}
-                disabled={!lastSeg || lastSegPages <= 1}
-                title={!lastSeg ? 'La dernière page est verrouillée : impossible de changer le nombre de pages.' : undefined}
-                className="h-6 w-6 rounded border border-slate-300 bg-white font-bold text-slate-700 disabled:opacity-40"
+                onClick={() => { if (mode !== 'auto') switchToAuto(); }}
+                className={`px-3 py-1.5 text-xs font-semibold ${mode === 'auto' ? 'bg-coral-500 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
               >
-                −
+                🪄 Automatique
               </button>
-              <span className="w-4 text-center font-semibold text-slate-700">{pageCount}</span>
               <button
                 type="button"
-                onClick={() => setPagesCount(pageCount + 1)}
-                disabled={!lastSeg || lastSegPages >= lastSegTotal}
-                title={!lastSeg ? 'La dernière page est verrouillée : impossible de changer le nombre de pages.' : undefined}
-                className="h-6 w-6 rounded border border-slate-300 bg-white font-bold text-slate-700 disabled:opacity-40"
+                onClick={() => { if (mode !== 'manuel') switchToManual(); }}
+                className={`px-3 py-1.5 text-xs font-semibold ${mode === 'manuel' ? 'bg-coral-500 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
               >
-                +
+                ✋ Je compose
               </button>
             </div>
           </div>
-
-          <div className="mt-2 flex flex-wrap gap-3">
-            {splitCounts.map((c, p) => {
-              const frozen = isLocked(p);
-              const seg = frozen ? null : segmentOf(p);
-              // Seule page de son segment (entourée de verrous) : total imposé.
-              const alone = seg && seg.from === seg.to;
-              return (
-                <label key={p} className={`flex items-center gap-1.5 text-xs ${frozen ? 'text-amber-600' : 'text-slate-600'}`}>
-                  Page {p + 1}{frozen ? ' 🔒' : ''}
-                  {frozen || alone ? (
-                    <span
-                      className={`w-14 rounded-md border px-2 py-1 text-center font-semibold ${frozen ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-slate-200 bg-slate-100 text-slate-500'}`}
-                      title={frozen ? 'Page verrouillée' : 'Cette page est entourée de pages verrouillées : son nombre de photos ne peut pas changer (rien ne doit traverser un verrou).'}
-                    >{c}</span>
-                  ) : (
-                    <PageCountInput
-                      value={c}
-                      min={1}
-                      max={seg ? segTotalOf(seg) - (seg.to - seg.from) : c}
-                      onCommit={(n) => setPageValue(p, n)}
-                    />
-                  )}
-                </label>
-              );
-            })}
-          </div>
-
-          <div className="mt-2 flex items-center justify-between gap-2">
-            <p className="text-xs text-slate-400">
-              {lockedAny
-                ? 'Les pages 🔒 gardent exactement leurs photos. Tu ajustes les autres : les photos ne traversent jamais une page verrouillée.'
-                : 'Mets le nombre que tu veux par page (aucune limite). Modifier une case réajuste les autres pour garder les ' + total + ' photos.'}
-            </p>
-            <button
-              type="button"
-              onClick={() => update({ split: null })}
-              disabled={lockedAny}
-              title={lockedAny ? 'Indisponible tant qu’une page est verrouillée (la redistribution déplacerait ses photos).' : undefined}
-              className="text-xs font-medium text-brand-700 hover:underline disabled:cursor-not-allowed disabled:opacity-40 disabled:no-underline"
-            >
-              Répartition automatique (max {PHOTOS_PER_PAGE}/page)
-            </button>
-          </div>
+          <p className="mt-1.5 text-xs text-slate-500">
+            {mode === 'auto'
+              ? `L'appli fait les pages toute seule (${PHOTOS_PER_PAGE} photos max par page). Passe en « ✋ Je compose » pour décider toi-même — ta mise en page actuelle sera conservée telle quelle.`
+              : 'Chaque page garde ses photos : rien ne bouge tout seul. Ajoute des photos page par page (bouton « 📷+ » sous chaque page), crée des pages, envoie une photo vers une autre page depuis l\'aperçu.'}
+          </p>
         </div>
       )}
 
@@ -2598,10 +2588,12 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
               </div>
             )}
             <div>{renderPreview(mp)}</div>
-            <div className="mt-1 flex items-center justify-center gap-2">
+            <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
               <span className="text-[11px] text-slate-400">Page {mp + 1}</span>
               {coveredBy[mp] < 0 && lockBtn(mp)}
+              {coveredBy[mp] < 0 && addToPageBtn(mp)}
               {coveredBy[mp] < 0 && gridBtn(mp)}
+              {coveredBy[mp] < 0 && deletePageBtn(mp)}
             </div>
           </div>
 
@@ -2615,10 +2607,12 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
               {visible.map((p) => (
                 <div key={p} className="min-w-0">
                   {renderPreview(p)}
-                  <div className="mt-1 flex items-center justify-center gap-2">
+                  <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
                     <span className="text-[11px] text-slate-400">Page {p + 1}</span>
                     {coveredBy[p] < 0 && lockBtn(p)}
+                    {coveredBy[p] < 0 && addToPageBtn(p)}
                     {coveredBy[p] < 0 && gridBtn(p)}
+                    {coveredBy[p] < 0 && deletePageBtn(p)}
                   </div>
                 </div>
               ))}
@@ -2629,6 +2623,16 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
                 className="flex w-8 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-30" title="Pages suivantes">▶</button>
             )}
           </div>
+
+          {mode === 'manuel' && (
+            <div className="mt-2 flex justify-center">
+              <button type="button" onClick={addEmptyPage}
+                className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                title="Crée une page vide à la fin, à remplir avec 📷+ (elle ne s'imprime pas tant qu'elle est vide)">
+                ➕ Nouvelle page vide
+              </button>
+            </div>
+          )}
 
           {/* Outils de l'élément sélectionné */}
           {selObj && (
@@ -2641,6 +2645,22 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
                     className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">✨ Décorer la photo</button>
                   <button type="button" onClick={removeSel}
                     className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50">🗑️ Retirer</button>
+                  {mode === 'manuel' && pageCount > 1 && (
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        const t = Number(e.target.value);
+                        if (Number.isFinite(t) && e.target.value !== '') movePhotoToPage(pageStartIdx(sel.p) + sel.i, t);
+                      }}
+                      className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700"
+                      title="Envoyer cette photo à la fin d'une autre page"
+                    >
+                      <option value="">📤 Envoyer vers…</option>
+                      {Array.from({ length: pageCount }).map((_, q) =>
+                        q !== sel.p && !isLocked(q) ? <option key={q} value={q}>Page {q + 1}</option> : null
+                      )}
+                    </select>
+                  )}
                 </div>
               )}
               <DecoItemControls
@@ -2893,6 +2913,7 @@ export default function AlbumPage() {
           pageDeco: s.pageDeco || {},
           freePages: s.freePages || {},
           lockedPages: s.lockedPages || {},
+          ...(s.layoutMode ? { layoutMode: s.layoutMode } : {}),
         }));
       } else {
         daysArr = itDays.map((d, i) => {
@@ -2907,6 +2928,7 @@ export default function AlbumPage() {
             pageDeco: s?.pageDeco || {},
             freePages: s?.freePages || {},
             lockedPages: s?.lockedPages || {},
+            ...(s?.layoutMode ? { layoutMode: s.layoutMode } : {}),
           };
         });
       }
@@ -2978,7 +3000,7 @@ export default function AlbumPage() {
       return { ...prev, days };
     });
 
-  async function addPhotos(i, files) {
+  async function addPhotos(i, files, targetPage = null) {
     setBusyDay(i);
     setAddProgress({ done: 0, total: files.length });
     setError(null);
@@ -2999,27 +3021,23 @@ export default function AlbumPage() {
         const days = [...prev.days];
         const entry = days[i];
         const added = uploaded.map((u) => ({ ...u, caption: '' }));
-        const photos = [...entry.photos, ...added];
-        // Si une répartition manuelle existe (souvent avec des pages
-        // verrouillées), on la conserve et on met les NOUVELLES photos sur une
-        // page en plus, pour ne pas décaler les photos des pages existantes.
-        let split = entry.split;
-        if (Array.isArray(entry.split) && entry.split.reduce((a, b) => a + b, 0) === entry.photos.length) {
-          split = [...entry.split, added.length];
-        }
+        // Mode manuel : sur la page demandée (📷+) ou sur une nouvelle page —
+        // les pages existantes gardent exactement leurs photos.
+        // Mode auto : simple ajout, la répartition se refait toute seule.
+        const placed = addPhotosToEntry(entry, added, typeof targetPage === 'number' ? targetPage : null);
         // Par défaut : si aucun fond n'a été choisi, on met en fond de chaque
         // page une photo du jour, tirée au hasard et toutes différentes.
         // (Les pages verrouillées gardent leur fond tel quel.)
-        const pages = computeSplit(photos.length, split).length;
+        const pages = computeSplit(placed.photos.length, placed.split).length;
         let bg = entry.bg;
         if (bgIsEmpty(entry.bg)) {
-          const auto = autoBgFromPhotos(photos, pages);
+          const auto = autoBgFromPhotos(placed.photos, pages);
           const lp = entry.lockedPages || {};
           const cur = normalizeBg(entry.bg);
           auto.pages = auto.pages.map((s, k) => (lp[k] ? (cur.pages?.[k] || { type: 'none' }) : s));
           bg = auto;
         }
-        days[i] = { ...entry, photos, bg, split };
+        days[i] = { ...entry, ...placed, bg };
         return { ...prev, days };
       });
       setDirty(true);
@@ -3478,7 +3496,7 @@ export default function AlbumPage() {
                 index={i}
                 entry={album.days[i]}
                 onChange={(entry) => setDayEntry(i, entry)}
-                onAddPhotos={(files) => addPhotos(i, files)}
+                onAddPhotos={(files, target) => addPhotos(i, files, target)}
                 progress={busyDay === i ? addProgress : null}
                 onPickBgPhoto={(slot) => setPickerFor({ kind: 'dayBg', i, slot })}
                 busy={busyDay === i}

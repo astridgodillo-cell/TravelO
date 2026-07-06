@@ -16,7 +16,7 @@ import AlbumPdfDoc from '../components/AlbumPdfDoc';
 import PdfPagesPreview from '../components/PdfPagesPreview';
 import { pdfBlobToImageFiles } from '../lib/pdfToImages';
 import { DayCard, CoverPicker, ThemePicker, Spinner, CoversSection, FormatPicker, ShareSheet } from './AlbumPage';
-import { FORMAT_LABELS, normalizeBg, bakePhotoEffects, getTheme, unitLabel, splitPhotos, computeSplit, bgIsEmpty, autoBgFromPhotos, formatDateRange, MAP_TRANSPORTS } from '../lib/albumModel';
+import { FORMAT_LABELS, normalizeBg, bakePhotoEffects, getTheme, unitLabel, splitPhotos, computeSplit, bgIsEmpty, autoBgFromPhotos, formatDateRange, MAP_TRANSPORTS, addPhotosToEntry } from '../lib/albumModel';
 
 const emptyDay = () => ({ title: '', note: '', photos: [], bg: null, split: null });
 
@@ -152,7 +152,7 @@ export default function StandaloneAlbumPage() {
     patch({ days });
   };
 
-  async function addPhotos(i, files) {
+  async function addPhotos(i, files, targetPage = null) {
     setBusyDay(i);
     setAddProgress({ done: 0, total: files.length });
     setError(null);
@@ -170,27 +170,23 @@ export default function StandaloneAlbumPage() {
         const days = [...prev.days];
         const entry = days[i];
         const added = uploaded.map((u) => ({ ...u, caption: '' }));
-        const photos = [...entry.photos, ...added];
-        // Si une répartition manuelle existe (souvent avec des pages
-        // verrouillées), on la conserve et les nouvelles photos vont sur une
-        // page en plus : les pages existantes gardent exactement leurs photos.
-        let split = entry.split;
-        if (Array.isArray(entry.split) && entry.split.reduce((a, b) => a + b, 0) === entry.photos.length) {
-          split = [...entry.split, added.length];
-        }
+        // Mode manuel : sur la page demandée (📷+) ou sur une nouvelle page —
+        // les pages existantes gardent exactement leurs photos. Mode auto :
+        // simple ajout, la répartition se refait toute seule.
+        const placed = addPhotosToEntry(entry, added, typeof targetPage === 'number' ? targetPage : null);
         // Par défaut : fond de chaque page = une photo du jour, au hasard et
         // toutes différentes (tant qu'aucun fond n'a été choisi). Les pages
         // verrouillées gardent leur fond tel quel.
-        const pages = computeSplit(photos.length, split).length;
+        const pages = computeSplit(placed.photos.length, placed.split).length;
         let bg = entry.bg;
         if (bgIsEmpty(entry.bg)) {
-          const auto = autoBgFromPhotos(photos, pages);
+          const auto = autoBgFromPhotos(placed.photos, pages);
           const lp = entry.lockedPages || {};
           const cur = normalizeBg(entry.bg);
           auto.pages = auto.pages.map((s, k) => (lp[k] ? (cur.pages?.[k] || { type: 'none' }) : s));
           bg = auto;
         }
-        days[i] = { ...entry, photos, bg, split };
+        days[i] = { ...entry, ...placed, bg };
         return { ...prev, days };
       });
       setDirty(true);
@@ -557,7 +553,7 @@ export default function StandaloneAlbumPage() {
               index={i}
               entry={d}
               onChange={(entry) => updateDay(i, entry)}
-              onAddPhotos={(files) => addPhotos(i, files)}
+              onAddPhotos={(files, target) => addPhotos(i, files, target)}
               progress={busyDay === i ? addProgress : null}
               onPickBgPhoto={(slot) => setPickerFor({ kind: 'dayBg', i, slot })}
               busy={busyDay === i}
