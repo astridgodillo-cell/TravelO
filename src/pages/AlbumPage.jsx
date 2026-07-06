@@ -1903,6 +1903,147 @@ export function ShareSheet({ files, text, onClose }) {
   );
 }
 
+// ✂️ Recadrage visuel plein écran, comme l'éditeur photo du téléphone :
+// un rectangle avec poignées (coins + bords) à glisser sur la photo, grille
+// des tiers, zones sombres autour. Le rectangle choisi est converti en
+// cadre (hs) + point de mire (fx/fy/fz) — rendu identique aperçu ⇄ PDF.
+export function CropModal({ photo, initialHs = 1, onApply, onClose }) {
+  useBackClose(onClose);
+  const ar = photo.w && photo.h ? photo.w / photo.h : 4 / 3;
+  const frameRef = useRef(null);
+  const wrapRef = useRef(null);
+  const drag = useRef(null);
+  const [dim, setDim] = useState(null); // taille affichée de la photo (px)
+  const [rect, setRect] = useState(() => {
+    // Rectangle initial = fenêtre actuellement visible de la photo.
+    const f = photoFocal(photo);
+    const cv = coverFrac(ar / (initialHs || 1), ar, f.fx, f.fy, f.fz);
+    const du = Math.min(1, 1 / cv.w);
+    const dv = Math.min(1, 1 / cv.h);
+    const u0 = Math.min(1 - du, Math.max(0, -cv.left / cv.w));
+    const v0 = Math.min(1 - dv, Math.max(0, -cv.top / cv.h));
+    return { u0, v0, u1: u0 + du, v1: v0 + dv };
+  });
+  useEffect(() => {
+    const upd = () => {
+      const el = frameRef.current;
+      if (!el) return;
+      const W = el.clientWidth;
+      const H = el.clientHeight;
+      let w = W;
+      let h = W / ar;
+      if (h > H) { h = H; w = H * ar; }
+      setDim({ w, h });
+    };
+    upd();
+    window.addEventListener('resize', upd);
+    return () => window.removeEventListener('resize', upd);
+  }, [ar]);
+
+  const MIN = 0.08; // taille minimale du rectangle (fraction de la photo)
+  const toUV = (e) => {
+    const r = wrapRef.current.getBoundingClientRect();
+    return { u: (e.clientX - r.left) / r.width, v: (e.clientY - r.top) / r.height };
+  };
+  const startDrag = (e, m) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    drag.current = { m, start: toUV(e), rect: { ...rect } };
+  };
+  const onMove = (e) => {
+    const d = drag.current;
+    if (!d) return;
+    const { u, v } = toUV(e);
+    const dx = u - d.start.u;
+    const dy = v - d.start.v;
+    let { u0, v0, u1, v1 } = d.rect;
+    if (d.m === 'move') {
+      const w = u1 - u0;
+      const h = v1 - v0;
+      u0 = Math.min(1 - w, Math.max(0, d.rect.u0 + dx)); u1 = u0 + w;
+      v0 = Math.min(1 - h, Math.max(0, d.rect.v0 + dy)); v1 = v0 + h;
+    } else {
+      if (d.m.includes('w')) u0 = Math.min(u1 - MIN, Math.max(0, d.rect.u0 + dx));
+      if (d.m.includes('e')) u1 = Math.max(u0 + MIN, Math.min(1, d.rect.u1 + dx));
+      if (d.m.includes('n')) v0 = Math.min(v1 - MIN, Math.max(0, d.rect.v0 + dy));
+      if (d.m.includes('s')) v1 = Math.max(v0 + MIN, Math.min(1, d.rect.v1 + dy));
+    }
+    setRect({ u0, v0, u1, v1 });
+  };
+  const endDrag = () => { drag.current = null; };
+  const pct = (x) => `${x * 100}%`;
+  const { u0, v0, u1, v1 } = rect;
+  const handleProps = (m) => ({
+    onPointerDown: (e) => startDrag(e, m),
+    onPointerMove: onMove,
+    onPointerUp: endDrag,
+    onPointerCancel: endDrag,
+  });
+  // Poignée de coin : grand disque tactile invisible + équerre blanche.
+  const corner = (m, uu, vv, borders) => (
+    <div key={m} {...handleProps(m)}
+      className="absolute z-20 h-9 w-9 -translate-x-1/2 -translate-y-1/2 touch-none"
+      style={{ left: pct(uu), top: pct(vv), cursor: `${m}-resize` }}>
+      <div className={`absolute inset-1.5 border-white ${borders}`} style={{ borderStyle: 'solid' }} />
+    </div>
+  );
+  // Poignée de bord : barre blanche au milieu du côté.
+  const edge = (m, uu, vv, horiz) => (
+    <div key={m} {...handleProps(m)}
+      className="absolute z-20 flex h-9 w-9 -translate-x-1/2 -translate-y-1/2 items-center justify-center touch-none"
+      style={{ left: pct(uu), top: pct(vv), cursor: `${m}-resize` }}>
+      <div className={`rounded-full bg-white shadow ${horiz ? 'h-1.5 w-7' : 'h-7 w-1.5'}`} />
+    </div>
+  );
+  return (
+    <div className="fixed inset-0 z-[80] flex flex-col bg-black">
+      <div className="flex shrink-0 items-center justify-between px-4 py-3">
+        <h3 className="font-semibold text-white">✂️ Recadrer la photo</h3>
+        <button onClick={onClose} className="-m-2 p-2 text-2xl leading-none text-white/70 hover:text-white">✕</button>
+      </div>
+      <div ref={frameRef} className="flex min-h-0 flex-1 items-center justify-center px-3">
+        {dim && (
+          <div ref={wrapRef} className="relative touch-none select-none" style={{ width: dim.w, height: dim.h, WebkitTouchCallout: 'none' }}
+            onContextMenu={(e) => e.preventDefault()}>
+            <img src={photo.display || photo.full} alt="" draggable={false} className="h-full w-full" style={{ objectFit: 'fill' }} />
+            {/* zones sombres hors du cadre */}
+            <div className="pointer-events-none absolute inset-x-0 top-0 bg-black/60" style={{ height: pct(v0) }} />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-black/60" style={{ height: pct(1 - v1) }} />
+            <div className="pointer-events-none absolute bg-black/60" style={{ left: 0, top: pct(v0), width: pct(u0), height: pct(v1 - v0) }} />
+            <div className="pointer-events-none absolute bg-black/60" style={{ right: 0, top: pct(v0), width: pct(1 - u1), height: pct(v1 - v0) }} />
+            {/* rectangle + grille des tiers (glisser à l'intérieur = déplacer) */}
+            <div {...handleProps('move')}
+              className="absolute z-10 cursor-move touch-none border-2 border-white/90"
+              style={{ left: pct(u0), top: pct(v0), width: pct(u1 - u0), height: pct(v1 - v0) }}>
+              <div className="pointer-events-none absolute inset-y-0 border-l border-white/50" style={{ left: '33.33%' }} />
+              <div className="pointer-events-none absolute inset-y-0 border-l border-white/50" style={{ left: '66.66%' }} />
+              <div className="pointer-events-none absolute inset-x-0 border-t border-white/50" style={{ top: '33.33%' }} />
+              <div className="pointer-events-none absolute inset-x-0 border-t border-white/50" style={{ top: '66.66%' }} />
+            </div>
+            {corner('nw', u0, v0, 'border-l-4 border-t-4')}
+            {corner('ne', u1, v0, 'border-r-4 border-t-4')}
+            {corner('sw', u0, v1, 'border-l-4 border-b-4')}
+            {corner('se', u1, v1, 'border-r-4 border-b-4')}
+            {edge('n', (u0 + u1) / 2, v0, true)}
+            {edge('s', (u0 + u1) / 2, v1, true)}
+            {edge('w', u0, (v0 + v1) / 2, false)}
+            {edge('e', u1, (v0 + v1) / 2, false)}
+          </div>
+        )}
+      </div>
+      <div className="flex shrink-0 items-center justify-between gap-2 px-4 py-4">
+        <button type="button" onClick={onClose}
+          className="rounded-lg border border-white/30 px-4 py-2 text-sm font-semibold text-white/80 hover:bg-white/10">Annuler</button>
+        <button type="button" onClick={() => setRect({ u0: 0, v0: 0, u1: 1, v1: 1 })}
+          className="rounded-lg border border-white/30 px-4 py-2 text-sm font-semibold text-white/80 hover:bg-white/10">↺ Photo entière</button>
+        <button type="button" onClick={() => onApply(rect)}
+          className="rounded-lg bg-coral-500 px-5 py-2 text-sm font-semibold text-white hover:bg-coral-600">✓ Valider</button>
+      </div>
+    </div>
+  );
+}
+
 // Choix de la source des photos à ajouter sur une page (mode manuel) :
 // depuis les fichiers du téléphone, ou parmi les photos DÉJÀ dans le jour
 // (elles seront déplacées vers cette page).
@@ -1993,6 +2134,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
   const addTarget = useRef(null); // page cible du prochain ajout de photos (mode manuel)
   const [addChoice, setAddChoice] = useState(null); // page : choix de la source d'ajout
   const [dayPick, setDayPick] = useState(null); // page : sélection parmi les photos du jour
+  const [cropFor, setCropFor] = useState(null); // { gIdx, hs } : recadrage visuel
   const [bgOpen, setBgOpen] = useState(false);
   const [decoPage, setDecoPage] = useState(null);
   const [sel, setSel] = useState(null); // élément sélectionné dans l'aperçu : { p, kind:'photo'|'deco', i }
@@ -2239,6 +2381,24 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
     const items = [...(entry.pageDeco?.[p] || []), item];
     update({ pageDeco: { ...(entry.pageDeco || {}), [p]: items } });
     setSel({ p, kind: 'deco', i: items.length - 1 });
+  };
+  // Applique le rectangle choisi dans la fenêtre ✂️ Recadrer : converti en
+  // hauteur de cadre (hs) + point de mire (fx/fy/fz). UNE seule mise à jour
+  // (cadre + photo), sinon la seconde écraserait la première.
+  const applyCrop = (r) => {
+    if (!cropFor || !sel || sel.kind !== 'photo') { setCropFor(null); return; }
+    const du = Math.max(0.02, r.u1 - r.u0);
+    const dv = Math.max(0.02, r.v1 - r.v0);
+    const hs = Math.min(6, Math.max(0.15, dv / du));
+    const fz = Math.max(1, 1 / Math.max(du, dv));
+    const fx = du >= 0.999 ? 0.5 : Math.min(1, Math.max(0, r.u0 / (1 - du)));
+    const fy = dv >= 0.999 ? 0.5 : Math.min(1, Math.max(0, r.v0 / (1 - dv)));
+    let boxes = entry.freePages?.[sel.p];
+    if (!Array.isArray(boxes) || boxes.length !== (chunks[sel.p]?.length || 0)) boxes = seedFreeForPage(sel.p);
+    boxes = boxes.map((b, k) => (k === sel.i ? { ...b, hs } : b));
+    const photos = entry.photos.map((p, i) => (i === cropFor.gIdx ? { ...p, fx, fy, fz } : p));
+    update({ photos, freePages: { ...(entry.freePages || {}), [sel.p]: boxes } });
+    setCropFor(null);
   };
 
   // Retire des photos (index d'ORIGINE) de leur page : les autres pages
@@ -2759,6 +2919,8 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
             <div className="mt-3">
               {sel.kind === 'photo' && (
                 <div className="mb-2 flex flex-wrap gap-2">
+                  <button type="button" onClick={() => setCropFor({ gIdx: pageStartIdx(sel.p) + sel.i, hs: selObj.hs || 1 })}
+                    className="rounded-lg border border-coral-300 bg-coral-50 px-3 py-1.5 text-xs font-semibold text-coral-700 hover:bg-coral-100">✂️ Recadrer</button>
                   <button type="button" onClick={() => setFxFor(pageStartIdx(sel.p) + sel.i)}
                     className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">🎨 Effet &amp; cadrage</button>
                   <button type="button" onClick={() => setDecoForPhoto(pageStartIdx(sel.p) + sel.i)}
@@ -2783,102 +2945,6 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
                   )}
                 </div>
               )}
-              {/* RECADRAGE direct : hauteur du cadre + position/zoom de la
-                  photo DANS le cadre. La largeur = curseur « Taille » dessous. */}
-              {sel.kind === 'photo' && (() => {
-                const gIdx = pageStartIdx(sel.p) + sel.i;
-                const ph = entry.photos[gIdx];
-                if (!ph) return null;
-                const f = photoFocal(ph);
-                const hs = selObj.hs || 1;
-                const setHs = (v) => patchSel({ hs: Math.min(2.5, Math.max(0.3, v)) });
-                const setF = (patch) => setPhotoPatch(gIdx, patch);
-                const stepBtn = 'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-base font-bold text-slate-700 active:bg-slate-100';
-                // --- Rognage bord par bord : le bord OPPOSÉ ne bouge pas. ---
-                // Tout est exprimé en « unités de petit côté de page » (mp).
-                const dims = FORMAT_DIMS[format] || FORMAT_DIMS.carre;
-                const fw = dims.trimW + 6; // + fond perdu
-                const fh = dims.trimH + 6;
-                const minmm = Math.min(fw, fh);
-                const pageWmp = fw / minmm;
-                const pageHmp = fh / minmm;
-                const Wmp = selObj.scale;                       // largeur du cadre
-                const Hmp = (selObj.scale / selObj.ar) * hs;    // hauteur du cadre
-                const STEP = 0.03; // 3 % du petit côté de page par appui
-                const trim = (edge, d) => { // d > 0 = rogner ce bord, d < 0 = étendre
-                  if (edge === 'top' || edge === 'bottom') {
-                    const H2 = Math.max(0.08, Math.min(2.5, Hmp - d));
-                    const shift = ((Hmp - H2) / 2) / pageHmp;
-                    patchSel({
-                      hs: (H2 * selObj.ar) / selObj.scale,
-                      yf: Math.min(1, Math.max(0, selObj.yf + (edge === 'top' ? shift : -shift))),
-                    });
-                  } else {
-                    const W2 = Math.max(0.08, Math.min(2.5, Wmp - d));
-                    const shift = ((Wmp - W2) / 2) / pageWmp;
-                    patchSel({
-                      scale: W2,
-                      hs: (Hmp * selObj.ar) / W2, // hauteur conservée
-                      xf: Math.min(1, Math.max(0, selObj.xf + (edge === 'left' ? shift : -shift))),
-                    });
-                  }
-                };
-                const edgeRow = (label, edge) => (
-                  <span className="flex items-center gap-1">
-                    <span className="w-14 text-[11px] text-slate-500">{label}</span>
-                    <button type="button" className={stepBtn} onClick={() => trim(edge, STEP)} title={`Rogner le bord ${label.toLowerCase()}`}>−</button>
-                    <button type="button" className={stepBtn} onClick={() => trim(edge, -STEP)} title={`Étendre le bord ${label.toLowerCase()}`}>+</button>
-                  </span>
-                );
-                return (
-                  <div className="mb-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
-                    <div className="mb-1 flex items-center justify-between gap-2">
-                      <p className="text-xs font-semibold text-slate-600">📐 Recadrage</p>
-                      <button type="button" onClick={() => { patchSel({ hs: 1 }); setF({ fx: 0.5, fy: 0.5, fz: 1 }); }}
-                        className="text-xs font-medium text-coral-600 hover:text-coral-700">↺ réinitialiser</button>
-                    </div>
-                    <div className="text-xs text-slate-600">
-                      Hauteur du cadre {hs !== 1 ? '(photo recadrée)' : '(photo entière)'}
-                      <div className="flex items-center gap-2">
-                        <button type="button" className={stepBtn} onClick={() => setHs(hs - 0.05)} title="Cadre moins haut">−</button>
-                        <input type="range" min="0.3" max="2.5" step="0.01" value={hs}
-                          onChange={(e) => setHs(parseFloat(e.target.value))} className="w-full flex-1" />
-                        <button type="button" className={stepBtn} onClick={() => setHs(hs + 0.05)} title="Cadre plus haut">+</button>
-                      </div>
-                    </div>
-                    <div className="mt-2 text-xs text-slate-600">
-                      Rogner un bord (− rogne · + étend, le bord opposé ne bouge pas)
-                      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1.5">
-                        {edgeRow('Haut', 'top')}
-                        {edgeRow('Bas', 'bottom')}
-                        {edgeRow('Gauche', 'left')}
-                        {edgeRow('Droite', 'right')}
-                      </div>
-                    </div>
-                    <div className="mt-1.5 text-xs text-slate-600">
-                      Zoom de la photo dans le cadre
-                      <div className="flex items-center gap-2">
-                        <button type="button" className={stepBtn} onClick={() => setF({ fz: Math.max(1, f.fz - 0.1) })}>−</button>
-                        <input type="range" min="1" max="3" step="0.05" value={f.fz}
-                          onChange={(e) => setF({ fz: parseFloat(e.target.value) })} className="w-full flex-1" />
-                        <button type="button" className={stepBtn} onClick={() => setF({ fz: Math.min(3, f.fz + 0.1) })}>+</button>
-                      </div>
-                    </div>
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <span className="text-xs text-slate-600">Photo dans le cadre :</span>
-                      <button type="button" className={stepBtn} onClick={() => setF({ fx: Math.min(1, f.fx + 0.06) })} title="Décaler la photo vers la gauche">◀</button>
-                      <button type="button" className={stepBtn} onClick={() => setF({ fx: Math.max(0, f.fx - 0.06) })} title="Décaler la photo vers la droite">▶</button>
-                      <button type="button" className={stepBtn} onClick={() => setF({ fy: Math.min(1, f.fy + 0.06) })} title="Décaler la photo vers le haut">▲</button>
-                      <button type="button" className={stepBtn} onClick={() => setF({ fy: Math.max(0, f.fy - 0.06) })} title="Décaler la photo vers le bas">▼</button>
-                      <button type="button" onClick={() => setF({ fx: 0.5, fy: 0.5 })}
-                        className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">🎯 Recentrer</button>
-                    </div>
-                    <p className="mt-1.5 text-[11px] text-slate-400">
-                      Astuce : le déplacement/zoom dans le cadre se voit quand la photo est recadrée (hauteur modifiée, zoom &gt; 1, ou cadre/forme).
-                    </p>
-                  </div>
-                );
-              })()}
               <DecoItemControls
                 item={selObj}
                 onChange={patchSel}
@@ -2958,6 +3024,15 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
           isFrozenPhoto={isFrozenPhoto}
           onConfirm={(gis) => { movePhotosToPage(gis, dayPick); setDayPick(null); }}
           onClose={() => setDayPick(null)}
+        />
+      )}
+
+      {cropFor != null && entry.photos[cropFor.gIdx] && (
+        <CropModal
+          photo={entry.photos[cropFor.gIdx]}
+          initialHs={cropFor.hs}
+          onApply={applyCrop}
+          onClose={() => setCropFor(null)}
         />
       )}
     </section>
