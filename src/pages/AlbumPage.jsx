@@ -2108,7 +2108,14 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
     if (!window.confirm('Repasser en automatique ? La répartition sera refaite (~6 photos par page) et les verrous/dispositions libres de ces pages seront effacés.')) return;
     update({ layoutMode: 'auto', split: null, lockedPages: {}, freePages: {} });
   };
-  const addEmptyPage = () => switchToManual({ split: [...splitCounts, 0] });
+  const addEmptyPage = () => {
+    const newIdx = splitCounts.length; // index de la page créée
+    setSel(null);
+    switchToManual({ split: [...splitCounts, 0] });
+    // On ouvre directement la nouvelle page dans l'aperçu (mobile + ordi).
+    setMPage(newIdx);
+    setSpreadStart(Math.max(0, newIdx - 1));
+  };
   // Renumérote les réglages par page (fonds, décos, verrous, dispositions)
   // après suppression de la page `removed`.
   const shiftPageMaps = (removed) => {
