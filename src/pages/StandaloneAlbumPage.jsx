@@ -15,6 +15,7 @@ import { renderRouteMapImage } from '../lib/staticMapImage';
 import AlbumPdfDoc from '../components/AlbumPdfDoc';
 import PdfPagesPreview from '../components/PdfPagesPreview';
 import { pdfBlobToImageFiles } from '../lib/pdfToImages';
+import useBackClose from '../lib/useBackClose';
 import { DayCard, CoverPicker, ThemePicker, Spinner, CoversSection, FormatPicker, ShareSheet } from './AlbumPage';
 import { FORMAT_LABELS, normalizeBg, bakePhotoEffects, getTheme, unitLabel, splitPhotos, computeSplit, bgIsEmpty, autoBgFromPhotos, formatDateRange, MAP_TRANSPORTS, addPhotosToEntry } from '../lib/albumModel';
 
@@ -746,6 +747,7 @@ const pickerDot = (n) => L.divIcon({
 });
 
 function StopPositionPicker({ stop, stopIndex, allStops, onSave, onClose }) {
+  useBackClose(onClose); // « retour » ferme la fenêtre, comme la croix
   const [pos, setPos] = useState(stop.lat && stop.lng ? { lat: stop.lat, lng: stop.lng } : null);
   const others = allStops
     .map((s, i) => ({ ...s, i }))

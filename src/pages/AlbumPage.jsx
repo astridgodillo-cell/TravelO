@@ -13,6 +13,7 @@ import { writeAlbumText, pixabaySearch, pixabayFetch } from '../lib/ai';
 import AlbumPdfDoc from '../components/AlbumPdfDoc';
 import PdfPagesPreview from '../components/PdfPagesPreview';
 import { pdfBlobToImageFiles } from '../lib/pdfToImages';
+import useBackClose from '../lib/useBackClose';
 import {
   FORMAT_LABELS,
   PHOTOS_PER_PAGE,
@@ -499,6 +500,7 @@ function PhotoFill({ photo, containerAr = 4 / 3, radiusPx = 10 }) {
 // (glisser pour déplacer la zone visible, curseur pour zoomer). onChange reçoit
 // un correctif partiel : { effect } ou { fx, fy, fz }.
 export function EffectPicker({ photo, current, onChange, onClose }) {
+  useBackClose(onClose); // « retour » ferme la fenêtre, comme la croix
   const f0 = photoFocal(photo);
   const [fx, setFx] = useState(f0.fx);
   const [fy, setFy] = useState(f0.fy);
@@ -895,6 +897,7 @@ function DecoItemControls({ item, onChange, onRemove, onResetScale, onResetRot, 
 }
 
 export function DecoEditor({ title, aspect, background, initialItems, onChange, onClose, toolbar = null }) {
+  useBackClose(onClose); // « retour » ferme la fenêtre, comme la croix
   const [items, setItems] = useState(() => (initialItems || []).map((d) => ({ ...d })));
   const [sel, setSel] = useState(null);
   const canvasRef = useRef(null);
@@ -1277,6 +1280,7 @@ export function PageDecorateModal({
   dayIndex, location, bg, pageIndex, pageCount, unit = 'jour',
   initialItems, onChange, initialFree, onChangeFree, onClose,
 }) {
+  useBackClose(onClose); // « retour » ferme la fenêtre, comme la croix
   const spec = resolveBg(bg, pageIndex, pageCount);
   const onPlate = spec.type !== 'none';
   const lay = pageLayout(photos, format, { title, note, firstPage, onPlate });
@@ -1488,6 +1492,7 @@ function PhotoTile({ photo, onCaption, onRemove, onMoveLeft, onMoveRight, canLef
 // Fenêtre « ajouter une décoration » à la page (autocollant, texte, bulle,
 // image, clipart Pixabay). Réutilise le panneau d'ajout partagé.
 function AddDecoSheet({ onAddItem, onClose }) {
+  useBackClose(onClose); // « retour » ferme la fenêtre, comme la croix
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-4">
       <div className="flex max-h-[100dvh] w-full max-w-lg flex-col rounded-t-2xl bg-white shadow-2xl sm:max-h-[90vh] sm:rounded-2xl">
@@ -1576,6 +1581,11 @@ export function PhotoSortModal({ photos, onChange, onClose, unit = 'jour', froze
   const tileEls = useRef({});
   const [zoom, setZoom] = useState(null); // index affiché en plein écran, ou null
   const swipe = useRef(null);
+  // « retour » : ferme d'abord la photo en plein écran, puis la fenêtre.
+  useBackClose(() => {
+    if (zoom != null) { setZoom(null); return false; }
+    onClose();
+  });
 
   const clearHold = () => { if (holdTimer.current) { clearTimeout(holdTimer.current); holdTimer.current = null; } };
   const activate = (k, el, pid) => {
@@ -1833,6 +1843,7 @@ function downloadFiles(files) {
 // est fraîche, donc le mobile ouvre bien la fenêtre WhatsApp au lieu de se
 // rabattre sur un téléchargement.
 export function ShareSheet({ files, text, onClose }) {
+  useBackClose(onClose); // « retour » ferme la fenêtre, comme la croix
   const [busy, setBusy] = useState(false);
   const isPdf = files.length === 1 && files[0].type === 'application/pdf';
   const canShare =
@@ -1886,9 +1897,96 @@ export function ShareSheet({ files, text, onClose }) {
   );
 }
 
+// Choix de la source des photos à ajouter sur une page (mode manuel) :
+// depuis les fichiers du téléphone, ou parmi les photos DÉJÀ dans le jour
+// (elles seront déplacées vers cette page).
+function AddPhotosChoiceSheet({ page, hasDayPhotos, onFiles, onFromDay, onClose }) {
+  useBackClose(onClose);
+  return (
+    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/50 sm:items-center sm:p-4" onClick={onClose}>
+      <div className="w-full max-w-sm rounded-t-2xl bg-white p-5 shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-center text-base font-semibold text-slate-800">Ajouter des photos · page {page + 1}</h3>
+        <div className="mt-4 space-y-2">
+          <button type="button" onClick={onFiles}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-coral-500 px-4 py-3 text-sm font-semibold text-white hover:bg-coral-600">
+            📁 Depuis mes fichiers / ma galerie
+          </button>
+          <button type="button" onClick={onFromDay} disabled={!hasDayPhotos}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40">
+            🖼️ Depuis les photos de ce jour
+          </button>
+          {!hasDayPhotos && (
+            <p className="text-center text-[11px] text-slate-400">Aucune photo déplaçable depuis les autres pages.</p>
+          )}
+          <button type="button" onClick={onClose} className="w-full py-2 text-center text-xs text-slate-400 hover:text-slate-600">Annuler</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Sélection multiple parmi les photos du jour, pour les DÉPLACER vers la page
+// cible (les autres pages ne bougent pas, sauf celles d'où viennent les photos).
+function DayPhotoPickerModal({ photos, targetPage, pageOfIdx, isFrozenPhoto, onConfirm, onClose }) {
+  useBackClose(onClose);
+  const [sel, setSel] = useState(() => new Set());
+  const toggle = (gi) =>
+    setSel((s) => { const n = new Set(s); if (n.has(gi)) n.delete(gi); else n.add(gi); return n; });
+  return (
+    <div className="fixed inset-0 z-[70] flex flex-col bg-slate-900">
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
+        <div className="min-w-0">
+          <h3 className="truncate font-semibold text-white">Choisir les photos → page {targetPage + 1}</h3>
+          <p className="text-[11px] text-white/60">Touche les photos à déplacer sur cette page.</p>
+        </div>
+        <button onClick={onClose} className="-m-2 shrink-0 p-2 text-2xl leading-none text-white/60 hover:text-white">✕</button>
+      </div>
+      <div className="flex-1 overflow-y-auto overscroll-contain p-3">
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
+          {photos.map((p, gi) => {
+            const here = pageOfIdx(gi) === targetPage;
+            const frozen = isFrozenPhoto(gi);
+            const selectable = !here && !frozen;
+            const on = sel.has(gi);
+            return (
+              <button
+                key={gi}
+                type="button"
+                disabled={!selectable}
+                onClick={() => toggle(gi)}
+                className={`relative aspect-square overflow-hidden rounded-lg border-2 ${on ? 'border-coral-400' : 'border-transparent'} ${selectable ? '' : 'opacity-40'}`}
+              >
+                <img src={p.display || p.full} alt="" className="h-full w-full object-cover" draggable={false} />
+                <span className="absolute left-1 top-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                  {frozen ? '🔒' : here ? 'ici' : `p.${pageOfIdx(gi) + 1}`}
+                </span>
+                {on && (
+                  <span className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-coral-500 text-xs font-bold text-white">✓</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center justify-center gap-2 border-t border-white/10 px-4 py-3">
+        <button
+          type="button"
+          disabled={!sel.size}
+          onClick={() => onConfirm([...sel])}
+          className="rounded-xl bg-coral-500 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
+        >
+          📥 Déplacer {sel.size || ''} photo{sel.size > 1 ? 's' : ''} vers la page {targetPage + 1}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhoto, busy, progress = null, format = 'carre', onFormatChange = null, theme = null, unit = 'jour', pageOffset = null, onShareDay = null }) {
   const fileRef = useRef(null);
   const addTarget = useRef(null); // page cible du prochain ajout de photos (mode manuel)
+  const [addChoice, setAddChoice] = useState(null); // page : choix de la source d'ajout
+  const [dayPick, setDayPick] = useState(null); // page : sélection parmi les photos du jour
   const [bgOpen, setBgOpen] = useState(false);
   const [decoPage, setDecoPage] = useState(null);
   const [sel, setSel] = useState(null); // élément sélectionné dans l'aperçu : { p, kind:'photo'|'deco', i }
@@ -1972,7 +2070,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
   const addToPageBtn = (p) => (mode === 'manuel' && !isLocked(p) ? (
     <button
       type="button"
-      onClick={() => { addTarget.current = p; fileRef.current?.click(); }}
+      onClick={() => setAddChoice(p)}
       className="rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100"
       title="Ajouter des photos sur cette page (les autres pages ne bougent pas)"
     >
@@ -2038,21 +2136,30 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
     setSel(null);
     update({ layoutMode: 'manuel', split: split.length ? split : null, ...shiftPageMaps(p) });
   };
-  // Envoie une photo à la FIN d'une autre page. Seules les deux pages
+  // Envoie une ou plusieurs photos à la FIN d'une autre page. Seules les pages
   // concernées changent — aucune autre ne bouge.
-  const movePhotoToPage = (gi, targetP) => {
-    const src = pageOfIdx(gi);
-    if (isFrozenPhoto(gi) || isLocked(targetP) || src === targetP) return;
+  const movePhotosToPage = (gis, targetP) => {
+    if (isLocked(targetP)) return;
+    const sels = [...gis]
+      .filter((gi) => !isFrozenPhoto(gi) && pageOfIdx(gi) !== targetP)
+      .sort((a, b) => a - b);
+    if (!sels.length) return;
     const photos = [...entry.photos];
-    const [ph] = photos.splice(gi, 1);
     const counts = [...splitCounts];
-    counts[src] -= 1;
+    const moved = [];
+    // Retraits du plus grand index au plus petit → les index restent valides.
+    for (let x = sels.length - 1; x >= 0; x -= 1) {
+      const gi = sels[x];
+      counts[pageOfIdx(gi)] -= 1;
+      moved.unshift(photos.splice(gi, 1)[0]);
+    }
     const pos = counts.slice(0, targetP + 1).reduce((a, b) => a + b, 0);
-    photos.splice(pos, 0, ph);
-    counts[targetP] += 1;
+    photos.splice(pos, 0, ...moved);
+    counts[targetP] += moved.length;
     setSel(null);
     update({ layoutMode: 'manuel', photos, split: counts });
   };
+  const movePhotoToPage = (gi, targetP) => movePhotosToPage([gi], targetP);
   const setBg = (next) => update({ bg: next });
   const getPageSpec = (p) => bg.pages?.[p] || { type: 'none' };
   const setPageSpec = (p, spec) => {
@@ -2723,6 +2830,27 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
       {addOpen && (
         <AddDecoSheet onAddItem={addDecoItem} onClose={() => setAddOpen(false)} />
       )}
+
+      {addChoice != null && (
+        <AddPhotosChoiceSheet
+          page={addChoice}
+          hasDayPhotos={entry.photos.some((_p, gi) => pageOfIdx(gi) !== addChoice && !isFrozenPhoto(gi))}
+          onFiles={() => { addTarget.current = addChoice; setAddChoice(null); fileRef.current?.click(); }}
+          onFromDay={() => { setDayPick(addChoice); setAddChoice(null); }}
+          onClose={() => setAddChoice(null)}
+        />
+      )}
+
+      {dayPick != null && (
+        <DayPhotoPickerModal
+          photos={entry.photos}
+          targetPage={dayPick}
+          pageOfIdx={pageOfIdx}
+          isFrozenPhoto={isFrozenPhoto}
+          onConfirm={(gis) => { movePhotosToPage(gis, dayPick); setDayPick(null); }}
+          onClose={() => setDayPick(null)}
+        />
+      )}
     </section>
   );
 }
@@ -2730,6 +2858,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
 // Fenêtre de choix de la photo de couverture : montre toutes les photos déjà
 // présentes dans l'album, regroupées par journée. Un clic choisit la couverture.
 export function CoverPicker({ days, album, current, onPick, onClose, title = 'Choisir la photo de couverture', unit = 'jour' }) {
+  useBackClose(onClose); // « retour » ferme la fenêtre, comme la croix
   const fileRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState(null);
