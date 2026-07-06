@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { pdf } from '@react-pdf/renderer';
 import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
@@ -52,6 +52,13 @@ async function geocode(name, country) {
 
 export default function StandaloneAlbumPage() {
   const { id } = useParams();
+  const navigate = useNavigate();
+  // Retour : on revient à la page PRÉCÉDENTE (d'où l'on venait), et seulement
+  // à défaut d'historique (album ouvert directement) vers « Mes albums ».
+  const goBack = () => {
+    if (window.history.length > 1) navigate(-1);
+    else navigate('/albums');
+  };
   const [album, setAlbum] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -452,7 +459,7 @@ export default function StandaloneAlbumPage() {
   return (
     <div className="mx-auto max-w-5xl">
       <div className="sticky top-0 z-20 -mx-4 mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur">
-        <Link to="/albums" className="text-sm text-brand-700 underline">← Mes albums</Link>
+        <button type="button" onClick={goBack} className="text-sm text-brand-700 underline">← Retour</button>
         <button
           onClick={save}
           disabled={saving || (!dirty && savedOnce)}
