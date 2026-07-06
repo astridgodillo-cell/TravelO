@@ -2794,6 +2794,42 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
                 const setHs = (v) => patchSel({ hs: Math.min(2.5, Math.max(0.3, v)) });
                 const setF = (patch) => setPhotoPatch(gIdx, patch);
                 const stepBtn = 'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-base font-bold text-slate-700 active:bg-slate-100';
+                // --- Rognage bord par bord : le bord OPPOSÉ ne bouge pas. ---
+                // Tout est exprimé en « unités de petit côté de page » (mp).
+                const dims = FORMAT_DIMS[format] || FORMAT_DIMS.carre;
+                const fw = dims.trimW + 6; // + fond perdu
+                const fh = dims.trimH + 6;
+                const minmm = Math.min(fw, fh);
+                const pageWmp = fw / minmm;
+                const pageHmp = fh / minmm;
+                const Wmp = selObj.scale;                       // largeur du cadre
+                const Hmp = (selObj.scale / selObj.ar) * hs;    // hauteur du cadre
+                const STEP = 0.03; // 3 % du petit côté de page par appui
+                const trim = (edge, d) => { // d > 0 = rogner ce bord, d < 0 = étendre
+                  if (edge === 'top' || edge === 'bottom') {
+                    const H2 = Math.max(0.08, Math.min(2.5, Hmp - d));
+                    const shift = ((Hmp - H2) / 2) / pageHmp;
+                    patchSel({
+                      hs: (H2 * selObj.ar) / selObj.scale,
+                      yf: Math.min(1, Math.max(0, selObj.yf + (edge === 'top' ? shift : -shift))),
+                    });
+                  } else {
+                    const W2 = Math.max(0.08, Math.min(2.5, Wmp - d));
+                    const shift = ((Wmp - W2) / 2) / pageWmp;
+                    patchSel({
+                      scale: W2,
+                      hs: (Hmp * selObj.ar) / W2, // hauteur conservée
+                      xf: Math.min(1, Math.max(0, selObj.xf + (edge === 'left' ? shift : -shift))),
+                    });
+                  }
+                };
+                const edgeRow = (label, edge) => (
+                  <span className="flex items-center gap-1">
+                    <span className="w-14 text-[11px] text-slate-500">{label}</span>
+                    <button type="button" className={stepBtn} onClick={() => trim(edge, STEP)} title={`Rogner le bord ${label.toLowerCase()}`}>−</button>
+                    <button type="button" className={stepBtn} onClick={() => trim(edge, -STEP)} title={`Étendre le bord ${label.toLowerCase()}`}>+</button>
+                  </span>
+                );
                 return (
                   <div className="mb-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
                     <div className="mb-1 flex items-center justify-between gap-2">
@@ -2808,6 +2844,15 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
                         <input type="range" min="0.3" max="2.5" step="0.01" value={hs}
                           onChange={(e) => setHs(parseFloat(e.target.value))} className="w-full flex-1" />
                         <button type="button" className={stepBtn} onClick={() => setHs(hs + 0.05)} title="Cadre plus haut">+</button>
+                      </div>
+                    </div>
+                    <div className="mt-2 text-xs text-slate-600">
+                      Rogner un bord (− rogne · + étend, le bord opposé ne bouge pas)
+                      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1.5">
+                        {edgeRow('Haut', 'top')}
+                        {edgeRow('Bas', 'bottom')}
+                        {edgeRow('Gauche', 'left')}
+                        {edgeRow('Droite', 'right')}
                       </div>
                     </div>
                     <div className="mt-1.5 text-xs text-slate-600">
