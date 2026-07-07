@@ -3286,11 +3286,30 @@ export default function AlbumPage() {
         days: [...prev.days, { location: '', title: '', note: '', photos: [], bg: null, split: null, pageDeco: {}, freePages: {}, lockedPages: {} }],
       };
     });
+  // Suppression d'une section : filet de rattrapage « Annuler » (en plus de la
+  // confirmation du bouton).
+  const [dayTrash, setDayTrash] = useState(null); // { day, index }
+  useEffect(() => {
+    if (!dayTrash) return undefined;
+    const t = setTimeout(() => setDayTrash(null), 15000);
+    return () => clearTimeout(t);
+  }, [dayTrash]);
   const removeDay = (i) =>
     setAlbum((prev) => {
       setDirty(true);
+      setDayTrash({ day: prev.days[i], index: i });
       return { ...prev, days: prev.days.filter((_, k) => k !== i) };
     });
+  const undoRemoveDay = () => {
+    if (!dayTrash) return;
+    setAlbum((prev) => {
+      const days = [...prev.days];
+      days.splice(Math.min(dayTrash.index, days.length), 0, dayTrash.day);
+      return { ...prev, days };
+    });
+    setDirty(true);
+    setDayTrash(null);
+  };
   const moveDay = (i, dir) =>
     setAlbum((prev) => {
       const j = i + dir;
@@ -3939,6 +3958,17 @@ export default function AlbumPage() {
 
       {albumShareData && (
         <ShareSheet files={albumShareData.files} text={albumShareData.text} onClose={() => setAlbumShareData(null)} />
+      )}
+
+      {/* Filet de sécurité : annuler la dernière suppression de section */}
+      {dayTrash && (
+        <div className="fixed inset-x-0 bottom-4 z-[90] flex justify-center px-4">
+          <div className="flex items-center gap-3 rounded-xl bg-slate-900 px-4 py-3 text-sm text-white shadow-2xl">
+            <span>Section supprimée.</span>
+            <button type="button" onClick={undoRemoveDay} className="font-bold text-coral-300 underline">↩︎ Annuler</button>
+            <button type="button" onClick={() => setDayTrash(null)} className="text-white/60 hover:text-white">✕</button>
+          </div>
+        </div>
       )}
 
       {pickerFor && (() => {

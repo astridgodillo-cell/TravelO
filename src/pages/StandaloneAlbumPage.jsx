@@ -130,7 +130,29 @@ export default function StandaloneAlbumPage() {
     setDirty(true);
   };
   const addDay = () => patch({ days: [...album.days, emptyDay()] });
-  const removeDay = (i) => patch({ days: album.days.filter((_, k) => k !== i) });
+  // Suppression d'une section : CONFIRMATION obligatoire (le bouton est facile
+  // à toucher par erreur en défilant) + filet de rattrapage « Annuler ».
+  const [trash, setTrash] = useState(null); // { day, index } dernière section supprimée
+  useEffect(() => {
+    if (!trash) return undefined;
+    const t = setTimeout(() => setTrash(null), 15000);
+    return () => clearTimeout(t);
+  }, [trash]);
+  const removeDay = (i) => {
+    const d = album.days[i];
+    const n = d?.photos?.length || 0;
+    const label = (album.unit || 'jour') === 'etape' ? 'cette étape' : 'ce jour';
+    if (!window.confirm(`Supprimer ${label}${n ? ` et ses ${n} photo${n > 1 ? 's' : ''}` : ''} de l'album ?`)) return;
+    setTrash({ day: d, index: i });
+    patch({ days: album.days.filter((_, k) => k !== i) });
+  };
+  const undoRemoveDay = () => {
+    if (!trash) return;
+    const days = [...album.days];
+    days.splice(Math.min(trash.index, days.length), 0, trash.day);
+    patch({ days });
+    setTrash(null);
+  };
   const moveDay = (i, dir) => {
     const j = i + dir;
     if (j < 0 || j >= album.days.length) return;
@@ -647,6 +669,17 @@ export default function StandaloneAlbumPage() {
 
       {albumShareData && (
         <ShareSheet files={albumShareData.files} text={albumShareData.text} onClose={() => setAlbumShareData(null)} />
+      )}
+
+      {/* Filet de sécurité : annuler la dernière suppression de section */}
+      {trash && (
+        <div className="fixed inset-x-0 bottom-4 z-[90] flex justify-center px-4">
+          <div className="flex items-center gap-3 rounded-xl bg-slate-900 px-4 py-3 text-sm text-white shadow-2xl">
+            <span>Section supprimée.</span>
+            <button type="button" onClick={undoRemoveDay} className="font-bold text-coral-300 underline">↩︎ Annuler</button>
+            <button type="button" onClick={() => setTrash(null)} className="text-white/60 hover:text-white">✕</button>
+          </div>
+        </div>
       )}
 
       {pickerFor && (() => {
