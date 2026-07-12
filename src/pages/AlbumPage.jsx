@@ -3184,8 +3184,14 @@ export default function AlbumPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const [busyDay, setBusyDay] = useState(null); // index du jour en cours d'upload
-  const [addProgress, setAddProgress] = useState(null); // { done, total }
+  // Envois de photos EN PARALLÈLE : un suivi par jour { [i]: { done, total } }.
+  const [uploads, setUploads] = useState({});
+  const setDayUpload = (i, prog) =>
+    setUploads((prev) => {
+      const next = { ...prev };
+      if (prog) next[i] = prog; else delete next[i];
+      return next;
+    });
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedOnce, setSavedOnce] = useState(false);
@@ -3348,8 +3354,8 @@ export default function AlbumPage() {
     });
 
   async function addPhotos(i, files, targetPage = null) {
-    setBusyDay(i);
-    setAddProgress({ done: 0, total: files.length });
+    if (uploads[i]) return; // un envoi est déjà en cours sur CE jour
+    setDayUpload(i, { done: 0, total: files.length });
     setError(null);
     // En manuel sans page cible : toutes les photos de CE lot vont sur la même
     // NOUVELLE page (index figé avant l'envoi).
@@ -3381,7 +3387,7 @@ export default function AlbumPage() {
         });
         setDirty(true);
         done += 1;
-        setAddProgress({ done, total: files.length });
+        setDayUpload(i, { done, total: files.length });
       }
     } catch (err) {
       setError(err.message);
@@ -3401,8 +3407,7 @@ export default function AlbumPage() {
           return { ...prev, days };
         });
       }
-      setBusyDay(null);
-      setAddProgress(null);
+      setDayUpload(i, null);
     }
   }
 
@@ -3854,9 +3859,9 @@ export default function AlbumPage() {
                 entry={album.days[i]}
                 onChange={(entry) => setDayEntry(i, entry)}
                 onAddPhotos={(files, target) => addPhotos(i, files, target)}
-                progress={busyDay === i ? addProgress : null}
+                progress={uploads[i] || null}
                 onPickBgPhoto={(slot) => setPickerFor({ kind: 'dayBg', i, slot })}
-                busy={busyDay === i}
+                busy={!!uploads[i]}
                 format={format}
                 onFormatChange={setFormat}
                 theme={getTheme(album.theme)}
