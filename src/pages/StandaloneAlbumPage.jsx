@@ -17,7 +17,7 @@ import PdfPagesPreview from '../components/PdfPagesPreview';
 import { pdfBlobToImageFiles } from '../lib/pdfToImages';
 import useBackClose from '../lib/useBackClose';
 import { DayCard, CoverPicker, ThemePicker, Spinner, CoversSection, FormatPicker, ShareSheet } from './AlbumPage';
-import { FORMAT_LABELS, normalizeBg, bakePhotoEffects, getTheme, unitLabel, splitPhotos, computeSplit, bgIsEmpty, autoBgFromPhotos, formatDateRange, MAP_TRANSPORTS, addPhotosToEntry } from '../lib/albumModel';
+import { FORMAT_LABELS, normalizeBg, bakePhotoEffects, getTheme, unitLabel, splitPhotos, computeSplit, bgIsEmpty, autoBgFromPhotos, formatDateRange, MAP_TRANSPORTS, addPhotosToEntry, isManualLayout, repairSplit } from '../lib/albumModel';
 
 const emptyDay = () => ({ title: '', note: '', photos: [], bg: null, split: null });
 
@@ -186,43 +186,53 @@ export default function StandaloneAlbumPage() {
     setBusyDay(i);
     setAddProgress({ done: 0, total: files.length });
     setError(null);
+    // En manuel sans page cible : toutes les photos de CE lot vont sur la même
+    // NOUVELLE page (index figé avant l'envoi).
+    const entry0 = album.days[i];
+    const bgWasEmpty = bgIsEmpty(entry0.bg);
+    const fixedTarget = typeof targetPage === 'number'
+      ? targetPage
+      : (isManualLayout(entry0) ? repairSplit(entry0.split, (entry0.photos || []).length).length : null);
+    let done = 0;
     try {
-      const uploaded = [];
       for (const f of files) {
+        let up;
         try {
-          uploaded.push(await uploadAlbumPhoto(f));
-          setAddProgress({ done: uploaded.length, total: files.length });
+          up = await uploadAlbumPhoto(f);
         } catch (err) {
-          throw new Error("L'envoi d'une photo a échoué. Réessaie dans un instant.", { cause: err });
+          throw new Error("L'envoi d'une photo a échoué. Les photos déjà ajoutées sont conservées — relance l'ajout avec les photos restantes.", { cause: err });
         }
+        // La photo apparaît IMMÉDIATEMENT : si la connexion coupe en route,
+        // tout ce qui est déjà envoyé est conservé.
+        setAlbum((prev) => {
+          const days = [...prev.days];
+          const entry = days[i];
+          const placed = addPhotosToEntry(entry, [{ ...up, caption: '' }], fixedTarget);
+          days[i] = { ...entry, ...placed };
+          return { ...prev, days };
+        });
+        setDirty(true);
+        done += 1;
+        setAddProgress({ done, total: files.length });
       }
-      setAlbum((prev) => {
-        const days = [...prev.days];
-        const entry = days[i];
-        const added = uploaded.map((u) => ({ ...u, caption: '' }));
-        // Mode manuel : sur la page demandée (📷+) ou sur une nouvelle page —
-        // les pages existantes gardent exactement leurs photos. Mode auto :
-        // simple ajout, la répartition se refait toute seule.
-        const placed = addPhotosToEntry(entry, added, typeof targetPage === 'number' ? targetPage : null);
-        // Par défaut : fond de chaque page = une photo du jour, au hasard et
-        // toutes différentes (tant qu'aucun fond n'a été choisi). Les pages
-        // verrouillées gardent leur fond tel quel.
-        const pages = computeSplit(placed.photos.length, placed.split).length;
-        let bg = entry.bg;
-        if (bgIsEmpty(entry.bg)) {
-          const auto = autoBgFromPhotos(placed.photos, pages);
-          const lp = entry.lockedPages || {};
-          const cur = normalizeBg(entry.bg);
-          auto.pages = auto.pages.map((s, k) => (lp[k] ? (cur.pages?.[k] || { type: 'none' }) : s));
-          bg = auto;
-        }
-        days[i] = { ...entry, ...placed, bg };
-        return { ...prev, days };
-      });
-      setDirty(true);
     } catch (err) {
       setError(err.message);
     } finally {
+      // Fonds automatiques (si aucun fond n'était choisi) appliqués UNE fois à
+      // la fin, sur toutes les pages. Les pages verrouillées sont épargnées.
+      if (bgWasEmpty && done > 0) {
+        setAlbum((prev) => {
+          const days = [...prev.days];
+          const entry = days[i];
+          const pages = computeSplit(entry.photos.length, entry.split).length;
+          const auto = autoBgFromPhotos(entry.photos, pages);
+          const lp = entry.lockedPages || {};
+          const cur = normalizeBg(entry.bg);
+          auto.pages = auto.pages.map((s, k) => (lp[k] ? (cur.pages?.[k] || { type: 'none' }) : s));
+          days[i] = { ...entry, bg: auto };
+          return { ...prev, days };
+        });
+      }
       setBusyDay(null);
       setAddProgress(null);
     }
