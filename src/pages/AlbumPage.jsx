@@ -2578,12 +2578,27 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
         className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm font-medium text-slate-600 hover:bg-slate-100 disabled:opacity-70"
       >
         {busy ? (
-          <>
-            <Spinner />
-            {progress && progress.total > 1
-              ? `Ajout des photos… ${progress.done}/${progress.total}`
-              : 'Ajout des photos…'}
-          </>
+          progress && progress.total > 0 ? (
+            /* Barre de progression : les photos apparaissent au fur et à
+               mesure dans la journée pendant que la barre se remplit. */
+            <div className="w-full">
+              <div className="mb-1.5 flex items-center justify-center gap-2">
+                <Spinner />
+                <span>Ajout des photos… {progress.done}/{progress.total}</span>
+              </div>
+              <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-200">
+                <div
+                  className="h-full rounded-full bg-coral-500 transition-all duration-300"
+                  style={{ width: `${Math.max(4, Math.round((progress.done / progress.total) * 100))}%` }}
+                />
+              </div>
+            </div>
+          ) : (
+            <>
+              <Spinner />
+              Ajout des photos…
+            </>
+          )
         ) : mode === 'manuel' ? (
           '📷 Ajouter des photos (sur une nouvelle page)'
         ) : (
