@@ -76,6 +76,11 @@ export function CoverDesigner({ variant = 'cover', photo, title, dates, note, on
   const justify = pos === 'top' ? 'flex-start' : pos === 'bottom' ? 'flex-end' : 'center';
   const items = align === 'left' ? 'flex-start' : align === 'right' ? 'flex-end' : 'center';
   const src = photo?.display || photo?.full || null;
+  // Affichage de la photo : « cover » remplit la page (recadrée si besoin) ;
+  // « contain » = photo ENTIÈRE, jamais découpée, taille réglable, fond coloré.
+  const fit = layout.fit === 'contain' ? 'contain' : 'cover';
+  const photoScale = Math.min(1, Math.max(0.3, layout.photoScale ?? 1));
+  const photoBg = layout.photoBg || ink;
 
   const seg = (current, k, val, label) => (
     <button type="button" onClick={() => set({ [k]: val })}
@@ -90,7 +95,7 @@ export function CoverDesigner({ variant = 'cover', photo, title, dates, note, on
       <div className={compact ? '' : 'shrink-0'}>
         <div
           className={`relative ${compact ? 'w-full' : 'w-56'} max-w-full overflow-hidden ${seamless ? '' : 'rounded-lg border border-slate-200 shadow-sm'}`}
-          style={{ aspectRatio: String(aspect), containerType: 'size', backgroundColor: ink }}
+          style={{ aspectRatio: String(aspect), containerType: 'size', backgroundColor: !spreadHalf && fit === 'contain' ? photoBg : ink }}
         >
           {spreadHalf ? (
             spreadSrc ? (
@@ -102,9 +107,18 @@ export function CoverDesigner({ variant = 'cover', photo, title, dates, note, on
               <div className="absolute inset-0 flex items-center justify-center px-4 text-center text-[11px] text-white/70">Choisis la photo des couvertures ↑</div>
             )
           ) : src ? (
-            <img src={src} alt="" className="absolute inset-0 h-full w-full object-cover" draggable={false} />
+            fit === 'contain' ? (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <img src={src} alt="" draggable={false}
+                  style={{ maxWidth: `${photoScale * 100}%`, maxHeight: `${photoScale * 100}%`, objectFit: 'contain' }} />
+              </div>
+            ) : (
+              <img src={src} alt="" className="absolute inset-0 h-full w-full object-cover" draggable={false} />
+            )
           ) : null}
-          <div className="absolute inset-x-0 bottom-0 h-3/5" style={{ background: `linear-gradient(to top, ${ink}, transparent)` }} />
+          {(spreadHalf || fit === 'cover') && (
+            <div className="absolute inset-x-0 bottom-0 h-3/5" style={{ background: `linear-gradient(to top, ${ink}, transparent)` }} />
+          )}
           <div className="absolute inset-0 flex flex-col p-[6%]" style={{ justifyContent: justify, alignItems: items }}>
             <div style={{ textAlign: align, maxWidth: '100%', backgroundColor: 'rgba(18,26,26,0.52)', padding: '4% 5%', borderRadius: 4 }}>
               {kicker ? <div style={{ color: accent, fontSize: '2.4cqmin', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase' }}>{kicker}</div> : null}
@@ -147,6 +161,33 @@ export function CoverDesigner({ variant = 'cover', photo, title, dates, note, on
           {seg(align, 'align', 'center', 'Centré')}
           {seg(align, 'align', 'right', 'Droite')}
         </div>
+        {!spreadHalf && photo && (
+          <>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="w-20 text-xs text-slate-500">Photo</span>
+              {seg(fit, 'fit', 'cover', 'Remplir la page')}
+              {seg(fit, 'fit', 'contain', 'Entière (sans découpe)')}
+            </div>
+            {fit === 'contain' && (
+              <>
+                <div className="flex items-center gap-2">
+                  <span className="w-20 shrink-0 text-xs text-slate-500">Taille</span>
+                  <input type="range" min="0.3" max="1" step="0.01" value={photoScale}
+                    onChange={(e) => set({ photoScale: parseFloat(e.target.value) })} className="min-w-0 flex-1" />
+                  <span className="w-11 shrink-0 text-right text-xs font-semibold text-slate-600">{Math.round(photoScale * 100)} %</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="w-20 text-xs text-slate-500">Fond</span>
+                  {BG_COLORS.map((c) => (
+                    <button key={c} type="button" onClick={() => set({ photoBg: c })}
+                      className={`h-6 w-6 rounded-full border ${photoBg === c ? 'ring-2 ring-coral-500 ring-offset-1' : 'border-slate-200'}`}
+                      style={{ backgroundColor: c }} title={c} />
+                  ))}
+                </div>
+              </>
+            )}
+          </>
+        )}
         <label className="block text-xs text-slate-500">Texte d'intro
           <input value={kicker} onChange={(e) => set({ kicker: e.target.value })}
             placeholder={isEnd ? 'Fin du voyage' : 'Album de voyage'}

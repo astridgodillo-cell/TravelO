@@ -442,9 +442,10 @@ function CoverFade({ color = '#1C2B2D' }) {
   );
 }
 
-// Photo de couverture : soit normale (pleine page), soit la MOITIÉ d'une photo
-// étendue sur la 1re et la 4e de couverture (half 'left' = 1re, 'right' = 4e).
-function CoverPhoto({ photo, spread, half, pageW, pageH, st }) {
+// Photo de couverture : pleine page (cover, recadrée), photo ENTIÈRE (contain,
+// jamais découpée, taille réglable) ou MOITIÉ d'une photo étendue sur les deux
+// couvertures (half 'left' = 4e, 'right' = 1re).
+function CoverPhoto({ photo, spread, half, pageW, pageH, st, fit = 'cover', scale = 1 }) {
   if (spread) {
     const src = imgFull(spread);
     const idx = half === 'right' ? 1 : 0;
@@ -456,9 +457,20 @@ function CoverPhoto({ photo, spread, half, pageW, pageH, st }) {
       </View>
     );
   }
-  return photo && imgFull(photo) ? (
-    <View style={st.coverImgWrap}><Image src={imgFull(photo)} style={st.coverImg} /></View>
-  ) : null;
+  if (!(photo && imgFull(photo))) return null;
+  if (fit === 'contain') {
+    const arP = photo.w && photo.h ? photo.w / photo.h : 4 / 3;
+    const s = Math.min(1, Math.max(0.3, Number.isFinite(scale) ? scale : 1));
+    let w = pageW * s;
+    let h = w / arP;
+    if (h > pageH * s) { h = pageH * s; w = h * arP; }
+    return (
+      <View style={{ position: 'absolute', left: (pageW - w) / 2, top: (pageH - h) / 2, width: w, height: h }}>
+        <Image src={imgFull(photo)} style={{ width: '100%', height: '100%' }} />
+      </View>
+    );
+  }
+  return <View style={st.coverImgWrap}><Image src={imgFull(photo)} style={st.coverImg} /></View>;
 }
 
 // Page blanche (2e et 3e de couverture, souvent imposées par les imprimeurs).
@@ -511,6 +523,9 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
   }
 
   const spreadOn = !!(coverSpread.enabled && imgFull(coverSpread.photo));
+  // Couvertures en mode « photo entière » (jamais découpée).
+  const coverContain = !spreadOn && coverLayout.fit === 'contain' && cover && imgFull(cover);
+  const endContain = !spreadOn && endLayout.fit === 'contain' && endPhoto && imgFull(endPhoto);
 
   // Rendu des pages d'une (ou plusieurs) journée(s). Extrait pour être réutilisé
   // aussi bien dans l'album complet que dans un partage « une seule journée ».
@@ -588,10 +603,11 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
 
   return (
     <Document title={`${album?.title || 'Album'} — TravelO`} author="TravelO">
-      {/* 1RE DE COUVERTURE — photo pleine page jusqu'au fond perdu */}
-      <Page size={[pageW, pageH]} style={st.coverPage}>
-        <CoverPhoto photo={cover} spread={spreadOn ? coverSpread.photo : null} half="right" pageW={pageW} pageH={pageH} st={st} />
-        <CoverFade color={P.ink} />
+      {/* 1RE DE COUVERTURE — photo pleine page (ou entière, jamais découpée) */}
+      <Page size={[pageW, pageH]} style={[st.coverPage, coverContain ? { backgroundColor: coverLayout.photoBg || P.ink } : {}]}>
+        <CoverPhoto photo={cover} spread={spreadOn ? coverSpread.photo : null} half="right" pageW={pageW} pageH={pageH} st={st}
+          fit={coverContain ? 'contain' : 'cover'} scale={coverLayout.photoScale} />
+        {!coverContain && <CoverFade color={P.ink} />}
         <View
           style={{
             position: 'absolute',
@@ -674,12 +690,14 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
 
       {/* 4E DE COUVERTURE — page de fin (photo de fond ou moitié GAUCHE de la
           photo étendue sur les deux couvertures) */}
-      <Page size={[pageW, pageH]} style={st.endPage}>
+      <Page size={[pageW, pageH]} style={[st.endPage, endContain ? { backgroundColor: endLayout.photoBg || P.ink } : {}]}>
         {spreadOn ? (
           <>
             <CoverPhoto photo={null} spread={coverSpread.photo} half="left" pageW={pageW} pageH={pageH} st={st} />
             <CoverFade color={P.ink} />
           </>
+        ) : endContain ? (
+          <CoverPhoto photo={endPhoto} spread={null} pageW={pageW} pageH={pageH} st={st} fit="contain" scale={endLayout.photoScale} />
         ) : endPhoto && imgFull(endPhoto) ? (
           <>
             <View style={st.endImgWrap}>
