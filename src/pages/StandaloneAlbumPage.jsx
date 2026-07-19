@@ -136,6 +136,13 @@ export default function StandaloneAlbumPage() {
     setDirty(true);
   };
   const addDay = () => patch({ days: [...album.days, emptyDay()] });
+  // Insère une section VIDE entre deux sections existantes (à l'index i).
+  const insertDayAt = (i) => {
+    if (Object.keys(uploads).length) { alert('Attends la fin des envois de photos avant de réorganiser les jours.'); return; }
+    const days = [...album.days];
+    days.splice(i, 0, emptyDay());
+    patch({ days });
+  };
   // Suppression d'une section : CONFIRMATION obligatoire (le bouton est facile
   // à toucher par erreur en défilant) + filet de rattrapage « Annuler ».
   const [trash, setTrash] = useState(null); // { day, index } dernière section supprimée
@@ -145,6 +152,7 @@ export default function StandaloneAlbumPage() {
     return () => clearTimeout(t);
   }, [trash]);
   const removeDay = (i) => {
+    if (Object.keys(uploads).length) { alert('Attends la fin des envois de photos avant de réorganiser les jours.'); return; }
     const d = album.days[i];
     const n = d?.photos?.length || 0;
     const label = (album.unit || 'jour') === 'etape' ? 'cette étape' : 'ce jour';
@@ -160,6 +168,7 @@ export default function StandaloneAlbumPage() {
     setTrash(null);
   };
   const moveDay = (i, dir) => {
+    if (Object.keys(uploads).length) { alert('Attends la fin des envois de photos avant de réorganiser les jours.'); return; }
     const j = i + dir;
     if (j < 0 || j >= album.days.length) return;
     const days = [...album.days];
@@ -172,6 +181,8 @@ export default function StandaloneAlbumPage() {
   // zéro car le nombre de photos change.
   const mergeDayUp = (i) => {
     if (i <= 0) return;
+    if (Object.keys(uploads).length) { alert('Attends la fin des envois de photos avant de réorganiser les jours.'); return; }
+
     const a = album.days[i - 1];
     const b = album.days[i];
     const note = [a.note, b.title, b.note].map((s) => (s || '').trim()).filter(Boolean).join('\n');
@@ -573,6 +584,14 @@ export default function StandaloneAlbumPage() {
       <div className="mt-5 space-y-5">
         {album.days.map((d, i) => (
           <div key={i}>
+            {/* Insérer une section ENTRE deux sections (avant celle-ci). */}
+            <div className="-my-1 mb-1 flex justify-center">
+              <button type="button" onClick={() => insertDayAt(i)}
+                className="rounded-full border border-dashed border-slate-300 bg-white px-3 py-1 text-[11px] font-medium text-slate-400 hover:border-coral-300 hover:text-coral-600"
+                title="Ajouter une section vide juste ici (les suivantes sont renumérotées)">
+                ➕ Insérer {(album.unit || 'jour') === 'etape' ? 'une étape' : 'un jour'} ici
+              </button>
+            </div>
             <div className="mb-1 flex flex-wrap items-center justify-end gap-2">
               <button type="button" onClick={() => moveDay(i, -1)} disabled={i === 0}
                 className="rounded border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-600 disabled:opacity-30" title="Monter">↑</button>

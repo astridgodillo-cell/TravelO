@@ -3340,14 +3340,22 @@ export default function AlbumPage() {
     setDirty(true);
   }
 
+  const emptySection = () => ({ location: '', title: '', note: '', photos: [], bg: null, split: null, pageDeco: {}, freePages: {}, lockedPages: {} });
   const addDay = () =>
     setAlbum((prev) => {
       setDirty(true);
-      return {
-        ...prev,
-        days: [...prev.days, { location: '', title: '', note: '', photos: [], bg: null, split: null, pageDeco: {}, freePages: {}, lockedPages: {} }],
-      };
+      return { ...prev, days: [...prev.days, emptySection()] };
     });
+  // Insère une section VIDE entre deux sections existantes (à l'index i).
+  const insertDayAt = (i) => {
+    if (Object.keys(uploads).length) { alert('Attends la fin des envois de photos avant de réorganiser les jours.'); return; }
+    setAlbum((prev) => {
+      setDirty(true);
+      const days = [...prev.days];
+      days.splice(i, 0, emptySection());
+      return { ...prev, days };
+    });
+  };
   // Suppression d'une section : filet de rattrapage « Annuler » (en plus de la
   // confirmation du bouton).
   const [dayTrash, setDayTrash] = useState(null); // { day, index }
@@ -3356,12 +3364,14 @@ export default function AlbumPage() {
     const t = setTimeout(() => setDayTrash(null), 15000);
     return () => clearTimeout(t);
   }, [dayTrash]);
-  const removeDay = (i) =>
+  const removeDay = (i) => {
+    if (Object.keys(uploads).length) { alert('Attends la fin des envois de photos avant de réorganiser les jours.'); return; }
     setAlbum((prev) => {
       setDirty(true);
       setDayTrash({ day: prev.days[i], index: i });
       return { ...prev, days: prev.days.filter((_, k) => k !== i) };
     });
+  };
   const undoRemoveDay = () => {
     if (!dayTrash) return;
     setAlbum((prev) => {
@@ -3372,7 +3382,8 @@ export default function AlbumPage() {
     setDirty(true);
     setDayTrash(null);
   };
-  const moveDay = (i, dir) =>
+  const moveDay = (i, dir) => {
+    if (Object.keys(uploads).length) { alert('Attends la fin des envois de photos avant de réorganiser les jours.'); return; }
     setAlbum((prev) => {
       const j = i + dir;
       if (j < 0 || j >= prev.days.length) return prev;
@@ -3381,7 +3392,9 @@ export default function AlbumPage() {
       setDirty(true);
       return { ...prev, days };
     });
-  const mergeDayUp = (i) =>
+  };
+  const mergeDayUp = (i) => {
+    if (Object.keys(uploads).length) { alert('Attends la fin des envois de photos avant de réorganiser les jours.'); return; }
     setAlbum((prev) => {
       if (i <= 0) return prev;
       const a = prev.days[i - 1];
@@ -3393,6 +3406,7 @@ export default function AlbumPage() {
       setDirty(true);
       return { ...prev, days };
     });
+  };
 
   async function addPhotos(i, files, targetPage = null) {
     if (uploads[i]) return; // un envoi est déjà en cours sur CE jour
@@ -3877,6 +3891,14 @@ export default function AlbumPage() {
           const prevW = w === 'étape' ? "l'étape" : 'le jour';
           return (
             <div key={i}>
+              {/* Insérer une section ENTRE deux sections (avant celle-ci). */}
+              <div className="-my-1 mb-1 flex justify-center">
+                <button type="button" onClick={() => insertDayAt(i)}
+                  className="rounded-full border border-dashed border-slate-300 bg-white px-3 py-1 text-[11px] font-medium text-slate-400 hover:border-coral-300 hover:text-coral-600"
+                  title="Ajouter une section vide juste ici (les suivantes sont renumérotées)">
+                  ➕ Insérer {w === 'étape' ? 'une étape' : 'un jour'} ici
+                </button>
+              </div>
               <div className="mb-1 flex flex-wrap items-center justify-end gap-2">
                 <button type="button" onClick={() => moveDay(i, -1)} disabled={i === 0}
                   className="rounded border border-slate-300 bg-white px-2 py-0.5 text-xs text-slate-600 disabled:opacity-30" title="Monter">↑</button>
