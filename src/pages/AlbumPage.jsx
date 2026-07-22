@@ -2602,6 +2602,63 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
       {isLocked(p) ? '🔒 Verrouillée' : '🔓 Verrouiller'}
     </button>
   );
+  const lockedAny = splitCounts.some((_c, k) => isLocked(k));
+  const pageOfIdx = (gi) => {
+    let acc = 0;
+    for (let k = 0; k < splitCounts.length; k += 1) {
+      acc += splitCounts[k];
+      if (gi < acc) return k;
+    }
+    return splitCounts.length - 1;
+  };
+  const isFrozenPhoto = (gi) => isLocked(pageOfIdx(gi));
+
+  // --- Actions du mode MANUEL (pages = boîtes stables) ---
+  // Bascule de mode. auto → manuel : on FIGE la mise en page actuelle telle
+  // quelle. manuel → auto : avertissement, tout est réorganisé.
+  const switchToManual = (extra = {}) =>
+    update({ layoutMode: 'manuel', split: [...splitCounts], ...extra });
+  const switchToAuto = () => {
+    if (!window.confirm('Repasser en automatique ? La répartition sera refaite (~6 photos par page) et les verrous/dispositions libres de ces pages seront effacés.')) return;
+    update({ layoutMode: 'auto', split: null, lockedPages: {}, freePages: {} });
+  };
+  const addEmptyPage = () => {
+    const newIdx = splitCounts.length; // index de la page créée
+    setSel(null);
+    switchToManual({ split: [...splitCounts, 0] });
+    // On ouvre directement la nouvelle page dans l'aperçu (mobile + ordi).
+    setMPage(newIdx);
+    setSpreadStart(Math.max(0, newIdx - 1));
+  };
+  // Renumérote les réglages par page (fonds, décos, verrous, dispositions,
+  // noms) après suppression de la page `removed`.
+  const shiftPageMaps = (removed) => {
+    const remapObj = (o) => {
+      const r = {};
+      Object.keys(o || {}).forEach((k) => {
+        const n = Number(k);
+        if (n === removed) return;
+        r[n > removed ? n - 1 : n] = o[k];
+      });
+      return r;
+    };
+    const pages = [...(bg.pages || [])];
+    if (removed < pages.length) pages.splice(removed, 1);
+    return {
+      freePages: remapObj(entry.freePages),
+      pageDeco: remapObj(entry.pageDeco),
+      lockedPages: remapObj(entry.lockedPages),
+      pageNames: remapObj(entry.pageNames),
+      bg: { ...bg, pages },
+    };
+  };
+  const deleteEmptyPage = (p) => {
+    if (splitCounts[p] !== 0 || isLocked(p)) return;
+    const split = splitCounts.filter((_c, k) => k !== p);
+    setSel(null);
+    update({ layoutMode: 'manuel', split: split.length ? split : null, ...shiftPageMaps(p) });
+  };
+
   // Menu « ⋯ » : toutes les actions d'une page regroupées (nom, photos,
   // grille, suppression…) — une seule cible tactile au lieu de cinq.
   const moreBtn = (p) => (
