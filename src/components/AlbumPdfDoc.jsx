@@ -553,7 +553,7 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
             <View style={onPlate ? st.headerPlate : st.header}>
               <Text style={st.dayKicker}>
                 {(e.label || '').trim() || `${unitLabel(unit)} ${e.i + 1}`}{e.location ? ` · ${e.location}` : ''}
-                {!firstPage ? ' · suite' : ''}
+                {!firstPage ? ` · ${(e.pageNames?.[p] || '').trim() || 'suite'}` : ''}
               </Text>
               {firstPage && e.title ? <Text style={st.dayTitle}>{e.title}</Text> : null}
               {firstPage && e.note ? <Text style={st.note}>{e.note}</Text> : null}

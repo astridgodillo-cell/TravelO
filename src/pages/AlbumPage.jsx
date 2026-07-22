@@ -1076,7 +1076,7 @@ function themePatternStyle(theme) {
 
 // Aperçu STATIQUE d'une page (même mise en page que l'éditeur/PDF) : fond,
 // en-tête, photos (grille ou disposition libre), légendes, décorations.
-export function PagePreview({ photos, format, theme, title, note, firstPage, dayIndex, location, unit = 'jour', bg, pageIndex, pageCount, deco, free, width = '11rem', interactive = false, onFreeChange, onDecoChange, onSelect, selected = null, label = '' }) {
+export function PagePreview({ photos, format, theme, title, note, firstPage, dayIndex, location, unit = 'jour', bg, pageIndex, pageCount, deco, free, width = '11rem', interactive = false, onFreeChange, onDecoChange, onSelect, selected = null, label = '', pageName = '' }) {
   const spec = resolveBg(bg, pageIndex, pageCount);
   const onPlate = spec.type !== 'none';
   const lay = pageLayout(photos, format, { title, note, firstPage, onPlate });
@@ -1263,7 +1263,7 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
       <div className="absolute overflow-hidden" style={{ left: pct(lay.pad, lay.pageW), top: pct(lay.pad, lay.pageH), width: pct(lay.contentW, lay.pageW), height: pct(lay.headerH, lay.pageH) }}>
         <div style={{ display: 'inline-block', maxWidth: '100%', ...(onPlate ? { backgroundColor: 'rgba(251,248,243,0.85)', borderRadius: '4px', padding: '1.5% 2.2%' } : {}) }}>
           <div style={{ color: accent, fontSize: '1.45cqmin', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase' }}>
-            {(label || '').trim() || `${unitLabel(unit)} ${dayIndex + 1}`}{location ? ` · ${location}` : ''}{!firstPage ? ' · suite' : ''}
+            {(label || '').trim() || `${unitLabel(unit)} ${dayIndex + 1}`}{location ? ` · ${location}` : ''}{!firstPage ? ` · ${(pageName || '').trim() || 'suite'}` : ''}
           </div>
           {firstPage && title ? <div style={{ color: ink, fontSize: '3.7cqmin', fontWeight: 700, lineHeight: 1.1, fontFamily: 'Georgia, serif' }}>{title}</div> : null}
           {firstPage && note ? <div style={{ color: '#41433F', fontSize: '1.75cqmin', lineHeight: 1.45, marginTop: '1%' }}>{note}</div> : null}
@@ -1326,7 +1326,7 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
 export function PageDecorateModal({
   photos, format, onFormatChange, theme, title, note, firstPage,
   dayIndex, location, bg, pageIndex, pageCount, unit = 'jour',
-  initialItems, onChange, initialFree, onChangeFree, onClose, label = '',
+  initialItems, onChange, initialFree, onChangeFree, onClose, label = '', pageName = '',
 }) {
   useBackClose(onClose); // « retour » ferme la fenêtre, comme la croix
   const spec = resolveBg(bg, pageIndex, pageCount);
@@ -1365,7 +1365,7 @@ export function PageDecorateModal({
   const headerInner = (
     <div style={{ display: 'inline-block', maxWidth: '100%', ...(onPlate ? { backgroundColor: 'rgba(251,248,243,0.85)', borderRadius: '4px', padding: '1.5% 2.2%' } : {}) }}>
       <div style={{ color: accent, fontSize: '1.45cqmin', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: '0.8%' }}>
-        {(label || '').trim() || `${unitLabel(unit)} ${dayIndex + 1}`}{location ? ` · ${location}` : ''}{!firstPage ? ' · suite' : ''}
+        {(label || '').trim() || `${unitLabel(unit)} ${dayIndex + 1}`}{location ? ` · ${location}` : ''}{!firstPage ? ` · ${(pageName || '').trim() || 'suite'}` : ''}
       </div>
       {firstPage && title ? <div style={{ color: ink, fontSize: '3.7cqmin', fontWeight: 700, lineHeight: 1.1, fontFamily: 'Georgia, serif' }}>{title}</div> : null}
       {firstPage && note ? <div style={{ color: '#41433F', fontSize: '1.75cqmin', lineHeight: 1.45, marginTop: '1%' }}>{note}</div> : null}
@@ -2286,6 +2286,23 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
       {isLocked(p) ? '🔒 Verrouillée' : '🔓 Verrouiller'}
     </button>
   );
+  // Nom d'une page de continuation : remplace le mot « suite » dans le petit
+  // en-tête (ex. « ÉTAPE 7 · Plage de Cala Luna »).
+  const pageNameBtn = (p) => (p > 0 ? (
+    <button
+      type="button"
+      onClick={() => {
+        const cur = entry.pageNames?.[p] || '';
+        const v = window.prompt('Nom de cette page (affiché à la place de « suite ») :', cur);
+        if (v === null) return;
+        update({ pageNames: { ...(entry.pageNames || {}), [p]: v.trim() } });
+      }}
+      className="max-w-[10rem] truncate rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500 hover:bg-slate-200"
+      title="Nommer cette page (remplace « suite » dans l'en-tête)"
+    >
+      ✏️ {(entry.pageNames?.[p] || '').trim() || 'suite'}
+    </button>
+  ) : null);
   // Remise en grille automatique d'une page passée en disposition libre
   // (répare aussi une page dont une photo déborderait du cadre).
   const gridBtn = (p) => (entry.freePages?.[p] && !isLocked(p) ? (
@@ -2366,6 +2383,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
       freePages: remapObj(entry.freePages),
       pageDeco: remapObj(entry.pageDeco),
       lockedPages: remapObj(entry.lockedPages),
+      pageNames: remapObj(entry.pageNames),
       bg: { ...bg, pages },
     };
   };
@@ -2956,6 +2974,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
               free={entry.freePages?.[p]}
               width="100%"
               label={entry.label}
+              pageName={entry.pageNames?.[p]}
               interactive={editable}
               selected={sel && sel.p === p ? { kind: sel.kind, i: sel.i } : null}
               onSelect={editable ? (kind, i) => setSel(i == null ? null : { p, kind, i }) : undefined}
@@ -2987,6 +3006,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
             <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
               <span className="text-[11px] text-slate-400">Page {mp + 1}</span>
               {coveredBy[mp] < 0 && lockBtn(mp)}
+              {coveredBy[mp] < 0 && pageNameBtn(mp)}
               {coveredBy[mp] < 0 && addToPageBtn(mp)}
               {coveredBy[mp] < 0 && gridBtn(mp)}
               {coveredBy[mp] < 0 && deletePageBtn(mp)}
@@ -3006,6 +3026,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
                   <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
                     <span className="text-[11px] text-slate-400">Page {p + 1}</span>
                     {coveredBy[p] < 0 && lockBtn(p)}
+                    {coveredBy[p] < 0 && pageNameBtn(p)}
                     {coveredBy[p] < 0 && addToPageBtn(p)}
                     {coveredBy[p] < 0 && gridBtn(p)}
                     {coveredBy[p] < 0 && deletePageBtn(p)}
@@ -3103,6 +3124,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
           dayIndex={index}
           location={day?.location}
           label={entry.label}
+          pageName={entry.pageNames?.[decoPage]}
           bg={entry.bg}
           pageIndex={decoPage}
           pageCount={pageCount}
@@ -3362,6 +3384,7 @@ export default function AlbumPage() {
           note: s.note || '',
           photos: Array.isArray(s.photos) ? s.photos : [],
           label: s.label || '',
+          pageNames: s.pageNames || {},
           bg: migrateBg(s.bg),
           split: Array.isArray(s.split) ? s.split : null,
           pageDeco: s.pageDeco || {},
@@ -3378,6 +3401,7 @@ export default function AlbumPage() {
             note: s?.note ?? '',
             photos: Array.isArray(s?.photos) ? s.photos : [],
             label: s?.label || '',
+            pageNames: s?.pageNames || {},
             bg: migrateBg(s?.bg ?? null),
             split: Array.isArray(s?.split) ? s.split : null,
             pageDeco: s?.pageDeco || {},
@@ -3548,7 +3572,7 @@ export default function AlbumPage() {
       const a = prev.days[i - 1];
       const b = prev.days[i];
       const note = [a.note, b.title, b.note].map((s) => (s || '').trim()).filter(Boolean).join('\n');
-      const merged = { ...a, photos: [...(a.photos || []), ...(b.photos || [])], note, split: null, pageDeco: {}, freePages: {}, lockedPages: {} };
+      const merged = { ...a, photos: [...(a.photos || []), ...(b.photos || [])], note, split: null, pageDeco: {}, freePages: {}, lockedPages: {}, pageNames: {} };
       const days = prev.days.filter((_, k) => k !== i);
       days[i - 1] = merged;
       setDirty(true);

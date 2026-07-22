@@ -225,6 +225,8 @@ export default function StandaloneAlbumPage() {
       split: null,
       pageDeco: {},
       freePages: {},
+      lockedPages: {},
+      pageNames: {},
     };
     const days = album.days.filter((_, k) => k !== i);
     days[i - 1] = merged;
