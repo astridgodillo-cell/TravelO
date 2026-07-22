@@ -2228,6 +2228,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
   const [mPage, setMPage] = useState(0); // page affichée seule en grand (mobile)
   const [aiBusy, setAiBusy] = useState(false);
   const [sortOpen, setSortOpen] = useState(false); // mode « trier en grand »
+  const [photosOpen, setPhotosOpen] = useState(false); // vignettes repliées par défaut (gain de place)
   const [sharing, setSharing] = useState(false); // préparation du partage en cours
   const [shareData, setShareData] = useState(null); // { files, text } prêts à partager
 
@@ -2590,7 +2591,15 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
 
       {entry.photos.length > 0 && (
         <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-          <span className="text-xs font-semibold text-slate-500">{entry.photos.length} photo{entry.photos.length > 1 ? 's' : ''}</span>
+          <button
+            type="button"
+            onClick={() => setPhotosOpen((o) => !o)}
+            className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+            title={photosOpen ? 'Replier les vignettes' : 'Afficher les vignettes (légendes, effets, suppression…)'}
+          >
+            <span className="text-slate-400">{photosOpen ? '▾' : '▸'}</span>
+            {entry.photos.length} photo{entry.photos.length > 1 ? 's' : ''}
+          </button>
           <div className="flex flex-wrap items-center gap-2">
             {onShareDay && (
               <button
@@ -2642,7 +2651,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
         <ShareSheet files={shareData.files} text={shareData.text} onClose={() => setShareData(null)} />
       )}
 
-      {entry.photos.length > 0 && (
+      {entry.photos.length > 0 && photosOpen && (
         <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
           {entry.photos.map((p, pi) => (
             <PhotoTile
