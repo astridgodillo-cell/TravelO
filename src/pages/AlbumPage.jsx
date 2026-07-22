@@ -3331,6 +3331,38 @@ export default function AlbumPage() {
     };
   }, [id]);
 
+  // ---- Annuler (retour en arrière) : photographies successives de l'album ----
+  // Chaque modification pousse l'état PRÉCÉDENT sur une pile (50 max). Les
+  // changements rapprochés (< 800 ms, ex. glissement d'une photo) sont
+  // regroupés en une seule action.
+  const history = useRef([]);
+  const histPrev = useRef(null);
+  const histSkip = useRef(false);
+  const histLast = useRef(0);
+  const [histLen, setHistLen] = useState(0);
+  useEffect(() => {
+    if (album == null) return;
+    if (histSkip.current) { histSkip.current = false; histPrev.current = album; return; }
+    if (histPrev.current && histPrev.current !== album) {
+      const now = Date.now();
+      if (now - histLast.current > 800) {
+        history.current.push(histPrev.current);
+        if (history.current.length > 50) history.current.shift();
+        setHistLen(history.current.length);
+      }
+      histLast.current = now;
+    }
+    histPrev.current = album;
+  }, [album]);
+  const undo = () => {
+    const prev = history.current.pop();
+    if (!prev) return;
+    setHistLen(history.current.length);
+    histSkip.current = true;
+    setAlbum(prev);
+    setDirty(true);
+  };
+
   function setDayEntry(i, entry) {
     setAlbum((prev) => {
       const days = [...prev.days];
@@ -3797,17 +3829,28 @@ export default function AlbumPage() {
         <Link to={`/itineraire/${id}`} className="text-sm text-brand-700 underline">
           ← Retour au voyage
         </Link>
-        <button
-          onClick={save}
-          disabled={saving || (!dirty && savedOnce)}
-          className="rounded-lg bg-coral-500 px-4 py-2 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {saving
-            ? 'Enregistrement…'
-            : dirty || !savedOnce
-              ? '💾 Enregistrer'
-              : '✓ Enregistré'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={undo}
+            disabled={histLen === 0 || Object.keys(uploads).length > 0}
+            title={Object.keys(uploads).length ? 'Indisponible pendant un envoi de photos' : 'Annuler la dernière action'}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            ↩️ Annuler
+          </button>
+          <button
+            onClick={save}
+            disabled={saving || (!dirty && savedOnce)}
+            className="rounded-lg bg-coral-500 px-4 py-2 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {saving
+              ? 'Enregistrement…'
+              : dirty || !savedOnce
+                ? '💾 Enregistrer'
+                : '✓ Enregistré'}
+          </button>
+        </div>
       </div>
 
       <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-coral-600">
