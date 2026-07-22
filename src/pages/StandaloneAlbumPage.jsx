@@ -16,7 +16,7 @@ import AlbumPdfDoc from '../components/AlbumPdfDoc';
 import PdfPagesPreview from '../components/PdfPagesPreview';
 import { pdfBlobToImageFiles } from '../lib/pdfToImages';
 import useBackClose from '../lib/useBackClose';
-import { DayCard, CoverPicker, ThemePicker, Spinner, CoversSection, FormatPicker, ShareSheet } from './AlbumPage';
+import { DayCard, CoverPicker, ThemePicker, Spinner, CoversSection, FormatPicker, ShareSheet, DayNavSheet } from './AlbumPage';
 import { FORMAT_LABELS, normalizeBg, bakePhotoEffects, getTheme, unitLabel, splitPhotos, computeSplit, bgIsEmpty, autoBgFromPhotos, formatDateRange, MAP_TRANSPORTS, addPhotosToEntry, isManualLayout, repairSplit, removePhotoFromEntry } from '../lib/albumModel';
 
 const emptyDay = () => ({ title: '', note: '', photos: [], bg: null, split: null });
@@ -253,6 +253,18 @@ export default function StandaloneAlbumPage() {
       return { ...prev, days };
     });
     setDirty(true);
+  };
+
+
+  // 📑 Sommaire flottant : navigation directe vers un jour/une étape.
+  const [navOpen, setNavOpen] = useState(false);
+  const jumpTo = (t) => {
+    setNavOpen(false);
+    setTimeout(() => {
+      if (t === 'top') window.scrollTo({ top: 0, behavior: 'smooth' });
+      else if (t === 'export') document.getElementById('album-export')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      else document.getElementById(`album-day-${t}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 60);
   };
 
   async function addPhotos(i, files, targetPage = null) {
@@ -650,7 +662,7 @@ export default function StandaloneAlbumPage() {
       {/* Jours / pages */}
       <div className="mt-5 space-y-5">
         {album.days.map((d, i) => (
-          <div key={i}>
+          <div key={i} id={`album-day-${i}`}>
             {/* Insérer une section ENTRE deux sections (avant celle-ci). */}
             <div className="-my-1 mb-1 flex justify-center">
               <button type="button" onClick={() => insertDayAt(i)}
@@ -713,7 +725,7 @@ export default function StandaloneAlbumPage() {
       <MapSection map={album.map} onChange={(map) => patch({ map })} />
 
       {/* Export */}
-      <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+      <section id="album-export" className="mt-8 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
         <div className="flex items-start justify-between gap-2">
           <h2 className="text-lg font-semibold text-slate-900">Préparer l'album pour l'impression</h2>
           <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">mise en page v12</span>
@@ -778,6 +790,20 @@ export default function StandaloneAlbumPage() {
       )}
 
 
+
+      {/* Bouton SOMMAIRE flottant : aller directement à un jour/une étape */}
+      {album.days.length > 1 && (
+        <button
+          type="button"
+          onClick={() => setNavOpen(true)}
+          title="Aller à un jour / une étape"
+          className="fixed bottom-4 right-4 z-[60] flex h-12 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 shadow-xl active:scale-95"
+        >
+          <span className="text-lg">📑</span>
+          <span className="text-xs font-bold text-slate-600">{album.days.length}</span>
+        </button>
+      )}
+      {navOpen && <DayNavSheet days={album.days} unit={album.unit} onJump={jumpTo} onClose={() => setNavOpen(false)} />}
       {/* Bouton ANNULER flottant : toujours accessible sans remonter en haut */}
       {histLen > 0 && Object.keys(uploads).length === 0 && (
         <button

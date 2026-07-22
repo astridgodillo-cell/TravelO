@@ -2086,6 +2086,47 @@ export function CropModal({ photo, initialHs = 1, onApply, onClose }) {
   );
 }
 
+// 📑 Sommaire de l'album : liste des jours/étapes (nom + nombre de photos),
+// un appui fait défiler directement jusqu'à la section voulue.
+export function DayNavSheet({ days, unit = 'jour', onJump, onClose }) {
+  useBackClose(onClose);
+  const u = unitLabel(unit);
+  const row = 'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-slate-50';
+  return (
+    <div className="fixed inset-0 z-[75] flex items-end justify-center bg-black/50 sm:items-center sm:p-4" onClick={onClose}>
+      <div className="flex max-h-[75vh] w-full max-w-sm flex-col rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
+          <h3 className="font-semibold text-slate-800">Aller à…</h3>
+          <button onClick={onClose} className="-m-2 p-2 text-2xl leading-none text-slate-400 hover:text-slate-700">✕</button>
+        </div>
+        <div className="flex-1 overflow-y-auto overscroll-contain p-2">
+          <button type="button" onClick={() => onJump('top')} className={row}>
+            <span className="text-lg">🏠</span>
+            <span className="text-sm font-medium text-slate-700">Haut de l'album (titre, couvertures)</span>
+          </button>
+          {days.map((d, i) => {
+            const nm = (d.label || '').trim() || (d.title || '').trim() || (d.location || '').trim();
+            const n = d.photos?.length || 0;
+            return (
+              <button key={i} type="button" onClick={() => onJump(i)} className={row}>
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-coral-50 text-xs font-bold text-coral-600">{i + 1}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-slate-700">{nm || `${u} ${i + 1}`}</span>
+                  <span className="text-[11px] text-slate-400">{n} photo{n > 1 ? 's' : ''}</span>
+                </span>
+              </button>
+            );
+          })}
+          <button type="button" onClick={() => onJump('export')} className={row}>
+            <span className="text-lg">🖨️</span>
+            <span className="text-sm font-medium text-slate-700">Impression &amp; partage (bas)</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Choix de la source des photos à ajouter sur une page (mode manuel) :
 // depuis les fichiers du téléphone, ou parmi les photos DÉJÀ dans le jour
 // (elles seront déplacées vers cette page).
@@ -3417,6 +3458,18 @@ export default function AlbumPage() {
     setDirty(true);
   };
 
+
+  // 📑 Sommaire flottant : navigation directe vers un jour/une étape.
+  const [navOpen, setNavOpen] = useState(false);
+  const jumpTo = (t) => {
+    setNavOpen(false);
+    setTimeout(() => {
+      if (t === 'top') window.scrollTo({ top: 0, behavior: 'smooth' });
+      else if (t === 'export') document.getElementById('album-export')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      else document.getElementById(`album-day-${t}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 60);
+  };
+
   function setDayEntry(i, entry) {
     setAlbum((prev) => {
       const days = [...prev.days];
@@ -3987,7 +4040,7 @@ export default function AlbumPage() {
           const w = unitLabel(album.unit).toLowerCase();
           const prevW = w === 'étape' ? "l'étape" : 'le jour';
           return (
-            <div key={i}>
+            <div key={i} id={`album-day-${i}`}>
               {/* Insérer une section ENTRE deux sections (avant celle-ci). */}
               <div className="-my-1 mb-1 flex justify-center">
                 <button type="button" onClick={() => insertDayAt(i)}
@@ -4052,7 +4105,7 @@ export default function AlbumPage() {
 
 
       {/* EXPORT IMPRIMABLE */}
-      <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+      <section id="album-export" className="mt-8 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
         <div className="flex items-start justify-between gap-2">
           <h2 className="text-lg font-semibold text-slate-900">
             Préparer l'album pour l'impression
@@ -4156,6 +4209,20 @@ export default function AlbumPage() {
       )}
 
 
+
+      {/* Bouton SOMMAIRE flottant : aller directement à un jour/une étape */}
+      {sections.length > 1 && (
+        <button
+          type="button"
+          onClick={() => setNavOpen(true)}
+          title="Aller à un jour / une étape"
+          className="fixed bottom-4 right-4 z-[60] flex h-12 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 shadow-xl active:scale-95"
+        >
+          <span className="text-lg">📑</span>
+          <span className="text-xs font-bold text-slate-600">{sections.length}</span>
+        </button>
+      )}
+      {navOpen && <DayNavSheet days={sections} unit={album.unit} onJump={jumpTo} onClose={() => setNavOpen(false)} />}
       {/* Bouton ANNULER flottant : toujours accessible sans remonter en haut */}
       {histLen > 0 && Object.keys(uploads).length === 0 && (
         <button
