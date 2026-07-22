@@ -33,6 +33,7 @@ import {
   isManualLayout,
   repairSplit,
   addPhotosToEntry,
+  removePhotoFromEntry,
   resolveBg,
   unitLabel,
   bgIsEmpty,
@@ -1075,7 +1076,7 @@ function themePatternStyle(theme) {
 
 // Aperçu STATIQUE d'une page (même mise en page que l'éditeur/PDF) : fond,
 // en-tête, photos (grille ou disposition libre), légendes, décorations.
-export function PagePreview({ photos, format, theme, title, note, firstPage, dayIndex, location, unit = 'jour', bg, pageIndex, pageCount, deco, free, width = '11rem', interactive = false, onFreeChange, onDecoChange, onSelect, selected = null }) {
+export function PagePreview({ photos, format, theme, title, note, firstPage, dayIndex, location, unit = 'jour', bg, pageIndex, pageCount, deco, free, width = '11rem', interactive = false, onFreeChange, onDecoChange, onSelect, selected = null, label = '' }) {
   const spec = resolveBg(bg, pageIndex, pageCount);
   const onPlate = spec.type !== 'none';
   const lay = pageLayout(photos, format, { title, note, firstPage, onPlate });
@@ -1262,7 +1263,7 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
       <div className="absolute overflow-hidden" style={{ left: pct(lay.pad, lay.pageW), top: pct(lay.pad, lay.pageH), width: pct(lay.contentW, lay.pageW), height: pct(lay.headerH, lay.pageH) }}>
         <div style={{ display: 'inline-block', maxWidth: '100%', ...(onPlate ? { backgroundColor: 'rgba(251,248,243,0.85)', borderRadius: '4px', padding: '1.5% 2.2%' } : {}) }}>
           <div style={{ color: accent, fontSize: '1.45cqmin', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase' }}>
-            {unitLabel(unit)} {dayIndex + 1}{location ? ` · ${location}` : ''}{!firstPage ? ' · suite' : ''}
+            {(label || '').trim() || `${unitLabel(unit)} ${dayIndex + 1}`}{location ? ` · ${location}` : ''}{!firstPage ? ' · suite' : ''}
           </div>
           {firstPage && title ? <div style={{ color: ink, fontSize: '3.7cqmin', fontWeight: 700, lineHeight: 1.1, fontFamily: 'Georgia, serif' }}>{title}</div> : null}
           {firstPage && note ? <div style={{ color: '#41433F', fontSize: '1.75cqmin', lineHeight: 1.45, marginTop: '1%' }}>{note}</div> : null}
@@ -1325,7 +1326,7 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
 export function PageDecorateModal({
   photos, format, onFormatChange, theme, title, note, firstPage,
   dayIndex, location, bg, pageIndex, pageCount, unit = 'jour',
-  initialItems, onChange, initialFree, onChangeFree, onClose,
+  initialItems, onChange, initialFree, onChangeFree, onClose, label = '',
 }) {
   useBackClose(onClose); // « retour » ferme la fenêtre, comme la croix
   const spec = resolveBg(bg, pageIndex, pageCount);
@@ -1364,7 +1365,7 @@ export function PageDecorateModal({
   const headerInner = (
     <div style={{ display: 'inline-block', maxWidth: '100%', ...(onPlate ? { backgroundColor: 'rgba(251,248,243,0.85)', borderRadius: '4px', padding: '1.5% 2.2%' } : {}) }}>
       <div style={{ color: accent, fontSize: '1.45cqmin', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: '0.8%' }}>
-        {unitLabel(unit)} {dayIndex + 1}{location ? ` · ${location}` : ''}{!firstPage ? ' · suite' : ''}
+        {(label || '').trim() || `${unitLabel(unit)} ${dayIndex + 1}`}{location ? ` · ${location}` : ''}{!firstPage ? ' · suite' : ''}
       </div>
       {firstPage && title ? <div style={{ color: ink, fontSize: '3.7cqmin', fontWeight: 700, lineHeight: 1.1, fontFamily: 'Georgia, serif' }}>{title}</div> : null}
       {firstPage && note ? <div style={{ color: '#41433F', fontSize: '1.75cqmin', lineHeight: 1.45, marginTop: '1%' }}>{note}</div> : null}
@@ -2170,7 +2171,7 @@ function DayPhotoPickerModal({ photos, targetPage, pageOfIdx, isFrozenPhoto, onC
   );
 }
 
-export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhoto, busy, progress = null, format = 'carre', onFormatChange = null, theme = null, unit = 'jour', pageOffset = null, onShareDay = null }) {
+export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhoto, busy, progress = null, format = 'carre', onFormatChange = null, theme = null, unit = 'jour', pageOffset = null, onShareDay = null, dayLabels = null, onSendPhotoToDay = null }) {
   const fileRef = useRef(null);
   const addTarget = useRef(null); // page cible du prochain ajout de photos (mode manuel)
   const [addChoice, setAddChoice] = useState(null); // page : choix de la source d'ajout
@@ -2488,11 +2489,19 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-      <div className="mb-3 flex items-center justify-between gap-3">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <span className="rounded-full bg-coral-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-coral-600">
           {unitLabel(unit)} {index + 1}
           {day?.location ? ` · ${day.location}` : ''}
         </span>
+        {/* Nom personnalisé : remplace « Étape N » sur les pages de l'album
+            (ex. « CALA GONONE · suite » au lieu de « ÉTAPE 7 · suite »). */}
+        <input
+          value={entry.label || ''}
+          onChange={(e) => update({ label: e.target.value })}
+          placeholder={`Nom sur la page (sinon « ${unitLabel(unit)} ${index + 1} »)`}
+          className="min-w-0 flex-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 outline-none focus:border-coral-400 sm:max-w-xs"
+        />
       </div>
 
       <input
@@ -2896,6 +2905,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
               deco={entry.pageDeco?.[p]}
               free={entry.freePages?.[p]}
               width="100%"
+              label={entry.label}
               interactive={editable}
               selected={sel && sel.p === p ? { kind: sel.kind, i: sel.i } : null}
               onSelect={editable ? (kind, i) => setSel(i == null ? null : { p, kind, i }) : undefined}
@@ -2999,6 +3009,23 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
                       )}
                     </select>
                   )}
+                  {onSendPhotoToDay && Array.isArray(dayLabels) && dayLabels.length > 1 && (
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        if (e.target.value === '') return;
+                        const t = Number(e.target.value);
+                        const gi = pageStartIdx(sel.p) + sel.i;
+                        setSel(null);
+                        onSendPhotoToDay(gi, t);
+                      }}
+                      className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700"
+                      title={`Envoyer cette photo dans un autre ${unit === 'etape' ? 'étape' : 'jour'}`}
+                    >
+                      <option value="">📆 Vers un autre {unit === 'etape' ? 'étape' : 'jour'}…</option>
+                      {dayLabels.map((lbl, q) => (q !== index ? <option key={q} value={q}>{lbl}</option> : null))}
+                    </select>
+                  )}
                 </div>
               )}
               <DecoItemControls
@@ -3025,6 +3052,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
           firstPage={decoPage === 0}
           dayIndex={index}
           location={day?.location}
+          label={entry.label}
           bg={entry.bg}
           pageIndex={decoPage}
           pageCount={pageCount}
@@ -3283,6 +3311,7 @@ export default function AlbumPage() {
           title: s.title || '',
           note: s.note || '',
           photos: Array.isArray(s.photos) ? s.photos : [],
+          label: s.label || '',
           bg: migrateBg(s.bg),
           split: Array.isArray(s.split) ? s.split : null,
           pageDeco: s.pageDeco || {},
@@ -3298,6 +3327,7 @@ export default function AlbumPage() {
             title: s?.title ?? (d.day_title || d.location || `Jour ${i + 1}`),
             note: s?.note ?? '',
             photos: Array.isArray(s?.photos) ? s.photos : [],
+            label: s?.label || '',
             bg: migrateBg(s?.bg ?? null),
             split: Array.isArray(s?.split) ? s.split : null,
             pageDeco: s?.pageDeco || {},
@@ -3360,6 +3390,30 @@ export default function AlbumPage() {
     setHistLen(history.current.length);
     histSkip.current = true;
     setAlbum(prev);
+    setDirty(true);
+  };
+
+
+  // Envoie une photo d'un jour vers un AUTRE jour : retirée de sa page côté
+  // source (les autres pages ne bougent pas), ajoutée à la fin du jour cible
+  // (dernière page en mode manuel, sinon nouvelle page si elle est verrouillée).
+  const sendPhotoToDay = (fromI, gi, toI) => {
+    if (fromI === toI) return;
+    setAlbum((prev) => {
+      const days = [...prev.days];
+      const from = days[fromI];
+      const to = days[toI];
+      const photo = (from?.photos || [])[gi];
+      if (!photo || !to) return prev;
+      const removed = removePhotoFromEntry(from, gi);
+      const counts = repairSplit(to.split, (to.photos || []).length);
+      const lastIdx = counts.length - 1;
+      const target = isManualLayout(to) && !(to.lockedPages || {})[lastIdx] ? lastIdx : null;
+      const added = addPhotosToEntry(to, [photo], target);
+      days[fromI] = { ...from, ...removed };
+      days[toI] = { ...to, ...added };
+      return { ...prev, days };
+    });
     setDirty(true);
   };
 
@@ -3974,6 +4028,11 @@ export default function AlbumPage() {
                 unit={album.unit}
                 pageOffset={dayOffsets[i]}
                 onShareDay={() => shareDay(i)}
+                dayLabels={sections.map((sd, k) => {
+                  const nm = (sd.label || '').trim() || (sd.title || '').trim() || (sd.location || '').trim();
+                  return `${unitLabel(album.unit)} ${k + 1}${nm ? ` · ${nm.slice(0, 28)}` : ''}`;
+                })}
+                onSendPhotoToDay={(gi, t) => sendPhotoToDay(i, gi, t)}
               />
             </div>
           );

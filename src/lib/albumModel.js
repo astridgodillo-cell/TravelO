@@ -74,6 +74,24 @@ export function repairSplit(split, total) {
 // - auto : simple ajout à la fin (la répartition se refait toute seule) ;
 // - manuel : sur la page cible (targetPage) ou sur une NOUVELLE page à la fin
 //   — les pages existantes gardent exactement leurs photos.
+// Retire la photo d'index gi d'une journée en respectant son mode : en manuel,
+// seule sa page est décomptée (page vidée conservée = boîte stable) ; en auto,
+// la répartition se refait toute seule.
+export function removePhotoFromEntry(entry, gi) {
+  const total = (entry.photos || []).length;
+  const photos = (entry.photos || []).filter((_, k) => k !== gi);
+  if (!isManualLayout(entry)) return { photos, split: null };
+  const counts = repairSplit(entry.split, total);
+  let acc = 0;
+  let page = counts.length - 1;
+  for (let k = 0; k < counts.length; k += 1) {
+    acc += counts[k];
+    if (gi < acc) { page = k; break; }
+  }
+  counts[page] = Math.max(0, counts[page] - 1);
+  return { photos, split: counts, layoutMode: 'manuel' };
+}
+
 export function addPhotosToEntry(entry, added, targetPage = null) {
   if (!isManualLayout(entry)) {
     return { photos: [...(entry.photos || []), ...added], split: null };

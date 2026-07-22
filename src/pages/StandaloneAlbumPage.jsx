@@ -17,7 +17,7 @@ import PdfPagesPreview from '../components/PdfPagesPreview';
 import { pdfBlobToImageFiles } from '../lib/pdfToImages';
 import useBackClose from '../lib/useBackClose';
 import { DayCard, CoverPicker, ThemePicker, Spinner, CoversSection, FormatPicker, ShareSheet } from './AlbumPage';
-import { FORMAT_LABELS, normalizeBg, bakePhotoEffects, getTheme, unitLabel, splitPhotos, computeSplit, bgIsEmpty, autoBgFromPhotos, formatDateRange, MAP_TRANSPORTS, addPhotosToEntry, isManualLayout, repairSplit } from '../lib/albumModel';
+import { FORMAT_LABELS, normalizeBg, bakePhotoEffects, getTheme, unitLabel, splitPhotos, computeSplit, bgIsEmpty, autoBgFromPhotos, formatDateRange, MAP_TRANSPORTS, addPhotosToEntry, isManualLayout, repairSplit, removePhotoFromEntry } from '../lib/albumModel';
 
 const emptyDay = () => ({ title: '', note: '', photos: [], bg: null, split: null });
 
@@ -229,6 +229,30 @@ export default function StandaloneAlbumPage() {
     const days = album.days.filter((_, k) => k !== i);
     days[i - 1] = merged;
     patch({ days });
+  };
+
+
+  // Envoie une photo d'un jour vers un AUTRE jour : retirée de sa page côté
+  // source (les autres pages ne bougent pas), ajoutée à la fin du jour cible
+  // (dernière page en mode manuel, sinon nouvelle page si elle est verrouillée).
+  const sendPhotoToDay = (fromI, gi, toI) => {
+    if (fromI === toI) return;
+    setAlbum((prev) => {
+      const days = [...prev.days];
+      const from = days[fromI];
+      const to = days[toI];
+      const photo = (from?.photos || [])[gi];
+      if (!photo || !to) return prev;
+      const removed = removePhotoFromEntry(from, gi);
+      const counts = repairSplit(to.split, (to.photos || []).length);
+      const lastIdx = counts.length - 1;
+      const target = isManualLayout(to) && !(to.lockedPages || {})[lastIdx] ? lastIdx : null;
+      const added = addPhotosToEntry(to, [photo], target);
+      days[fromI] = { ...from, ...removed };
+      days[toI] = { ...to, ...added };
+      return { ...prev, days };
+    });
+    setDirty(true);
   };
 
   async function addPhotos(i, files, targetPage = null) {
@@ -670,6 +694,11 @@ export default function StandaloneAlbumPage() {
               unit={album.unit}
               pageOffset={dayOffsets[i]}
               onShareDay={() => shareDay(i)}
+              dayLabels={album.days.map((sd, k) => {
+                const nm = (sd.label || '').trim() || (sd.title || '').trim();
+                return `${unitLabel(album.unit)} ${k + 1}${nm ? ` · ${nm.slice(0, 28)}` : ''}`;
+              })}
+              onSendPhotoToDay={(gi, t) => sendPhotoToDay(i, gi, t)}
             />
           </div>
         ))}
