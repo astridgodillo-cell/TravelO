@@ -1328,7 +1328,8 @@ export function PageDecorateModal({
   dayIndex, location, bg, pageIndex, pageCount, unit = 'jour',
   initialItems, onChange, initialFree, onChangeFree, onClose, label = '', pageName = '',
 }) {
-  useBackClose(onClose); // « retour » ferme la fenêtre, comme la croix
+  // Pas de useBackClose ici : le DecoEditor rendu à l'intérieur s'en charge déjà
+  // (deux inscriptions pour la même fenêtre créaient un retour « à vide »).
   const spec = resolveBg(bg, pageIndex, pageCount);
   const onPlate = spec.type !== 'none';
   const lay = pageLayout(photos, format, { title, note, firstPage, onPlate });
@@ -4008,14 +4009,16 @@ export default function AlbumPage() {
 
 
   // ---- Enregistrement AUTOMATIQUE + garde de sortie ----
-  // 2,5 s après la dernière modification (hors envoi de photos en cours), on
+  // Au plus une fois par minute : on attend qu'une minute se soit écoulée
+  // depuis le dernier enregistrement (hors envoi de photos en cours), puis on
   // enregistre tout seul. Et si on quitte avec des changements non
   // enregistrés, le navigateur demande confirmation.
   const [lastSavedAt, setLastSavedAt] = useState(null);
   useEffect(() => {
     if (!dirty || saving || loading) return undefined;
     if (Object.keys(uploads).length) return undefined;
-    const t = setTimeout(() => { save(); }, 2500);
+    const elapsed = lastSavedAt ? Date.now() - lastSavedAt.getTime() : 0;
+    const t = setTimeout(() => { save(); }, Math.max(1500, 60000 - elapsed));
     return () => clearTimeout(t);
   });
   useEffect(() => {
