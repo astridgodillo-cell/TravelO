@@ -2265,7 +2265,7 @@ function TemplateSheet({ page, format, currentSlots, onApply, onClose }) {
             </div>
           </div>
           <p className="text-[11px] text-slate-400">
-            Le modèle place les photos de la page dans ses cases, dans l'ordre. S'il y a plus de photos que de cases, les photos en trop sont posées en petit en bas de page (à replacer). Tes modèles sont enregistrés sur cet appareil.
+            Le modèle place les photos de la page dans ses cases, dans l'ordre. S'il y a plus de photos que de cases, les photos en trop passent automatiquement sur la page suivante. Tes modèles sont enregistrés sur cet appareil.
           </p>
         </div>
       </div>
@@ -2694,25 +2694,67 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
       return { xf: (c.x + c.w / 2) / lay.pageW, yf: (c.y + c.h / 2) / lay.pageH, w: c.w / minPage, ar: c.w / c.h, rot: 0 };
     });
   };
+  // Renumérote les réglages par page (fonds, décos, verrous, dispositions,
+  // noms) après INSERTION d'une page vide à l'index `at`.
+  const insertPageMaps = (at) => {
+    const remapObj = (o) => {
+      const r = {};
+      Object.keys(o || {}).forEach((k) => {
+        const n = Number(k);
+        r[n >= at ? n + 1 : n] = o[k];
+      });
+      return r;
+    };
+    const pages = [...(bg.pages || [])];
+    if (at < pages.length) pages.splice(at, 0, { type: 'none' });
+    return {
+      freePages: remapObj(entry.freePages),
+      pageDeco: remapObj(entry.pageDeco),
+      lockedPages: remapObj(entry.lockedPages),
+      pageNames: remapObj(entry.pageNames),
+      bg: { ...bg, pages },
+    };
+  };
   // Applique un modèle à la page p : chaque photo épouse sa case (hs = ratio
-  // photo / forme de la case) ; les photos en trop vont en petit en bas.
+  // photo / forme de la case). S'il y a plus de photos que de cases, les
+  // photos en trop passent sur la page suivante (créée si besoin, ou si la
+  // suivante est verrouillée).
   const applyTemplate = (p, tpl) => {
     if (isLocked(p)) return;
     const list = chunks[p] || [];
     if (!list.length) return;
-    const extraN = Math.max(0, list.length - tpl.slots.length);
-    const boxes = list.map((ph, k) => {
+    const n = Math.min(list.length, tpl.slots.length);
+    const boxes = list.slice(0, n).map((ph, k) => {
       const ar = ph.w && ph.h ? ph.w / ph.h : 4 / 3;
-      if (k < tpl.slots.length) {
-        const sl = tpl.slots[k];
-        const hs = Math.min(6, Math.max(0.15, ar / (sl.ar || ar)));
-        return { xf: sl.xf, yf: sl.yf, scale: sl.w, rot: sl.rot || 0, hs };
-      }
-      const e = k - tpl.slots.length;
-      return { xf: (e + 0.5) / extraN, yf: 0.92, scale: 0.14, rot: 0 };
+      const sl = tpl.slots[k];
+      const hs = Math.min(6, Math.max(0.15, ar / (sl.ar || ar)));
+      return { xf: sl.xf, yf: sl.yf, scale: sl.w, rot: sl.rot || 0, hs };
     });
     setSel(null);
-    setPageFree(p, boxes);
+    const extraN = list.length - n;
+    if (!extraN) {
+      setPageFree(p, boxes);
+      return;
+    }
+    // Les photos en trop sont les DERNIÈRES de la page : comme les photos
+    // restent dans le même ordre, il suffit d'ajuster les comptes par page.
+    const counts = [...splitCounts];
+    counts[p] = n;
+    if (p + 1 < counts.length && !isLocked(p + 1)) {
+      // Elles rejoignent le DÉBUT de la page suivante, qui repasse en grille
+      // automatique (sa disposition libre ne correspond plus).
+      counts[p + 1] += extraN;
+      const freePages = { ...(entry.freePages || {}), [p]: boxes };
+      delete freePages[p + 1];
+      update({ layoutMode: 'manuel', split: counts, freePages });
+      return;
+    }
+    // Pas de page suivante utilisable (dernière page, ou suivante
+    // verrouillée) : on insère une nouvelle page juste après.
+    counts.splice(p + 1, 0, extraN);
+    const maps = insertPageMaps(p + 1);
+    maps.freePages[p] = boxes;
+    update({ layoutMode: 'manuel', split: counts, ...maps });
   };
   // Envoie une ou plusieurs photos à la FIN d'une autre page. Seules les pages
   // concernées changent — aucune autre ne bouge.
