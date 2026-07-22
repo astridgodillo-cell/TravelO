@@ -748,6 +748,18 @@ export default function StandaloneAlbumPage() {
         <ShareSheet files={albumShareData.files} text={albumShareData.text} onClose={() => setAlbumShareData(null)} />
       )}
 
+
+      {/* Bouton ANNULER flottant : toujours accessible sans remonter en haut */}
+      {histLen > 0 && Object.keys(uploads).length === 0 && (
+        <button
+          type="button"
+          onClick={undo}
+          title="Annuler la dernière action"
+          className="fixed bottom-4 left-4 z-[60] flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-white text-xl shadow-xl active:scale-95"
+        >
+          ↩️
+        </button>
+      )}
       {/* Filet de sécurité : annuler la dernière suppression de section */}
       {trash && (
         <div className="fixed inset-x-0 bottom-4 z-[90] flex justify-center px-4">
