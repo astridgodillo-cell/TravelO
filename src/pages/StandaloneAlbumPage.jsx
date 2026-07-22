@@ -574,7 +574,7 @@ export default function StandaloneAlbumPage() {
   const totalPages = BEFORE + dayPageCounts.reduce((a, b) => a + b, 0) + 2;
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="mx-auto max-w-5xl pb-24">
       <div className="sticky top-0 z-20 -mx-4 mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur">
         <button type="button" onClick={goBack} className="text-sm text-brand-700 underline">← Retour</button>
         <div className="flex items-center gap-2">
@@ -797,7 +797,7 @@ export default function StandaloneAlbumPage() {
           type="button"
           onClick={() => setNavOpen(true)}
           title="Aller à un jour / une étape"
-          className="fixed bottom-4 right-4 z-[60] flex h-12 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 shadow-xl active:scale-95"
+          className="fixed bottom-4 right-4 z-40 flex h-12 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 shadow-xl active:scale-95"
         >
           <span className="text-lg">📑</span>
           <span className="text-xs font-bold text-slate-600">{album.days.length}</span>
@@ -810,7 +810,7 @@ export default function StandaloneAlbumPage() {
           type="button"
           onClick={undo}
           title="Annuler la dernière action"
-          className="fixed bottom-4 left-4 z-[60] flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-white text-xl shadow-xl active:scale-95"
+          className="fixed bottom-4 left-4 z-40 flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-white text-xl shadow-xl active:scale-95"
         >
           ↩️
         </button>
