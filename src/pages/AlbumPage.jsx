@@ -2128,9 +2128,153 @@ export function DayNavSheet({ days, unit = 'jour', onJump, onClose }) {
 }
 
 
+
+// ---- Modèles de mise en page ----
+// Un modèle = des « cases » (position xf/yf, largeur w en fraction du petit
+// côté, forme ar = largeur/hauteur, rotation). Photo-indépendant : à
+// l'application, chaque photo reçoit hs = sonRatio / ar pour épouser la case.
+export const BUILTIN_TEMPLATES = [
+  { id: 'b1', name: '1 pleine page', slots: [{ xf: 0.5, yf: 0.56, w: 0.9, ar: 1.28, rot: 0 }] },
+  { id: 'b2h', name: '2 côte à côte', slots: [
+    { xf: 0.27, yf: 0.58, w: 0.44, ar: 0.72, rot: 0 }, { xf: 0.73, yf: 0.58, w: 0.44, ar: 0.72, rot: 0 }] },
+  { id: 'b2v', name: '2 empilées', slots: [
+    { xf: 0.5, yf: 0.38, w: 0.86, ar: 2.4, rot: 0 }, { xf: 0.5, yf: 0.78, w: 0.86, ar: 2.4, rot: 0 }] },
+  { id: 'b3g', name: '1 grande + 2 petites', slots: [
+    { xf: 0.31, yf: 0.58, w: 0.56, ar: 0.9, rot: 0 },
+    { xf: 0.77, yf: 0.42, w: 0.32, ar: 1.05, rot: 0 }, { xf: 0.77, yf: 0.76, w: 0.32, ar: 1.05, rot: 0 }] },
+  { id: 'b3b', name: '1 bandeau + 2 dessous', slots: [
+    { xf: 0.5, yf: 0.4, w: 0.88, ar: 2.1, rot: 0 },
+    { xf: 0.28, yf: 0.79, w: 0.42, ar: 1.4, rot: 0 }, { xf: 0.72, yf: 0.79, w: 0.42, ar: 1.4, rot: 0 }] },
+  { id: 'b3c', name: '3 colonnes', slots: [
+    { xf: 0.19, yf: 0.58, w: 0.28, ar: 0.45, rot: 0 }, { xf: 0.5, yf: 0.58, w: 0.28, ar: 0.45, rot: 0 }, { xf: 0.81, yf: 0.58, w: 0.28, ar: 0.45, rot: 0 }] },
+  { id: 'b3p', name: 'Polaroïds (3)', slots: [
+    { xf: 0.3, yf: 0.42, w: 0.36, ar: 0.95, rot: -6 }, { xf: 0.71, yf: 0.5, w: 0.36, ar: 0.95, rot: 4 }, { xf: 0.46, yf: 0.78, w: 0.36, ar: 0.95, rot: -3 }] },
+  { id: 'b4', name: '4 en grille', slots: [
+    { xf: 0.28, yf: 0.42, w: 0.42, ar: 1.35, rot: 0 }, { xf: 0.72, yf: 0.42, w: 0.42, ar: 1.35, rot: 0 },
+    { xf: 0.28, yf: 0.79, w: 0.42, ar: 1.35, rot: 0 }, { xf: 0.72, yf: 0.79, w: 0.42, ar: 1.35, rot: 0 }] },
+  { id: 'b5', name: '1 grande + 4 petites', slots: [
+    { xf: 0.3, yf: 0.58, w: 0.54, ar: 0.78, rot: 0 },
+    { xf: 0.75, yf: 0.33, w: 0.34, ar: 1.25, rot: 0 }, { xf: 0.75, yf: 0.62, w: 0.34, ar: 1.25, rot: 0 },
+    { xf: 0.75, yf: 0.9, w: 0.34, ar: 1.25, rot: 0 }, { xf: 0.3, yf: 0.93, w: 0.5, ar: 2.4, rot: 0 }] },
+  { id: 'b6', name: '6 en grille', slots: [
+    { xf: 0.19, yf: 0.42, w: 0.28, ar: 0.95, rot: 0 }, { xf: 0.5, yf: 0.42, w: 0.28, ar: 0.95, rot: 0 }, { xf: 0.81, yf: 0.42, w: 0.28, ar: 0.95, rot: 0 },
+    { xf: 0.19, yf: 0.78, w: 0.28, ar: 0.95, rot: 0 }, { xf: 0.5, yf: 0.78, w: 0.28, ar: 0.95, rot: 0 }, { xf: 0.81, yf: 0.78, w: 0.28, ar: 0.95, rot: 0 }] },
+];
+
+// Modèles PERSONNELS : enregistrés sur l'appareil (localStorage).
+const TPL_KEY = 'travelo:pageTemplates';
+const loadUserTemplates = () => {
+  try { return JSON.parse(localStorage.getItem(TPL_KEY)) || []; } catch { return []; }
+};
+const saveUserTemplates = (list) => {
+  try { localStorage.setItem(TPL_KEY, JSON.stringify(list)); } catch { /* stockage plein/privé */ }
+};
+
+// Vignette d'un modèle : la page en miniature avec ses cases grises.
+function TemplateThumb({ slots, pageAr }) {
+  const wPct = (w) => w * (pageAr >= 1 ? 1 / pageAr : 1) * 100;
+  const hPct = (w, ar) => (w / ar) * (pageAr >= 1 ? 1 : pageAr) * 100;
+  return (
+    <div className="relative w-full overflow-hidden rounded-md border border-slate-200 bg-slate-50" style={{ aspectRatio: String(pageAr) }}>
+      <div className="absolute inset-x-[8%] top-[6%] h-[7%] rounded-sm bg-slate-200" />
+      {slots.map((sl, k) => (
+        <div key={k} className="absolute rounded-[2px] bg-slate-400/80"
+          style={{ left: `${sl.xf * 100}%`, top: `${sl.yf * 100}%`, width: `${wPct(sl.w)}%`, height: `${hPct(sl.w, sl.ar)}%`, transform: `translate(-50%,-50%) rotate(${sl.rot || 0}deg)` }} />
+      ))}
+    </div>
+  );
+}
+
+// Fenêtre des modèles : appliquer un modèle proposé ou personnel à la page,
+// enregistrer la mise en page ACTUELLE comme nouveau modèle, supprimer les siens.
+function TemplateSheet({ page, format, currentSlots, onApply, onClose }) {
+  useBackClose(onClose);
+  const [userTpls, setUserTpls] = useState(loadUserTemplates);
+  const [naming, setNaming] = useState(false);
+  const [name, setName] = useState('');
+  const dims = FORMAT_DIMS[format] || FORMAT_DIMS.carre;
+  const pageAr = (dims.trimW + 6) / (dims.trimH + 6);
+  const saveCurrent = () => {
+    const nm = name.trim() || `Mon modèle ${userTpls.length + 1}`;
+    const next = [...userTpls, { id: `u${Date.now().toString(36)}`, name: nm, slots: currentSlots }];
+    setUserTpls(next);
+    saveUserTemplates(next);
+    setNaming(false);
+    setName('');
+  };
+  const removeTpl = (id) => {
+    const next = userTpls.filter((t) => t.id !== id);
+    setUserTpls(next);
+    saveUserTemplates(next);
+  };
+  const Tile = ({ t, mine = false }) => (
+    <div className="relative">
+      <button type="button" onClick={() => { onApply(t); onClose(); }} className="w-full rounded-lg border border-slate-200 p-1.5 text-left hover:border-coral-300 hover:bg-coral-50/40">
+        <TemplateThumb slots={t.slots} pageAr={pageAr} />
+        <p className="mt-1 truncate text-[11px] font-medium text-slate-600">{t.name}</p>
+        <p className="text-[10px] text-slate-400">{t.slots.length} photo{t.slots.length > 1 ? 's' : ''}</p>
+      </button>
+      {mine && (
+        <button type="button" onClick={() => removeTpl(t.id)}
+          className="absolute -right-1.5 -top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-slate-700 text-xs text-white shadow hover:bg-red-600"
+          title="Supprimer ce modèle">✕</button>
+      )}
+    </div>
+  );
+  return (
+    <div className="fixed inset-0 z-[75] flex items-end justify-center bg-black/50 sm:items-center sm:p-4" onClick={onClose}>
+      <div className="flex max-h-[85vh] w-full max-w-md flex-col rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
+          <h3 className="font-semibold text-slate-800">🧩 Modèles · page {page + 1}</h3>
+          <button onClick={onClose} className="-m-2 p-2 text-2xl leading-none text-slate-400 hover:text-slate-700">✕</button>
+        </div>
+        <div className="flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-3">
+          {/* Enregistrer la page actuelle comme modèle personnel */}
+          {currentSlots && currentSlots.length > 0 && (
+            naming ? (
+              <div className="rounded-xl border border-coral-200 bg-coral-50/50 p-3">
+                <p className="mb-2 text-xs font-semibold text-slate-600">Nom du nouveau modèle :</p>
+                <div className="flex gap-2">
+                  <input value={name} onChange={(e) => setName(e.target.value)} autoFocus
+                    placeholder={`Mon modèle ${userTpls.length + 1}`}
+                    onKeyDown={(e) => { if (e.key === 'Enter') saveCurrent(); }}
+                    className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-coral-400" />
+                  <button type="button" onClick={saveCurrent} className="rounded-lg bg-coral-500 px-4 py-2 text-sm font-semibold text-white">OK</button>
+                </div>
+              </div>
+            ) : (
+              <button type="button" onClick={() => setNaming(true)}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-coral-300 bg-coral-50 px-3 py-2.5 text-sm font-semibold text-coral-700 hover:bg-coral-100">
+                💾 Enregistrer la mise en page ACTUELLE comme modèle
+              </button>
+            )
+          )}
+          {userTpls.length > 0 && (
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Mes modèles</p>
+              <div className="grid grid-cols-3 gap-2">
+                {userTpls.map((t) => <Tile key={t.id} t={t} mine />)}
+              </div>
+            </div>
+          )}
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Modèles proposés</p>
+            <div className="grid grid-cols-3 gap-2">
+              {BUILTIN_TEMPLATES.map((t) => <Tile key={t.id} t={t} />)}
+            </div>
+          </div>
+          <p className="text-[11px] text-slate-400">
+            Le modèle place les photos de la page dans ses cases, dans l'ordre. S'il y a plus de photos que de cases, les photos en trop sont posées en petit en bas de page (à replacer). Tes modèles sont enregistrés sur cet appareil.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Menu « ⋯ » d'une page : toutes les actions regroupées, avec libellés clairs
 // (fini la rangée de micro-boutons difficile à viser au pouce).
-function PageActionsSheet({ page, locked, pageName, canGrid, canDelete, onLock, onName, onAddPhotos, onGrid, onDelete, onCompose, onClose }) {
+function PageActionsSheet({ page, locked, pageName, canGrid, canDelete, onLock, onName, onAddPhotos, onGrid, onDelete, onCompose, onTemplates, onClose }) {
   useBackClose(onClose);
   const row = 'flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left text-sm font-medium text-slate-700 hover:bg-slate-50';
   return (
@@ -2149,6 +2293,11 @@ function PageActionsSheet({ page, locked, pageName, canGrid, canDelete, onLock, 
         {onAddPhotos && (
           <button type="button" onClick={onAddPhotos} className={row}>
             <span className="text-lg">📷</span>Ajouter des photos sur cette page
+          </button>
+        )}
+        {onTemplates && (
+          <button type="button" onClick={onTemplates} className={row}>
+            <span className="text-lg">🧩</span>Modèles de mise en page
           </button>
         )}
         {onName && (
@@ -2383,6 +2532,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
   const [dayPick, setDayPick] = useState(null); // page : sélection parmi les photos du jour
   const [cropFor, setCropFor] = useState(null); // { gIdx, hs } : recadrage visuel
   const [pageMenu, setPageMenu] = useState(null); // page dont le menu ⋯ est ouvert
+  const [tplFor, setTplFor] = useState(null); // page pour la fenêtre des modèles
   const [nameFor, setNameFor] = useState(null); // page en cours de nommage
   const [bgOpen, setBgOpen] = useState(false);
   const [decoPage, setDecoPage] = useState(null);
@@ -2464,6 +2614,48 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
       ⋯
     </button>
   );
+
+  // Cases (photo-indépendantes) décrivant la mise en page ACTUELLE de la page p
+  // — sert à l'enregistrer comme modèle personnel.
+  const slotsFromPage = (p) => {
+    const list = chunks[p] || [];
+    const boxes = entry.freePages?.[p];
+    if (Array.isArray(boxes) && boxes.length === list.length && list.length > 0) {
+      return boxes.map((b, k) => {
+        const ph = list[k];
+        const ar = ph.w && ph.h ? ph.w / ph.h : 4 / 3;
+        return { xf: b.xf, yf: b.yf, w: b.scale, ar: ar / (b.hs || 1), rot: b.rot || 0 };
+      });
+    }
+    const spec = resolveBg(bg, p, pageCount);
+    const lay = pageLayout(list, format, { title: entry.title, note: entry.note, firstPage: p === 0, onPlate: spec.type !== 'none' });
+    const minPage = Math.min(lay.pageW, lay.pageH);
+    return list.map((ph, k) => {
+      const c = lay.cells[k];
+      if (!c) return { xf: 0.5, yf: 0.5, w: 0.4, ar: 4 / 3, rot: 0 };
+      return { xf: (c.x + c.w / 2) / lay.pageW, yf: (c.y + c.h / 2) / lay.pageH, w: c.w / minPage, ar: c.w / c.h, rot: 0 };
+    });
+  };
+  // Applique un modèle à la page p : chaque photo épouse sa case (hs = ratio
+  // photo / forme de la case) ; les photos en trop vont en petit en bas.
+  const applyTemplate = (p, tpl) => {
+    if (isLocked(p)) return;
+    const list = chunks[p] || [];
+    if (!list.length) return;
+    const extraN = Math.max(0, list.length - tpl.slots.length);
+    const boxes = list.map((ph, k) => {
+      const ar = ph.w && ph.h ? ph.w / ph.h : 4 / 3;
+      if (k < tpl.slots.length) {
+        const sl = tpl.slots[k];
+        const hs = Math.min(6, Math.max(0.15, ar / (sl.ar || ar)));
+        return { xf: sl.xf, yf: sl.yf, scale: sl.w, rot: sl.rot || 0, hs };
+      }
+      const e = k - tpl.slots.length;
+      return { xf: (e + 0.5) / extraN, yf: 0.92, scale: 0.14, rot: 0 };
+    });
+    setSel(null);
+    setPageFree(p, boxes);
+  };
   // Envoie une ou plusieurs photos à la FIN d'une autre page. Seules les pages
   // concernées changent — aucune autre ne bouge.
   const movePhotosToPage = (gis, targetP) => {
@@ -3258,10 +3450,21 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
           onLock={() => { const p = pageMenu; setPageMenu(null); toggleLock(p); }}
           onCompose={!isLocked(pageMenu) ? () => { const p = pageMenu; setPageMenu(null); setDecoPage(p); } : null}
           onAddPhotos={mode === 'manuel' && !isLocked(pageMenu) ? () => { const p = pageMenu; setPageMenu(null); setAddChoice(p); } : null}
+          onTemplates={!isLocked(pageMenu) && (chunks[pageMenu]?.length || 0) > 0 ? () => { const p = pageMenu; setPageMenu(null); setTplFor(p); } : null}
           onName={pageMenu > 0 && !isLocked(pageMenu) ? () => { const p = pageMenu; setPageMenu(null); setNameFor(p); } : null}
           onGrid={() => { const p = pageMenu; setPageMenu(null); setSel(null); setPageFree(p, null); }}
           onDelete={() => { const p = pageMenu; setPageMenu(null); deleteEmptyPage(p); }}
           onClose={() => setPageMenu(null)}
+        />
+      )}
+
+      {tplFor != null && (
+        <TemplateSheet
+          page={tplFor}
+          format={format}
+          currentSlots={slotsFromPage(tplFor)}
+          onApply={(tpl) => applyTemplate(tplFor, tpl)}
+          onClose={() => setTplFor(null)}
         />
       )}
 
