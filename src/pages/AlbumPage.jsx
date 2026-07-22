@@ -476,7 +476,7 @@ export function BgSpecEditor({ spec, onChange, onPickPhoto }) {
 // plupart des photos servent en demi/quart de page) et on alerte sous 1500 px.
 const MIN_PRINT_PX = 1500;
 
-function isLowRes(photo) {
+export function isLowRes(photo) {
   const longEdge = Math.max(photo?.w || 0, photo?.h || 0);
   return longEdge > 0 && longEdge < MIN_PRINT_PX;
 }
@@ -2127,6 +2127,170 @@ export function DayNavSheet({ days, unit = 'jour', onJump, onClose }) {
   );
 }
 
+
+// Menu « ⋯ » d'une page : toutes les actions regroupées, avec libellés clairs
+// (fini la rangée de micro-boutons difficile à viser au pouce).
+function PageActionsSheet({ page, locked, pageName, canGrid, canDelete, onLock, onName, onAddPhotos, onGrid, onDelete, onCompose, onClose }) {
+  useBackClose(onClose);
+  const row = 'flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left text-sm font-medium text-slate-700 hover:bg-slate-50';
+  return (
+    <div className="fixed inset-0 z-[70] flex items-end justify-center bg-black/50 sm:items-center sm:p-4" onClick={onClose}>
+      <div className="w-full max-w-sm rounded-t-2xl bg-white p-3 shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+        <p className="px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Page {page + 1}</p>
+        <button type="button" onClick={onLock} className={row}>
+          <span className="text-lg">{locked ? '🔓' : '🔒'}</span>
+          {locked ? 'Déverrouiller la page' : 'Verrouiller la page (figer la mise en page)'}
+        </button>
+        {onCompose && (
+          <button type="button" onClick={onCompose} className={row}>
+            <span className="text-lg">✨</span>Composer / décorer la page
+          </button>
+        )}
+        {onAddPhotos && (
+          <button type="button" onClick={onAddPhotos} className={row}>
+            <span className="text-lg">📷</span>Ajouter des photos sur cette page
+          </button>
+        )}
+        {onName && (
+          <button type="button" onClick={onName} className={row}>
+            <span className="text-lg">✏️</span>
+            <span className="min-w-0 flex-1 truncate">Nommer la page <span className="text-slate-400">({pageName || 'suite'})</span></span>
+          </button>
+        )}
+        {canGrid && (
+          <button type="button" onClick={onGrid} className={row}>
+            <span className="text-lg">↺</span>Réorganiser en grille automatique
+          </button>
+        )}
+        {canDelete && (
+          <button type="button" onClick={onDelete} className={`${row} text-red-600`}>
+            <span className="text-lg">🗑</span>Supprimer cette page vide
+          </button>
+        )}
+        <button type="button" onClick={onClose} className="mt-1 w-full py-2 text-center text-xs text-slate-400 hover:text-slate-600">Fermer</button>
+      </div>
+    </div>
+  );
+}
+
+// Nommer une page de continuation (remplace le mot « suite » dans l'en-tête).
+function PageNameSheet({ page, value, onSave, onClose }) {
+  useBackClose(onClose);
+  const [v, setV] = useState(value || '');
+  return (
+    <div className="fixed inset-0 z-[75] flex items-end justify-center bg-black/50 sm:items-center sm:p-4" onClick={onClose}>
+      <div className="w-full max-w-sm rounded-t-2xl bg-white p-5 shadow-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-center text-base font-semibold text-slate-800">Nom de la page {page + 1}</h3>
+        <p className="mt-1 text-center text-xs text-slate-500">Affiché dans l'en-tête à la place de « suite ». Vide = « suite ».</p>
+        <input
+          value={v}
+          onChange={(e) => setV(e.target.value)}
+          placeholder="Ex : Plage de Cala Luna"
+          autoFocus
+          className="mt-3 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-coral-400"
+          onKeyDown={(e) => { if (e.key === 'Enter') { onSave(v.trim()); onClose(); } }}
+        />
+        <div className="mt-3 flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-600">Annuler</button>
+          <button type="button" onClick={() => { onSave(v.trim()); onClose(); }} className="rounded-lg bg-coral-500 px-5 py-2 text-sm font-semibold text-white">Valider</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 📖 Feuilleter l'album : toutes les pages des journées, une par une, comme un
+// livre — sans fabriquer le PDF. Balayage, flèches, clavier.
+export function FlipViewer({ days, format = 'carre', theme = null, unit = 'jour', onClose }) {
+  useBackClose(onClose);
+  const pages = [];
+  (days || []).forEach((e, di) => {
+    const counts = computeSplit((e.photos || []).length, e.split);
+    const chunks = splitPhotos(e.photos, counts);
+    const firstIdx = chunks.findIndex((c) => c.length > 0);
+    chunks.forEach((chunk, pp) => {
+      if (chunk.length) pages.push({ e, di, p: pp, chunk, firstIdx, pageCount: chunks.length });
+    });
+  });
+  const [idx, setIdx] = useState(0);
+  const swipe = useRef(null);
+  const dims = FORMAT_DIMS[format] || FORMAT_DIMS.carre;
+  const ar = (dims.trimW + 6) / (dims.trimH + 6);
+  const go = (d) => setIdx((v) => Math.min(pages.length - 1, Math.max(0, v + d)));
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'ArrowLeft') go(-1);
+      else if (e.key === 'ArrowRight') go(1);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const cur = pages[Math.min(idx, Math.max(0, pages.length - 1))];
+  return (
+    <div className="fixed inset-0 z-[80] flex flex-col bg-slate-900">
+      <div className="flex shrink-0 items-center justify-between gap-3 px-4 py-3">
+        <div className="min-w-0">
+          <h3 className="truncate font-semibold text-white">📖 Feuilleter l'album</h3>
+          {cur && (
+            <p className="truncate text-[11px] text-white/60">
+              {(cur.e.label || '').trim() || (cur.e.title || '').trim() || `${unitLabel(unit)} ${cur.di + 1}`}
+              {cur.pageCount > 1 ? ` · page ${cur.p + 1}/${cur.pageCount}` : ''}
+            </p>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-3">
+          <span className="text-sm font-medium text-white/70">{pages.length ? `${idx + 1} / ${pages.length}` : '—'}</span>
+          <button onClick={onClose} className="-m-2 p-2 text-2xl leading-none text-white/60 hover:text-white">✕</button>
+        </div>
+      </div>
+      <div
+        className="relative flex min-h-0 flex-1 items-center justify-center px-3 pb-3"
+        onPointerDown={(e) => { swipe.current = { x: e.clientX }; }}
+        onPointerUp={(e) => {
+          if (!swipe.current) return;
+          const dx = e.clientX - swipe.current.x;
+          swipe.current = null;
+          if (dx > 45) go(-1);
+          else if (dx < -45) go(1);
+        }}
+      >
+        {cur ? (
+          <div style={{ width: `min(100%, calc((100dvh - 140px) * ${ar}))` }}>
+            <PagePreview
+              photos={cur.chunk}
+              format={format}
+              theme={theme}
+              title={cur.e.title}
+              note={cur.e.note}
+              firstPage={cur.p === cur.firstIdx}
+              dayIndex={cur.di}
+              location={cur.e.location}
+              unit={unit}
+              bg={cur.e.bg}
+              pageIndex={cur.p}
+              pageCount={cur.pageCount}
+              deco={cur.e.pageDeco?.[cur.p]}
+              free={cur.e.freePages?.[cur.p]}
+              label={cur.e.label}
+              pageName={cur.e.pageNames?.[cur.p]}
+              width="100%"
+            />
+          </div>
+        ) : (
+          <p className="text-sm text-white/60">Aucune page à feuilleter pour l'instant : ajoute des photos.</p>
+        )}
+        {idx > 0 && (
+          <button type="button" onClick={() => go(-1)} className="absolute left-2 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-2xl text-white hover:bg-black/70">‹</button>
+        )}
+        {idx < pages.length - 1 && (
+          <button type="button" onClick={() => go(1)} className="absolute right-2 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-2xl text-white hover:bg-black/70">›</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Choix de la source des photos à ajouter sur une page (mode manuel) :
 // depuis les fichiers du téléphone, ou parmi les photos DÉJÀ dans le jour
 // (elles seront déplacées vers cette page).
@@ -2218,6 +2382,8 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
   const [addChoice, setAddChoice] = useState(null); // page : choix de la source d'ajout
   const [dayPick, setDayPick] = useState(null); // page : sélection parmi les photos du jour
   const [cropFor, setCropFor] = useState(null); // { gIdx, hs } : recadrage visuel
+  const [pageMenu, setPageMenu] = useState(null); // page dont le menu ⋯ est ouvert
+  const [nameFor, setNameFor] = useState(null); // page en cours de nommage
   const [bgOpen, setBgOpen] = useState(false);
   const [decoPage, setDecoPage] = useState(null);
   const [sel, setSel] = useState(null); // élément sélectionné dans l'aperçu : { p, kind:'photo'|'deco', i }
@@ -2286,113 +2452,18 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
       {isLocked(p) ? '🔒 Verrouillée' : '🔓 Verrouiller'}
     </button>
   );
-  // Nom d'une page de continuation : remplace le mot « suite » dans le petit
-  // en-tête (ex. « ÉTAPE 7 · Plage de Cala Luna »).
-  const pageNameBtn = (p) => (p > 0 ? (
+  // Menu « ⋯ » : toutes les actions d'une page regroupées (nom, photos,
+  // grille, suppression…) — une seule cible tactile au lieu de cinq.
+  const moreBtn = (p) => (
     <button
       type="button"
-      onClick={() => {
-        const cur = entry.pageNames?.[p] || '';
-        const v = window.prompt('Nom de cette page (affiché à la place de « suite ») :', cur);
-        if (v === null) return;
-        update({ pageNames: { ...(entry.pageNames || {}), [p]: v.trim() } });
-      }}
-      className="max-w-[10rem] truncate rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500 hover:bg-slate-200"
-      title="Nommer cette page (remplace « suite » dans l'en-tête)"
+      onClick={() => setPageMenu(p)}
+      className="rounded-md bg-slate-100 px-2.5 py-0.5 text-[13px] font-bold text-slate-500 hover:bg-slate-200"
+      title="Actions de cette page"
     >
-      ✏️ {(entry.pageNames?.[p] || '').trim() || 'suite'}
+      ⋯
     </button>
-  ) : null);
-  // Remise en grille automatique d'une page passée en disposition libre
-  // (répare aussi une page dont une photo déborderait du cadre).
-  const gridBtn = (p) => (entry.freePages?.[p] && !isLocked(p) ? (
-    <button
-      type="button"
-      onClick={() => { setSel(null); setPageFree(p, null); }}
-      className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500 hover:bg-slate-200"
-      title="Réorganiser automatiquement cette page en grille (annule les positions déplacées à la main)"
-    >
-      ↺ Grille auto
-    </button>
-  ) : null);
-  // Mode manuel : ajouter des photos SUR cette page / supprimer une page vide.
-  const addToPageBtn = (p) => (mode === 'manuel' && !isLocked(p) ? (
-    <button
-      type="button"
-      onClick={() => setAddChoice(p)}
-      className="rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 hover:bg-emerald-100"
-      title="Ajouter des photos sur cette page (les autres pages ne bougent pas)"
-    >
-      📷+
-    </button>
-  ) : null);
-  const deletePageBtn = (p) => (mode === 'manuel' && splitCounts[p] === 0 && !isLocked(p) ? (
-    <button
-      type="button"
-      onClick={() => deleteEmptyPage(p)}
-      className="rounded-md bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-600 hover:bg-red-100"
-      title="Supprimer cette page vide"
-    >
-      🗑
-    </button>
-  ) : null);
-  // Change le nombre de pages (réparti équitablement, toujours valide).
-  const lockedAny = splitCounts.some((_c, k) => isLocked(k));
-  const pageOfIdx = (gi) => {
-    let acc = 0;
-    for (let k = 0; k < splitCounts.length; k += 1) {
-      acc += splitCounts[k];
-      if (gi < acc) return k;
-    }
-    return splitCounts.length - 1;
-  };
-  const isFrozenPhoto = (gi) => isLocked(pageOfIdx(gi));
-
-  // --- Actions du mode MANUEL (pages = boîtes stables) ---
-  // Bascule de mode. auto → manuel : on FIGE la mise en page actuelle telle
-  // quelle. manuel → auto : avertissement, tout est réorganisé.
-  const switchToManual = (extra = {}) =>
-    update({ layoutMode: 'manuel', split: [...splitCounts], ...extra });
-  const switchToAuto = () => {
-    if (!window.confirm('Repasser en automatique ? La répartition sera refaite (~6 photos par page) et les verrous/dispositions libres de ces pages seront effacés.')) return;
-    update({ layoutMode: 'auto', split: null, lockedPages: {}, freePages: {} });
-  };
-  const addEmptyPage = () => {
-    const newIdx = splitCounts.length; // index de la page créée
-    setSel(null);
-    switchToManual({ split: [...splitCounts, 0] });
-    // On ouvre directement la nouvelle page dans l'aperçu (mobile + ordi).
-    setMPage(newIdx);
-    setSpreadStart(Math.max(0, newIdx - 1));
-  };
-  // Renumérote les réglages par page (fonds, décos, verrous, dispositions)
-  // après suppression de la page `removed`.
-  const shiftPageMaps = (removed) => {
-    const remapObj = (o) => {
-      const r = {};
-      Object.keys(o || {}).forEach((k) => {
-        const n = Number(k);
-        if (n === removed) return;
-        r[n > removed ? n - 1 : n] = o[k];
-      });
-      return r;
-    };
-    const pages = [...(bg.pages || [])];
-    if (removed < pages.length) pages.splice(removed, 1);
-    return {
-      freePages: remapObj(entry.freePages),
-      pageDeco: remapObj(entry.pageDeco),
-      lockedPages: remapObj(entry.lockedPages),
-      pageNames: remapObj(entry.pageNames),
-      bg: { ...bg, pages },
-    };
-  };
-  const deleteEmptyPage = (p) => {
-    if (splitCounts[p] !== 0 || isLocked(p)) return;
-    const split = splitCounts.filter((_c, k) => k !== p);
-    setSel(null);
-    update({ layoutMode: 'manuel', split: split.length ? split : null, ...shiftPageMaps(p) });
-  };
+  );
   // Envoie une ou plusieurs photos à la FIN d'une autre page. Seules les pages
   // concernées changent — aucune autre ne bouge.
   const movePhotosToPage = (gis, targetP) => {
@@ -3006,10 +3077,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
             <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
               <span className="text-[11px] text-slate-400">Page {mp + 1}</span>
               {coveredBy[mp] < 0 && lockBtn(mp)}
-              {coveredBy[mp] < 0 && pageNameBtn(mp)}
-              {coveredBy[mp] < 0 && addToPageBtn(mp)}
-              {coveredBy[mp] < 0 && gridBtn(mp)}
-              {coveredBy[mp] < 0 && deletePageBtn(mp)}
+              {coveredBy[mp] < 0 && moreBtn(mp)}
             </div>
           </div>
 
@@ -3026,10 +3094,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
                   <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
                     <span className="text-[11px] text-slate-400">Page {p + 1}</span>
                     {coveredBy[p] < 0 && lockBtn(p)}
-                    {coveredBy[p] < 0 && pageNameBtn(p)}
-                    {coveredBy[p] < 0 && addToPageBtn(p)}
-                    {coveredBy[p] < 0 && gridBtn(p)}
-                    {coveredBy[p] < 0 && deletePageBtn(p)}
+                    {coveredBy[p] < 0 && moreBtn(p)}
                   </div>
                 </div>
               ))}
@@ -3059,7 +3124,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
                   <button type="button" onClick={() => setCropFor({ gIdx: pageStartIdx(sel.p) + sel.i, hs: selObj.hs || 1 })}
                     className="rounded-lg border border-coral-300 bg-coral-50 px-3 py-1.5 text-xs font-semibold text-coral-700 hover:bg-coral-100">✂️ Recadrer</button>
                   <button type="button" onClick={() => setFxFor(pageStartIdx(sel.p) + sel.i)}
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">🎨 Effet &amp; cadrage</button>
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">🎨 Effet</button>
                   <button type="button" onClick={() => setDecoForPhoto(pageStartIdx(sel.p) + sel.i)}
                     className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">✨ Décorer la photo</button>
                   <button type="button" onClick={removeSel}
@@ -3180,6 +3245,32 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
           isFrozenPhoto={isFrozenPhoto}
           onConfirm={(gis) => { movePhotosToPage(gis, dayPick); setDayPick(null); }}
           onClose={() => setDayPick(null)}
+        />
+      )}
+
+      {pageMenu != null && (
+        <PageActionsSheet
+          page={pageMenu}
+          locked={isLocked(pageMenu)}
+          pageName={(entry.pageNames?.[pageMenu] || '').trim()}
+          canGrid={!!entry.freePages?.[pageMenu] && !isLocked(pageMenu)}
+          canDelete={mode === 'manuel' && splitCounts[pageMenu] === 0 && !isLocked(pageMenu)}
+          onLock={() => { const p = pageMenu; setPageMenu(null); toggleLock(p); }}
+          onCompose={!isLocked(pageMenu) ? () => { const p = pageMenu; setPageMenu(null); setDecoPage(p); } : null}
+          onAddPhotos={mode === 'manuel' && !isLocked(pageMenu) ? () => { const p = pageMenu; setPageMenu(null); setAddChoice(p); } : null}
+          onName={pageMenu > 0 && !isLocked(pageMenu) ? () => { const p = pageMenu; setPageMenu(null); setNameFor(p); } : null}
+          onGrid={() => { const p = pageMenu; setPageMenu(null); setSel(null); setPageFree(p, null); }}
+          onDelete={() => { const p = pageMenu; setPageMenu(null); deleteEmptyPage(p); }}
+          onClose={() => setPageMenu(null)}
+        />
+      )}
+
+      {nameFor != null && (
+        <PageNameSheet
+          page={nameFor}
+          value={entry.pageNames?.[nameFor] || ''}
+          onSave={(v) => update({ pageNames: { ...(entry.pageNames || {}), [nameFor]: v } })}
+          onClose={() => setNameFor(null)}
         />
       )}
 
@@ -3345,6 +3436,7 @@ export default function AlbumPage() {
   const [sharingAll, setSharingAll] = useState(false);
   const [sharingAllPdf, setSharingAllPdf] = useState(false);
   const [albumShareData, setAlbumShareData] = useState(null); // { files, text } prêts
+  const [flipOpen, setFlipOpen] = useState(false); // mode « feuilleter »
 
   // Sélecteur de photo : 'cover' (couverture), 'end' (page de fin) ou null.
   const [pickerFor, setPickerFor] = useState(null);
@@ -3448,6 +3540,8 @@ export default function AlbumPage() {
     if (album == null) return;
     if (histSkip.current) { histSkip.current = false; histPrev.current = album; return; }
     if (histPrev.current && histPrev.current !== album) {
+      // toute NOUVELLE action invalide la pile « Rétablir »
+      if (future.current.length) { future.current = []; setFutLen(0); }
       const now = Date.now();
       if (now - histLast.current > 800) {
         history.current.push(histPrev.current);
@@ -3458,12 +3552,26 @@ export default function AlbumPage() {
     }
     histPrev.current = album;
   }, [album]);
+  const future = useRef([]); // pile « Rétablir »
+  const [futLen, setFutLen] = useState(0);
   const undo = () => {
     const prev = history.current.pop();
     if (!prev) return;
+    future.current.push(histPrev.current); // état actuel, pour « Rétablir »
+    setFutLen(future.current.length);
     setHistLen(history.current.length);
     histSkip.current = true;
     setAlbum(prev);
+    setDirty(true);
+  };
+  const redo = () => {
+    const nxt = future.current.pop();
+    if (!nxt) return;
+    history.current.push(histPrev.current);
+    setHistLen(history.current.length);
+    setFutLen(future.current.length);
+    histSkip.current = true;
+    setAlbum(nxt);
     setDirty(true);
   };
 
@@ -3638,6 +3746,28 @@ export default function AlbumPage() {
     }
   }
 
+
+  // ---- Enregistrement AUTOMATIQUE + garde de sortie ----
+  // 2,5 s après la dernière modification (hors envoi de photos en cours), on
+  // enregistre tout seul. Et si on quitte avec des changements non
+  // enregistrés, le navigateur demande confirmation.
+  const [lastSavedAt, setLastSavedAt] = useState(null);
+  useEffect(() => {
+    if (!dirty || saving || loading) return undefined;
+    if (Object.keys(uploads).length) return undefined;
+    const t = setTimeout(() => { save(); }, 2500);
+    return () => clearTimeout(t);
+  });
+  useEffect(() => {
+    const onBeforeUnload = (e) => {
+      if (!dirty) return;
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [dirty]);
+
   async function save() {
     if (!trip) return;
     setSaving(true);
@@ -3666,6 +3796,7 @@ export default function AlbumPage() {
       setTrip(data);
       setDirty(false);
       setSavedOnce(true);
+      setLastSavedAt(new Date());
     } catch (e) {
       setError(e.message || "Échec de l'enregistrement.");
     } finally {
@@ -3752,6 +3883,7 @@ export default function AlbumPage() {
       setTrip(data);
       setDirty(false);
       setSavedOnce(true);
+      setLastSavedAt(new Date());
       setRepairMsg('✓ Photos vérifiées et remises à l’endroit.');
       // On invalide l'aperçu PDF éventuel pour qu'il soit refait proprement.
       if (pdfUrl) {
@@ -3980,6 +4112,15 @@ export default function AlbumPage() {
             ↩️ Annuler
           </button>
           <button
+            type="button"
+            onClick={redo}
+            disabled={futLen === 0 || Object.keys(uploads).length > 0}
+            title="Rétablir ce qui vient d'être annulé"
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            ↪️
+          </button>
+          <button
             onClick={save}
             disabled={saving || (!dirty && savedOnce)}
             className="rounded-lg bg-coral-500 px-4 py-2 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
@@ -3988,7 +4129,7 @@ export default function AlbumPage() {
               ? 'Enregistrement…'
               : dirty || !savedOnce
                 ? '💾 Enregistrer'
-                : '✓ Enregistré'}
+                : `✓ Enregistré${lastSavedAt ? ` · ${lastSavedAt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : ''}`}
           </button>
         </div>
       </div>
@@ -4150,6 +4291,20 @@ export default function AlbumPage() {
         <p className="mt-1 text-sm font-medium text-slate-700">
           📖 {totalPages} pages au total (couverture, carte éventuelle et page de fin comprises).
         </p>
+        {(() => {
+          // Bilan qualité : photos trop petites (risque de flou à l'impression).
+          const rep = (album.days || [])
+            .map((d, i) => ({ i, n: (d.photos || []).filter(isLowRes).length }))
+            .filter((r) => r.n > 0);
+          if (!rep.length) return null;
+          const tot = rep.reduce((a, r) => a + r.n, 0);
+          return (
+            <p className="mt-1 text-xs font-medium text-amber-600">
+              ⚠️ {tot} photo{tot > 1 ? 's' : ''} un peu petite{tot > 1 ? 's' : ''} pour l'impression : {rep.map((r) => `${unitLabel(album.unit)} ${r.i + 1} (${r.n})`).join(', ')}. Repère-les au badge « ⚠︎ petite » dans les vignettes.
+            </p>
+          );
+        })()}
+
         <p className="mt-1 text-sm text-slate-600">
           On fabrique un fichier PDF prêt à envoyer à un imprimeur. Les photos
           sont utilisées en pleine qualité, et un petit débord est ajouté autour
@@ -4180,6 +4335,14 @@ export default function AlbumPage() {
               ⬇️ Télécharger
             </a>
           )}
+          <button
+            onClick={() => setFlipOpen(true)}
+            disabled={photoCount === 0}
+            className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            title="Relire l'album page par page, comme un livre (sans créer le fichier)"
+          >
+            📖 Feuilleter
+          </button>
           <button
             onClick={async () => {
               if (sharingAll) return;
@@ -4241,6 +4404,10 @@ export default function AlbumPage() {
         <ShareSheet files={albumShareData.files} text={albumShareData.text} onClose={() => setAlbumShareData(null)} />
       )}
 
+      {flipOpen && (
+        <FlipViewer days={album.days} format={format} theme={getTheme(album.theme)} unit={album.unit} onClose={() => setFlipOpen(false)} />
+      )}
+
 
 
       {/* Bouton SOMMAIRE flottant : aller directement à un jour/une étape */}
@@ -4265,6 +4432,16 @@ export default function AlbumPage() {
           className="fixed bottom-4 left-4 z-40 flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-white text-xl shadow-xl active:scale-95"
         >
           ↩️
+        </button>
+      )}
+      {futLen > 0 && Object.keys(uploads).length === 0 && (
+        <button
+          type="button"
+          onClick={redo}
+          title="Rétablir"
+          className="fixed bottom-4 left-20 z-40 flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-white text-xl shadow-xl active:scale-95"
+        >
+          ↪️
         </button>
       )}
       {/* Filet de sécurité : annuler la dernière suppression de section */}

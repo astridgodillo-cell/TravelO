@@ -16,7 +16,7 @@ import AlbumPdfDoc from '../components/AlbumPdfDoc';
 import PdfPagesPreview from '../components/PdfPagesPreview';
 import { pdfBlobToImageFiles } from '../lib/pdfToImages';
 import useBackClose from '../lib/useBackClose';
-import { DayCard, CoverPicker, ThemePicker, Spinner, CoversSection, FormatPicker, ShareSheet, DayNavSheet } from './AlbumPage';
+import { DayCard, CoverPicker, ThemePicker, Spinner, CoversSection, FormatPicker, ShareSheet, DayNavSheet, FlipViewer, isLowRes } from './AlbumPage';
 import { FORMAT_LABELS, normalizeBg, bakePhotoEffects, getTheme, unitLabel, splitPhotos, computeSplit, bgIsEmpty, autoBgFromPhotos, formatDateRange, MAP_TRANSPORTS, addPhotosToEntry, isManualLayout, repairSplit, removePhotoFromEntry } from '../lib/albumModel';
 
 const emptyDay = () => ({ title: '', note: '', photos: [], bg: null, split: null });
@@ -83,6 +83,7 @@ export default function StandaloneAlbumPage() {
   const [sharingAll, setSharingAll] = useState(false);
   const [sharingAllPdf, setSharingAllPdf] = useState(false);
   const [albumShareData, setAlbumShareData] = useState(null); // { files, text } prêts
+  const [flipOpen, setFlipOpen] = useState(false); // mode « feuilleter »
 
   const [pickerFor, setPickerFor] = useState(null);
   const [repairing, setRepairing] = useState(false);
@@ -137,6 +138,8 @@ export default function StandaloneAlbumPage() {
     if (album == null) return;
     if (histSkip.current) { histSkip.current = false; histPrev.current = album; return; }
     if (histPrev.current && histPrev.current !== album) {
+      // toute NOUVELLE action invalide la pile « Rétablir »
+      if (future.current.length) { future.current = []; setFutLen(0); }
       const now = Date.now();
       if (now - histLast.current > 800) {
         history.current.push(histPrev.current);
@@ -147,12 +150,26 @@ export default function StandaloneAlbumPage() {
     }
     histPrev.current = album;
   }, [album]);
+  const future = useRef([]); // pile « Rétablir »
+  const [futLen, setFutLen] = useState(0);
   const undo = () => {
     const prev = history.current.pop();
     if (!prev) return;
+    future.current.push(histPrev.current); // état actuel, pour « Rétablir »
+    setFutLen(future.current.length);
     setHistLen(history.current.length);
     histSkip.current = true;
     setAlbum(prev);
+    setDirty(true);
+  };
+  const redo = () => {
+    const nxt = future.current.pop();
+    if (!nxt) return;
+    history.current.push(histPrev.current);
+    setHistLen(history.current.length);
+    setFutLen(future.current.length);
+    histSkip.current = true;
+    setAlbum(nxt);
     setDirty(true);
   };
   const patch = (p) => {
@@ -344,6 +361,28 @@ export default function StandaloneAlbumPage() {
     };
   }
 
+
+  // ---- Enregistrement AUTOMATIQUE + garde de sortie ----
+  // 2,5 s après la dernière modification (hors envoi de photos en cours), on
+  // enregistre tout seul. Et si on quitte avec des changements non
+  // enregistrés, le navigateur demande confirmation.
+  const [lastSavedAt, setLastSavedAt] = useState(null);
+  useEffect(() => {
+    if (!dirty || saving || loading) return undefined;
+    if (Object.keys(uploads).length) return undefined;
+    const t = setTimeout(() => { save(); }, 2500);
+    return () => clearTimeout(t);
+  });
+  useEffect(() => {
+    const onBeforeUnload = (e) => {
+      if (!dirty) return;
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [dirty]);
+
   async function save() {
     setSaving(true);
     setError(null);
@@ -352,6 +391,7 @@ export default function StandaloneAlbumPage() {
       if (e) throw e;
       setDirty(false);
       setSavedOnce(true);
+      setLastSavedAt(new Date());
     } catch (e) {
       setError(e.message || "Échec de l'enregistrement.");
     } finally {
@@ -393,6 +433,7 @@ export default function StandaloneAlbumPage() {
       if (e) throw e;
       setDirty(false);
       setSavedOnce(true);
+      setLastSavedAt(new Date());
       setRepairMsg('✓ Photos vérifiées et remises à l’endroit.');
       if (pdfUrl) { URL.revokeObjectURL(pdfUrl); setPdfUrl(null); setPdfBlob(null); }
     } catch (e) {
@@ -590,11 +631,20 @@ export default function StandaloneAlbumPage() {
             ↩️ Annuler
           </button>
           <button
+            type="button"
+            onClick={redo}
+            disabled={futLen === 0 || Object.keys(uploads).length > 0}
+            title="Rétablir ce qui vient d'être annulé"
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            ↪️
+          </button>
+          <button
             onClick={save}
             disabled={saving || (!dirty && savedOnce)}
             className="rounded-lg bg-coral-500 px-4 py-2 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {saving ? 'Enregistrement…' : dirty || !savedOnce ? '💾 Enregistrer' : '✓ Enregistré'}
+            {saving ? 'Enregistrement…' : dirty || !savedOnce ? '💾 Enregistrer' : `✓ Enregistré${lastSavedAt ? ` · ${lastSavedAt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : ''}`}
           </button>
         </div>
       </div>
@@ -691,7 +741,7 @@ export default function StandaloneAlbumPage() {
                 ⤵ Fusionner avec {unitLabel(album.unit).toLowerCase() === 'étape' ? "l'étape" : 'le jour'} précédent{unitLabel(album.unit).toLowerCase() === 'étape' ? 'e' : ''}
               </button>
               <button type="button" onClick={() => removeDay(i)}
-                className="rounded border border-red-200 bg-white px-2 py-0.5 text-xs font-medium text-red-600 hover:bg-red-50">Supprimer ce jour</button>
+                className="rounded border border-red-200 bg-white px-2 py-0.5 text-xs font-medium text-red-600 hover:bg-red-50">{(album.unit || 'jour') === 'etape' ? 'Supprimer cette étape' : 'Supprimer ce jour'}</button>
             </div>
             <DayCard
               day={{ location: '' }}
@@ -735,6 +785,20 @@ export default function StandaloneAlbumPage() {
         <p className="mt-1 text-sm font-medium text-slate-700">
           📖 {totalPages} pages au total (couverture, carte éventuelle et page de fin comprises).
         </p>
+        {(() => {
+          // Bilan qualité : photos trop petites (risque de flou à l'impression).
+          const rep = (album.days || [])
+            .map((d, i) => ({ i, n: (d.photos || []).filter(isLowRes).length }))
+            .filter((r) => r.n > 0);
+          if (!rep.length) return null;
+          const tot = rep.reduce((a, r) => a + r.n, 0);
+          return (
+            <p className="mt-1 text-xs font-medium text-amber-600">
+              ⚠️ {tot} photo{tot > 1 ? 's' : ''} un peu petite{tot > 1 ? 's' : ''} pour l'impression : {rep.map((r) => `${unitLabel(album.unit)} ${r.i + 1} (${r.n})`).join(', ')}. Repère-les au badge « ⚠︎ petite » dans les vignettes.
+            </p>
+          );
+        })()}
+
         <p className="mt-2 text-xs text-slate-500">Format : <span className="font-semibold text-slate-700">{FORMAT_LABELS[format]}</span> (modifiable tout en haut de la page).</p>
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <button onClick={generatePdf} disabled={generating || photoCount === 0}
@@ -745,6 +809,14 @@ export default function StandaloneAlbumPage() {
           {pdfUrl && (
             <a href={pdfUrl} download={fileName} className="rounded-lg border border-brand-600 px-4 py-2 text-sm font-semibold text-brand-700 shadow-sm">⬇️ Télécharger</a>
           )}
+          <button
+            onClick={() => setFlipOpen(true)}
+            disabled={photoCount === 0}
+            className="flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            title="Relire l'album page par page, comme un livre (sans créer le fichier)"
+          >
+            📖 Feuilleter
+          </button>
           <button
             onClick={async () => {
               if (sharingAll) return;
@@ -791,6 +863,10 @@ export default function StandaloneAlbumPage() {
         <ShareSheet files={albumShareData.files} text={albumShareData.text} onClose={() => setAlbumShareData(null)} />
       )}
 
+      {flipOpen && (
+        <FlipViewer days={album.days} format={format} theme={getTheme(album.theme)} unit={album.unit} onClose={() => setFlipOpen(false)} />
+      )}
+
 
 
       {/* Bouton SOMMAIRE flottant : aller directement à un jour/une étape */}
@@ -815,6 +891,16 @@ export default function StandaloneAlbumPage() {
           className="fixed bottom-4 left-4 z-40 flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-white text-xl shadow-xl active:scale-95"
         >
           ↩️
+        </button>
+      )}
+      {futLen > 0 && Object.keys(uploads).length === 0 && (
+        <button
+          type="button"
+          onClick={redo}
+          title="Rétablir"
+          className="fixed bottom-4 left-20 z-40 flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-white text-xl shadow-xl active:scale-95"
+        >
+          ↪️
         </button>
       )}
       {/* Filet de sécurité : annuler la dernière suppression de section */}
