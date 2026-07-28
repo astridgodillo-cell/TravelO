@@ -34,6 +34,7 @@ import {
   repairSplit,
   addPhotosToEntry,
   removePhotoFromEntry,
+  applyEffectToEntry,
   resolveBg,
   unitLabel,
   bgIsEmpty,
@@ -541,8 +542,17 @@ function PhotoFill({ photo, containerAr = 4 / 3, radiusPx = 10 }) {
 // Fenêtre de choix d'effet : choix du filtre/cadre/forme + CADRAGE de la photo
 // (glisser pour déplacer la zone visible, curseur pour zoomer). onChange reçoit
 // un correctif partiel : { effect } ou { fx, fy, fz }.
-export function EffectPicker({ photo, current, onChange, onClose }) {
+export function EffectPicker({ photo, current, onChange, onClose, onApplyScope = null, canAlbum = false, unit = 'jour' }) {
   useBackClose(onClose); // « retour » ferme la fenêtre, comme la croix
+  // Retour visuel bref après « appliquer à toute la page / tout le jour… ».
+  const [appliedScope, setAppliedScope] = useState(null);
+  const appliedTimer = useRef(null);
+  const applyScope = (scope) => {
+    onApplyScope?.(scope);
+    setAppliedScope(scope);
+    if (appliedTimer.current) clearTimeout(appliedTimer.current);
+    appliedTimer.current = setTimeout(() => setAppliedScope(null), 1600);
+  };
   const f0 = photoFocal(photo);
   const [fx, setFx] = useState(f0.fx);
   const [fy, setFy] = useState(f0.fy);
@@ -657,6 +667,30 @@ export function EffectPicker({ photo, current, onChange, onClose }) {
               </div>
             </div>
           ))}
+          {onApplyScope && (
+            <div className="rounded-xl border border-coral-200 bg-coral-50/50 p-3">
+              <p className="mb-2 text-xs font-semibold text-slate-700">
+                Appliquer l'effet choisi ci-dessus aux autres photos, d'un coup :
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={() => applyScope('page')}
+                  className="rounded-lg border border-coral-300 bg-white px-3 py-1.5 text-xs font-semibold text-coral-700 hover:bg-coral-100">
+                  {appliedScope === 'page' ? '✓ Appliqué !' : '📄 Toute cette page'}
+                </button>
+                <button type="button" onClick={() => applyScope('day')}
+                  className="rounded-lg border border-coral-300 bg-white px-3 py-1.5 text-xs font-semibold text-coral-700 hover:bg-coral-100">
+                  {appliedScope === 'day' ? '✓ Appliqué !' : `📅 Tout ${unit === 'etape' ? 'cette étape' : 'ce jour'}`}
+                </button>
+                {canAlbum && (
+                  <button type="button" onClick={() => applyScope('album')}
+                    className="rounded-lg border border-coral-300 bg-white px-3 py-1.5 text-xs font-semibold text-coral-700 hover:bg-coral-100">
+                    {appliedScope === 'album' ? '✓ Appliqué !' : "📚 Tout l'album"}
+                  </button>
+                )}
+              </div>
+              <p className="mt-1.5 text-[10px] text-slate-400">Les pages verrouillées 🔒 ne sont pas modifiées. Un coup de ↩️ Annuler revient en arrière.</p>
+            </div>
+          )}
         </div>
         <div className="flex shrink-0 justify-end border-t border-slate-100 px-4 py-3">
           <button onClick={onClose} className="rounded-lg bg-coral-500 px-5 py-2 text-sm font-semibold text-white">Terminé</button>
@@ -1643,7 +1677,7 @@ export function PageDecorateModal({
   );
 }
 
-function PhotoTile({ photo, onCaption, onRemove, onMoveLeft, onMoveRight, canLeft, canRight, onEffect, onDeco, locked = false }) {
+function PhotoTile({ photo, onCaption, onRemove, onMoveLeft, onMoveRight, canLeft, canRight, onEffect, onDeco, locked = false, onApplyScope = null, canAlbum = false, unit = 'jour' }) {
   const [fxOpen, setFxOpen] = useState(false);
   const [decoOpen, setDecoOpen] = useState(false);
   const effect = getPhotoEffect(photo.effect);
@@ -1710,7 +1744,7 @@ function PhotoTile({ photo, onCaption, onRemove, onMoveLeft, onMoveRight, canLef
         className="w-full border-t border-slate-100 px-2.5 py-2 text-xs text-slate-700 outline-none disabled:bg-amber-50/50 disabled:text-slate-400"
       />
       {fxOpen && !locked && (
-        <EffectPicker photo={photo} current={effect.id} onChange={onEffect} onClose={() => setFxOpen(false)} />
+        <EffectPicker photo={photo} current={effect.id} onChange={onEffect} onClose={() => setFxOpen(false)} onApplyScope={onApplyScope} canAlbum={canAlbum} unit={unit} />
       )}
       {decoOpen && !locked && (
         <DecorateModal photo={photo} onChange={onDeco} onClose={() => setDecoOpen(false)} />
@@ -2707,7 +2741,7 @@ function DayPhotoPickerModal({ photos, targetPage, pageOfIdx, isFrozenPhoto, onC
   );
 }
 
-export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhoto, busy, progress = null, format = 'carre', onFormatChange = null, theme = null, unit = 'jour', pageOffset = null, onShareDay = null, dayLabels = null, onSendPhotoToDay = null }) {
+export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhoto, busy, progress = null, format = 'carre', onFormatChange = null, theme = null, unit = 'jour', pageOffset = null, onShareDay = null, dayLabels = null, onSendPhotoToDay = null, onApplyEffectAlbum = null }) {
   const fileRef = useRef(null);
   const addTarget = useRef(null); // page cible du prochain ajout de photos (mode manuel)
   const [addChoice, setAddChoice] = useState(null); // page : choix de la source d'ajout
@@ -3069,6 +3103,15 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
     const photos = entry.photos.map((p, i) => (i === pi ? { ...p, ...patch } : p));
     update({ photos });
   }
+  // Applique l'effet/cadre de la photo pi à un périmètre plus large : toute sa
+  // page, tout le jour/étape, ou tout l'album (délégué à la page parente).
+  // Les pages verrouillées ne sont jamais touchées.
+  function applyEffectScope(pi, scope) {
+    const key = getPhotoEffect(entry.photos[pi]?.effect).id;
+    if (scope === 'album') { onApplyEffectAlbum?.(key); return; }
+    const onlyPage = scope === 'page' ? pageOfIdx(pi) : null;
+    update({ photos: applyEffectToEntry(entry, key, onlyPage).photos });
+  }
   function setPhotoDeco(pi, deco) {
     if (isFrozenPhoto(pi)) return;
     const photos = entry.photos.map((p, i) => (i === pi ? { ...p, deco } : p));
@@ -3228,6 +3271,9 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
               onMoveRight={() => movePhoto(pi, 1)}
               canLeft={pi > 0 && !isFrozenPhoto(pi) && !isFrozenPhoto(pi - 1)}
               canRight={pi < entry.photos.length - 1 && !isFrozenPhoto(pi) && !isFrozenPhoto(pi + 1)}
+              onApplyScope={(scope) => applyEffectScope(pi, scope)}
+              canAlbum={!!onApplyEffectAlbum}
+              unit={unit}
             />
           ))}
         </div>
@@ -3685,6 +3731,9 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
           current={getPhotoEffect(entry.photos[fxFor].effect).id}
           onChange={(patch) => setPhotoPatch(fxFor, patch)}
           onClose={() => setFxFor(null)}
+          onApplyScope={(scope) => applyEffectScope(fxFor, scope)}
+          canAlbum={!!onApplyEffectAlbum}
+          unit={unit}
         />
       )}
 
@@ -4101,6 +4150,12 @@ export default function AlbumPage() {
       days[i] = entry;
       return { ...prev, days };
     });
+    setDirty(true);
+  }
+  // Applique un même effet/cadre à TOUTES les photos de l'album (sauf pages
+  // verrouillées) — déclenché depuis la fenêtre Effet d'une photo.
+  function applyEffectAlbum(effectKey) {
+    setAlbum((prev) => ({ ...prev, days: prev.days.map((d) => applyEffectToEntry(d, effectKey)) }));
     setDirty(true);
   }
 
@@ -4748,6 +4803,7 @@ export default function AlbumPage() {
                   return `${unitLabel(album.unit)} ${k + 1}${nm ? ` · ${nm.slice(0, 28)}` : ''}`;
                 })}
                 onSendPhotoToDay={(gi, t) => sendPhotoToDay(i, gi, t)}
+                onApplyEffectAlbum={applyEffectAlbum}
               />
             </div>
           );

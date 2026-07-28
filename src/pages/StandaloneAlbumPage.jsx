@@ -17,7 +17,7 @@ import PdfPagesPreview from '../components/PdfPagesPreview';
 import { pdfBlobToImageFiles } from '../lib/pdfToImages';
 import useBackClose from '../lib/useBackClose';
 import { DayCard, CoverPicker, ThemePicker, Spinner, CoversSection, FormatPicker, ShareSheet, DayNavSheet, FlipViewer, isLowRes } from './AlbumPage';
-import { FORMAT_LABELS, normalizeBg, bakePhotoEffects, getTheme, unitLabel, splitPhotos, computeSplit, bgIsEmpty, autoBgFromPhotos, formatDateRange, MAP_TRANSPORTS, addPhotosToEntry, isManualLayout, repairSplit, removePhotoFromEntry } from '../lib/albumModel';
+import { FORMAT_LABELS, normalizeBg, bakePhotoEffects, getTheme, unitLabel, splitPhotos, computeSplit, bgIsEmpty, autoBgFromPhotos, formatDateRange, MAP_TRANSPORTS, addPhotosToEntry, isManualLayout, repairSplit, removePhotoFromEntry, applyEffectToEntry } from '../lib/albumModel';
 
 const emptyDay = () => ({ title: '', note: '', photos: [], bg: null, split: null });
 
@@ -182,6 +182,12 @@ export default function StandaloneAlbumPage() {
       days[i] = entry;
       return { ...prev, days };
     });
+    setDirty(true);
+  };
+  // Applique un même effet/cadre à TOUTES les photos de l'album (sauf pages
+  // verrouillées) — déclenché depuis la fenêtre Effet d'une photo.
+  const applyEffectAlbum = (effectKey) => {
+    setAlbum((prev) => ({ ...prev, days: prev.days.map((d) => applyEffectToEntry(d, effectKey)) }));
     setDirty(true);
   };
   const addDay = () => patch({ days: [...album.days, emptyDay()] });
@@ -769,6 +775,7 @@ export default function StandaloneAlbumPage() {
                 return `${unitLabel(album.unit)} ${k + 1}${nm ? ` · ${nm.slice(0, 28)}` : ''}`;
               })}
               onSendPhotoToDay={(gi, t) => sendPhotoToDay(i, gi, t)}
+              onApplyEffectAlbum={applyEffectAlbum}
             />
           </div>
         ))}

@@ -92,6 +92,31 @@ export function removePhotoFromEntry(entry, gi) {
   return { photos, split: counts, layoutMode: 'manuel' };
 }
 
+// Applique un même effet/cadre à toutes les photos d'une journée/étape (ou
+// d'une seule de ses pages avec `onlyPage`). Les pages VERROUILLÉES ne sont
+// jamais modifiées.
+export function applyEffectToEntry(entry, effectKey, onlyPage = null) {
+  const total = (entry.photos || []).length;
+  if (!total) return entry;
+  const counts = isManualLayout(entry) ? repairSplit(entry.split, total) : computeSplit(total, null);
+  const locked = entry.lockedPages || {};
+  const pageOf = (gi) => {
+    let acc = 0;
+    for (let k = 0; k < counts.length; k += 1) {
+      acc += counts[k];
+      if (gi < acc) return k;
+    }
+    return counts.length - 1;
+  };
+  const photos = entry.photos.map((ph, gi) => {
+    const p = pageOf(gi);
+    if (locked[p]) return ph;
+    if (onlyPage != null && p !== onlyPage) return ph;
+    return { ...ph, effect: effectKey };
+  });
+  return { ...entry, photos };
+}
+
 export function addPhotosToEntry(entry, added, targetPage = null) {
   if (!isManualLayout(entry)) {
     return { photos: [...(entry.photos || []), ...added], split: null };
