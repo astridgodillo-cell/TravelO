@@ -3507,14 +3507,6 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
       <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
         <span className="text-sm font-medium text-slate-700">✨ Composer / décorer&nbsp;:</span>
         {Array.from({ length: pageCount }).map((_, p) => {
-          if (coveredBy[p] >= 0) {
-            return (
-              <span key={p} className="rounded-lg border border-dashed border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-400"
-                title="Côté droit d'une double page : non modifiable (c'est la suite de la photo de la page précédente).">
-                Page {p + 1} · ↳ verrouillée
-              </span>
-            );
-          }
           if (isLocked(p)) {
             return (
               <button key={p} type="button" onClick={() => toggleLock(p)}
@@ -3529,9 +3521,11 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
               key={p}
               type="button"
               onClick={() => setDecoPage(p)}
+              title={coveredBy[p] >= 0 ? `Photos et décorations modifiables. Le FOND (panorama) se règle sur la page ${coveredBy[p] + 1}.` : undefined}
               className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
             >
               {pageCount > 1 ? `Page ${p + 1}` : 'Cette page'}
+              {coveredBy[p] >= 0 ? ' ↳🖼' : ''}
               {entry.freePages?.[p] ? ' ✋' : ''}
               {(entry.pageDeco?.[p]?.length || 0) > 0 ? ` (${entry.pageDeco[p].length})` : ''}
             </button>
@@ -3545,8 +3539,10 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
         const mp = Math.min(mPage, pageCount - 1); // page affichée seule (mobile), bornée
         // Aperçu interactif d'une page, réutilisé sur mobile (1 page) et ordi (2 pages).
         // Une page verrouillée redevient un simple aperçu (rien ne bouge).
+        // Une page recouverte par un panorama reste modifiable (photos/décos) :
+        // seul son FOND appartient à la page de gauche.
         const renderPreview = (p) => {
-          const editable = coveredBy[p] < 0 && !isLocked(p);
+          const editable = !isLocked(p);
           return (
             <PagePreview
               photos={chunks[p]}
@@ -3596,8 +3592,8 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
             <div>{renderPreview(mp)}</div>
             <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
               <span className="text-[11px] text-slate-400">Page {mp + 1}</span>
-              {coveredBy[mp] < 0 && lockBtn(mp)}
-              {coveredBy[mp] < 0 && moreBtn(mp)}
+              {lockBtn(mp)}
+              {moreBtn(mp)}
             </div>
           </div>
 
@@ -3613,8 +3609,8 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
                   {renderPreview(p)}
                   <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
                     <span className="text-[11px] text-slate-400">Page {p + 1}</span>
-                    {coveredBy[p] < 0 && lockBtn(p)}
-                    {coveredBy[p] < 0 && moreBtn(p)}
+                    {lockBtn(p)}
+                    {moreBtn(p)}
                   </div>
                 </div>
               ))}
