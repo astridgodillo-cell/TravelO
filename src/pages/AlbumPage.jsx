@@ -9,6 +9,7 @@ import {
   repairAlbumPhoto,
 } from '../lib/supabase';
 import { renderRouteMapImage } from '../lib/staticMapImage';
+import useNavbarHeight from '../lib/useNavbarHeight';
 import { writeAlbumText, pixabaySearch, pixabayFetch } from '../lib/ai';
 import AlbumPdfDoc from '../components/AlbumPdfDoc';
 import PdfPagesPreview from '../components/PdfPagesPreview';
@@ -4286,6 +4287,7 @@ export default function AlbumPage() {
   }
 
 
+  const navH = useNavbarHeight();
   // ---- Enregistrement AUTOMATIQUE + garde de sortie ----
   // Au plus une fois par minute : on attend qu'une minute se soit écoulée
   // depuis le dernier enregistrement (hors envoi de photos en cours), puis on
@@ -4638,9 +4640,10 @@ export default function AlbumPage() {
 
   return (
     <div className="mx-auto max-w-5xl pb-24">
-      {/* Collée SOUS la barre de menu TravelO (61px) : avec top-0 elle
-          glissait derrière le menu et devenait invisible/incliquable. */}
-      <div className="sticky top-[61px] z-20 -mx-4 mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur">
+      {/* Collée SOUS la barre de menu TravelO (hauteur mesurée en direct,
+          car elle varie selon la largeur d'écran) : avec top-0 elle glissait
+          derrière le menu et devenait invisible/incliquable. */}
+      <div style={{ top: navH }} className="sticky z-20 -mx-4 mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur">
         <Link to={`/itineraire/${id}`} className="text-sm text-brand-700 underline">
           ← Retour au voyage
         </Link>
