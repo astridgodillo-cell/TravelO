@@ -341,11 +341,17 @@ function DecoLayer({ items, w, h }) {
         const cx = it.xf * w;
         const cy = it.yf * h;
         if (it.type === 'text') {
+          // Comme dans l'aperçu : le texte passe à la ligne au-delà de 85 % de
+          // la largeur de la zone, centré sur son point d'ancrage.
           const fs = size;
-          const estW = Math.max(1, (it.value || '').length) * fs * 0.62;
+          const oneLine = Math.max(1, (it.value || '').length) * fs * 0.62;
+          const maxW = w * 0.85;
+          const estW = Math.min(oneLine, maxW);
+          const lines = Math.max(1, Math.ceil(oneLine / maxW));
+          const estH = lines * fs * 1.15;
           return (
-            <View key={i} style={{ position: 'absolute', left: cx - estW / 2, top: cy - fs * 0.7, width: estW, transform: `rotate(${it.rot}deg)`, transformOrigin: 'center' }}>
-              <Text style={{ fontFamily: fontPdf(it.font), fontWeight: 700, fontSize: fs, color: it.color || '#FFFFFF', textAlign: 'center' }}>{it.value}</Text>
+            <View key={i} style={{ position: 'absolute', left: cx - estW / 2, top: cy - estH / 2, width: estW, transform: `rotate(${it.rot}deg)`, transformOrigin: 'center' }}>
+              <Text style={{ fontFamily: fontPdf(it.font), fontWeight: 700, fontSize: fs, lineHeight: 1.15, color: it.color || '#FFFFFF', textAlign: 'center' }}>{it.value}</Text>
             </View>
           );
         }

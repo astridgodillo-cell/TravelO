@@ -551,8 +551,8 @@ export function unitLabel(unit) {
 export const FONT_CHOICES = [
   { key: 'display', label: 'Élégante', css: "'Spectral', Georgia, 'Times New Roman', serif", pdf: 'AlbumDisplay' },
   { key: 'sans', label: 'Simple', css: "'Lato', system-ui, Arial, sans-serif", pdf: 'AlbumBody' },
-  { key: 'hand', label: 'Manuscrite', css: "'Caveat', 'Segoe Script', cursive", pdf: 'AlbumHand' },
-  { key: 'comic', label: 'BD', css: "'Comic Sans MS', 'Comic Neue', 'Chalkboard SE', cursive", pdf: 'AlbumComic' },
+  { key: 'hand', label: 'Manuscrite', css: "'Patrick Hand', 'Segoe Script', cursive", pdf: 'AlbumHand' },
+  { key: 'comic', label: 'BD', css: "'Comic Neue', 'Comic Sans MS', 'Chalkboard SE', cursive", pdf: 'AlbumComic' },
 ];
 export function fontCss(key) {
   return (FONT_CHOICES.find((f) => f.key === key) || FONT_CHOICES[0]).css;

@@ -695,8 +695,17 @@ function DecoItemView({ it }) {
   if (it.type === 'bubble') {
     return <BubbleView it={it} />;
   }
+  if (it.type === 'text') {
+    // Bloc centré qui passe à la ligne au-delà de 85 % de la largeur : un long
+    // commentaire ne déborde plus de la page en une ligne géante coupée.
+    return (
+      <span style={{ display: 'inline-block', maxWidth: '85cqw', fontSize: `${it.scale * 100}cqmin`, lineHeight: 1.15, textAlign: 'center', color: it.color, fontWeight: 700, fontFamily: fontCss(it.font), textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}>
+        {it.value}
+      </span>
+    );
+  }
   return (
-    <span style={{ fontSize: `${it.scale * 100}cqmin`, lineHeight: 1, color: it.color, fontWeight: it.type === 'text' ? 700 : 400, fontFamily: it.type === 'text' ? fontCss(it.font) : undefined, whiteSpace: 'nowrap', textShadow: it.type === 'text' ? '0 1px 2px rgba(0,0,0,0.5)' : 'none' }}>
+    <span style={{ fontSize: `${it.scale * 100}cqmin`, lineHeight: 1, color: it.color, whiteSpace: 'nowrap' }}>
       {it.value}
     </span>
   );
@@ -741,7 +750,7 @@ function DecoAddPanel({ onAddItem }) {
   const activeCat = STICKER_CATEGORIES.find((c) => c.key === cat) || STICKER_CATEGORIES[0];
 
   const addEmoji = (e) => onAddItem({ type: 'emoji', value: e, xf: 0.5, yf: 0.5, scale: 0.16, rot: 0 });
-  const addText = () => onAddItem({ type: 'text', value: 'Texte', xf: 0.5, yf: 0.5, scale: 0.1, rot: 0, color: '#ffffff', font: 'display' });
+  const addText = () => onAddItem({ type: 'text', value: 'Texte', xf: 0.5, yf: 0.5, scale: 0.05, rot: 0, color: '#ffffff', font: 'display' });
   const addBubble = () => onAddItem({ type: 'bubble', value: 'Bla bla !', xf: 0.5, yf: 0.5, scale: 0.32, rot: 0, color: '#111111', tailAngle: 215, tailLen: 0.35, font: 'comic', fontScale: 1 });
   async function addImageFile(file) {
     if (!file) return;
@@ -902,14 +911,17 @@ function DecoItemControls({ item, onChange, onRemove, onResetScale, onResetRot, 
             facile au doigt sur téléphone que le curseur. */}
         {(() => {
           const maxS = item.kind === 'photo' ? 1.3 : 0.6;
-          const step = item.kind === 'photo' ? 0.02 : 0.01;
-          const setScale = (v) => onChange({ scale: Math.min(maxS, Math.max(0.05, v)) });
+          // Les textes peuvent descendre très petit (légende discrète) ; les
+          // photos gardent un minimum visible.
+          const minS = item.kind === 'photo' ? 0.05 : 0.015;
+          const step = item.kind === 'photo' ? 0.02 : 0.005;
+          const setScale = (v) => onChange({ scale: Math.min(maxS, Math.max(minS, v)) });
           return (
             <div className="flex items-center gap-2">
-              <button type="button" onClick={() => setScale((item.scale || 0.05) - step)}
+              <button type="button" onClick={() => setScale((item.scale || minS) - step)}
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-base font-bold text-slate-700 active:bg-slate-100"
                 title="Réduire un peu">−</button>
-              <input type="range" min="0.05" max={String(maxS)} step="0.01" value={item.scale}
+              <input type="range" min={String(minS)} max={String(maxS)} step="0.005" value={item.scale}
                 onChange={(e) => onChange({ scale: parseFloat(e.target.value) })} className="w-full flex-1" />
               <button type="button" onClick={() => setScale((item.scale || 0.05) + step)}
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-base font-bold text-slate-700 active:bg-slate-100"
