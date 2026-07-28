@@ -700,7 +700,7 @@ function DecoItemView({ it }) {
     // réglable élément par élément) : un long commentaire ne déborde plus de
     // la page en une ligne géante coupée.
     return (
-      <span style={{ display: 'inline-block', maxWidth: `${(it.wf ?? 0.85) * 100}cqw`, fontSize: `${it.scale * 100}cqmin`, lineHeight: 1.15, textAlign: 'center', color: it.color, fontWeight: 700, fontFamily: fontCss(it.font), textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}>
+      <span style={{ display: 'inline-block', width: `${(it.wf ?? 0.85) * 100}cqw`, fontSize: `${it.scale * 100}cqmin`, lineHeight: 1.15, textAlign: 'center', color: it.color, fontWeight: 700, fontFamily: fontCss(it.font), textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}>
         {it.value}
       </span>
     );
@@ -710,6 +710,57 @@ function DecoItemView({ it }) {
       {it.value}
     </span>
   );
+}
+
+// Poignées rondes affichées autour de l'élément sélectionné : les COINS
+// redimensionnent, les CÔTÉS (textes seulement) règlent la largeur du cadre
+// (là où le texte passe à la ligne). Chaque poignée démarre un glissement
+// dédié via onStart(e, mode).
+function DecoResizeHandles({ isText, onStart }) {
+  const dot = 'absolute z-30 h-4 w-4 touch-none rounded-full border-2 border-white bg-coral-500 shadow-md';
+  const corners = [
+    { left: -9, top: -9, cursor: 'nwse-resize' },
+    { right: -9, top: -9, cursor: 'nesw-resize' },
+    { left: -9, bottom: -9, cursor: 'nesw-resize' },
+    { right: -9, bottom: -9, cursor: 'nwse-resize' },
+  ];
+  return (
+    <>
+      {corners.map((c, k) => (
+        <div key={k} className={dot} style={c} onPointerDown={(e) => onStart(e, 'corner')} />
+      ))}
+      {isText && (
+        <>
+          <div className={dot} style={{ left: -9, top: '50%', marginTop: -8, cursor: 'ew-resize' }} onPointerDown={(e) => onStart(e, 'side')} />
+          <div className={dot} style={{ right: -9, top: '50%', marginTop: -8, cursor: 'ew-resize' }} onPointerDown={(e) => onStart(e, 'side')} />
+        </>
+      )}
+    </>
+  );
+}
+
+// Calcule les nouvelles valeurs (taille / largeur) d'un élément pendant un
+// glissement de poignée. `d` mémorise l'état de départ (centre en pixels,
+// distance initiale, valeurs initiales) ; `rectW` = largeur de la page en px.
+// Pour un texte : si « le texte s'adapte au cadre » (fitZone), étirer le cadre
+// change AUSSI la taille du texte (le bloc grandit d'un seul tenant) ; sinon
+// seul le cadre change et le texte se réorganise à taille constante.
+function decoResizeUpdate(mode, d, e, rectW) {
+  const dx = e.clientX - d.cx;
+  const dy = e.clientY - d.cy;
+  const clampS = (v) => Math.min(d.isPhoto ? 1.3 : 1, Math.max(d.isPhoto ? 0.05 : 0.015, v));
+  const clampW = (v) => Math.min(1, Math.max(0.15, v));
+  if (mode === 'side') {
+    const wf = clampW((2 * Math.abs(dx)) / rectW);
+    return d.fitZone ? { wf, scale: clampS(d.scale0 * (wf / (d.wf0 || 0.85))) } : { wf };
+  }
+  const ratio = d.d0 > 4 ? Math.hypot(dx, dy) / d.d0 : 1;
+  if (d.isText) {
+    return d.fitZone
+      ? { scale: clampS(d.scale0 * ratio), wf: clampW(d.wf0 * ratio) }
+      : { wf: clampW(d.wf0 * ratio) };
+  }
+  return { scale: clampS(d.scale0 * ratio) };
 }
 
 // Rendu d'un objet du canevas : une PHOTO (avec son effet, son cadre, sa
@@ -889,6 +940,23 @@ function DecoItemControls({ item, onChange, onRemove, onResetScale, onResetRot, 
       )}
       {item.type === 'text' && (
         <div className="mt-2 text-xs text-slate-600">
+          <span>Quand on étire le cadre (poignées rondes) :</span>
+          <div className="mt-1 flex flex-wrap gap-1.5">
+            <button type="button" onClick={() => onChange({ fit: 'zone' })}
+              title="Étirer le cadre agrandit ou réduit aussi le texte (tout bouge ensemble)"
+              className={`rounded-md px-2.5 py-1 text-xs font-semibold ${(item.fit ?? 'zone') === 'zone' ? 'bg-coral-500 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
+              🔠 Le texte s'adapte
+            </button>
+            <button type="button" onClick={() => onChange({ fit: 'fixe' })}
+              title="Étirer le cadre change seulement où le texte va à la ligne ; sa taille ne bouge pas"
+              className={`rounded-md px-2.5 py-1 text-xs font-semibold ${item.fit === 'fixe' ? 'bg-coral-500 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>
+              📏 Taille du texte fixe
+            </button>
+          </div>
+        </div>
+      )}
+      {item.type === 'text' && (
+        <div className="mt-2 text-xs text-slate-600">
           <span>Largeur de la zone de texte (retour à la ligne)</span>
           {(() => {
             const wf = item.wf ?? 0.85;
@@ -1001,9 +1069,32 @@ export function DecoEditor({ title, aspect, background, initialItems, onChange, 
     drag.current = { i, rect: canvasRef.current.getBoundingClientRect() };
     try { canvasRef.current.setPointerCapture(e.pointerId); } catch { /* ignore */ }
   }
+  // Glissement d'une POIGNÉE : on redimensionne au lieu de déplacer.
+  function startResize(e, i, mode) {
+    e.stopPropagation();
+    e.preventDefault();
+    setSel(i);
+    const rect = canvasRef.current.getBoundingClientRect();
+    const it = items[i];
+    const cx = rect.left + it.xf * rect.width;
+    const cy = rect.top + it.yf * rect.height;
+    drag.current = {
+      i, rect, resize: mode, cx, cy,
+      d0: Math.hypot(e.clientX - cx, e.clientY - cy),
+      scale0: it.scale, wf0: it.wf ?? 0.85,
+      isText: it.type === 'text', isPhoto: it.kind === 'photo',
+      fitZone: (it.fit ?? 'zone') === 'zone',
+    };
+    try { canvasRef.current.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+  }
   function pointerMove(e) {
     if (!drag.current) return;
-    const { i, rect } = drag.current;
+    const d = drag.current;
+    if (d.resize) {
+      update(d.i, decoResizeUpdate(d.resize, d, e, d.rect.width));
+      return;
+    }
+    const { i, rect } = d;
     update(i, {
       xf: Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width)),
       yf: Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height)),
@@ -1044,6 +1135,7 @@ export function DecoEditor({ title, aspect, background, initialItems, onChange, 
                 style={{ left: `${it.xf * 100}%`, top: `${it.yf * 100}%`, transform: `translate(-50%,-50%) rotate(${it.rot}deg)` }}
               >
                 <ObjView it={it} />
+                {sel === i && <DecoResizeHandles isText={it.type === 'text'} onStart={(e, m) => startResize(e, i, m)} />}
               </div>
             ))}
           </div>
@@ -1197,6 +1289,30 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
     decosRef.current = items;
     beginDrag(e, { kind: 'deco', i, sx: items[i].xf, sy: items[i].yf });
   };
+  // Glissement d'une POIGNÉE d'un élément sélectionné : redimensionnement
+  // immédiat (souris ET doigt — pas d'appui maintenu, la poignée est explicite).
+  const startDecoResize = (e, k, mode) => {
+    if (!interactive) return;
+    e.stopPropagation();
+    e.preventDefault();
+    onSelect?.('deco', k);
+    const items = (deco || []).map((d) => ({ ...d }));
+    decosRef.current = items;
+    const it = items[k];
+    const r = rootRef.current.getBoundingClientRect();
+    const cx = r.left + it.xf * r.width;
+    const cy = r.top + it.yf * r.height;
+    clearHold();
+    drag.current = {
+      kind: 'deco-resize', i: k, resize: mode, active: true, pending: false, moved: true,
+      cx, cy, d0: Math.hypot(e.clientX - cx, e.clientY - cy),
+      scale0: it.scale, wf0: it.wf ?? 0.85,
+      isText: it.type === 'text', isPhoto: false,
+      fitZone: (it.fit ?? 'zone') === 'zone',
+    };
+    rootRef.current?.setPointerCapture?.(e.pointerId);
+    if (e.pointerType === 'touch') setTouchDragging(true);
+  };
   // Repères d'alignement : pendant un glissement, si le centre de l'élément
   // arrive au niveau du centre de la page ou du centre d'un autre élément, une
   // ligne rouge apparaît et l'élément s'aimante doucement dessus.
@@ -1225,6 +1341,12 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
       return;
     }
     if (!d.active) return;
+    if (d.kind === 'deco-resize') {
+      const rw = rootRef.current.getBoundingClientRect().width;
+      decosRef.current[d.i] = { ...decosRef.current[d.i], ...decoResizeUpdate(d.resize, d, e, rw) };
+      onDecoChange?.(decosRef.current.map((x) => ({ ...x })));
+      return;
+    }
     if (!d.moved && Math.hypot(e.clientX - d.x, e.clientY - d.y) < 6) return;
     d.moved = true;
     const r = rootRef.current.getBoundingClientRect();
@@ -1339,6 +1461,7 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
           className={`absolute ${interactive ? 'cursor-grab active:cursor-grabbing' : ''} ${decoSel(k) ? 'outline outline-2 outline-coral-500 outline-offset-1' : ''}`}
           style={{ left: `${it.xf * 100}%`, top: `${it.yf * 100}%`, transform: `translate(-50%,-50%) rotate(${it.rot}deg)` }}>
           <DecoItemView it={it} />
+          {interactive && decoSel(k) && <DecoResizeHandles isText={it.type === 'text'} onStart={(e, m) => startDecoResize(e, k, m)} />}
         </div>
       ))}
       {/* repères d'alignement (lignes rouges) pendant un glissement */}
