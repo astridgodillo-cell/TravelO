@@ -341,11 +341,11 @@ function DecoLayer({ items, w, h }) {
         const cx = it.xf * w;
         const cy = it.yf * h;
         if (it.type === 'text') {
-          // Comme dans l'aperçu : le texte passe à la ligne au-delà de 85 % de
-          // la largeur de la zone, centré sur son point d'ancrage.
+          // Comme dans l'aperçu : le texte passe à la ligne au-delà de la
+          // largeur choisie (wf), centré sur son point d'ancrage.
           const fs = size;
           const oneLine = Math.max(1, (it.value || '').length) * fs * 0.62;
-          const maxW = w * 0.85;
+          const maxW = w * (it.wf ?? 0.85);
           const estW = Math.min(oneLine, maxW);
           const lines = Math.max(1, Math.ceil(oneLine / maxW));
           const estH = lines * fs * 1.15;

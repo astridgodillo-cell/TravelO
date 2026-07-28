@@ -696,10 +696,11 @@ function DecoItemView({ it }) {
     return <BubbleView it={it} />;
   }
   if (it.type === 'text') {
-    // Bloc centré qui passe à la ligne au-delà de 85 % de la largeur : un long
-    // commentaire ne déborde plus de la page en une ligne géante coupée.
+    // Bloc centré qui passe à la ligne au-delà de la largeur choisie (wf,
+    // réglable élément par élément) : un long commentaire ne déborde plus de
+    // la page en une ligne géante coupée.
     return (
-      <span style={{ display: 'inline-block', maxWidth: '85cqw', fontSize: `${it.scale * 100}cqmin`, lineHeight: 1.15, textAlign: 'center', color: it.color, fontWeight: 700, fontFamily: fontCss(it.font), textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}>
+      <span style={{ display: 'inline-block', maxWidth: `${(it.wf ?? 0.85) * 100}cqw`, fontSize: `${it.scale * 100}cqmin`, lineHeight: 1.15, textAlign: 'center', color: it.color, fontWeight: 700, fontFamily: fontCss(it.font), textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}>
         {it.value}
       </span>
     );
@@ -884,6 +885,27 @@ function DecoItemControls({ item, onChange, onRemove, onResetScale, onResetRot, 
               </button>
             ))}
           </div>
+        </div>
+      )}
+      {item.type === 'text' && (
+        <div className="mt-2 text-xs text-slate-600">
+          <span>Largeur de la zone de texte (retour à la ligne)</span>
+          {(() => {
+            const wf = item.wf ?? 0.85;
+            const setWf = (v) => onChange({ wf: Math.min(1, Math.max(0.15, Math.round(v * 100) / 100)) });
+            return (
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => setWf(wf - 0.05)}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-base font-bold text-slate-700 active:bg-slate-100"
+                  title="Zone plus étroite (le texte passe à la ligne plus tôt)">−</button>
+                <input type="range" min="0.15" max="1" step="0.01" value={wf}
+                  onChange={(e) => setWf(parseFloat(e.target.value))} className="w-full flex-1" />
+                <button type="button" onClick={() => setWf(wf + 0.05)}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-base font-bold text-slate-700 active:bg-slate-100"
+                  title="Zone plus large">+</button>
+              </div>
+            );
+          })()}
         </div>
       )}
       {item.type === 'bubble' && (
