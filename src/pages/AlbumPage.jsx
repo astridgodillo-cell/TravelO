@@ -667,32 +667,32 @@ export function EffectPicker({ photo, current, onChange, onClose, onApplyScope =
               </div>
             </div>
           ))}
-          {onApplyScope && (
-            <div className="rounded-xl border border-coral-200 bg-coral-50/50 p-3">
-              <p className="mb-2 text-xs font-semibold text-slate-700">
-                Appliquer l'effet choisi ci-dessus aux autres photos, d'un coup :
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <button type="button" onClick={() => applyScope('page')}
-                  className="rounded-lg border border-coral-300 bg-white px-3 py-1.5 text-xs font-semibold text-coral-700 hover:bg-coral-100">
-                  {appliedScope === 'page' ? '✓ Appliqué !' : '📄 Toute cette page'}
-                </button>
-                <button type="button" onClick={() => applyScope('day')}
-                  className="rounded-lg border border-coral-300 bg-white px-3 py-1.5 text-xs font-semibold text-coral-700 hover:bg-coral-100">
-                  {appliedScope === 'day' ? '✓ Appliqué !' : `📅 Tout ${unit === 'etape' ? 'cette étape' : 'ce jour'}`}
-                </button>
-                {canAlbum && (
-                  <button type="button" onClick={() => applyScope('album')}
-                    className="rounded-lg border border-coral-300 bg-white px-3 py-1.5 text-xs font-semibold text-coral-700 hover:bg-coral-100">
-                    {appliedScope === 'album' ? '✓ Appliqué !' : "📚 Tout l'album"}
-                  </button>
-                )}
-              </div>
-              <p className="mt-1.5 text-[10px] text-slate-400">Les pages verrouillées 🔒 ne sont pas modifiées. Un coup de ↩️ Annuler revient en arrière.</p>
-            </div>
-          )}
         </div>
-        <div className="flex shrink-0 justify-end border-t border-slate-100 px-4 py-3">
+        {/* Barre du bas TOUJOURS visible : appliquer l'effet à plusieurs
+            photos d'un coup, sans avoir à chercher dans la liste. */}
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-4 py-3">
+          {onApplyScope ? (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] font-semibold text-slate-500" title="Les pages verrouillées 🔒 ne sont pas modifiées. ↩️ Annuler revient en arrière.">Appliquer l'effet à :</span>
+              <button type="button" onClick={() => applyScope('page')}
+                title="Toutes les photos de la même page prennent cet effet (pages verrouillées exclues)"
+                className="rounded-lg border border-coral-300 bg-coral-50 px-2.5 py-1.5 text-xs font-semibold text-coral-700 hover:bg-coral-100">
+                {appliedScope === 'page' ? '✓ Fait !' : '📄 la page'}
+              </button>
+              <button type="button" onClick={() => applyScope('day')}
+                title={`Toutes les photos ${unit === 'etape' ? "de l'étape" : 'du jour'} prennent cet effet (pages verrouillées exclues)`}
+                className="rounded-lg border border-coral-300 bg-coral-50 px-2.5 py-1.5 text-xs font-semibold text-coral-700 hover:bg-coral-100">
+                {appliedScope === 'day' ? '✓ Fait !' : `📅 ${unit === 'etape' ? "l'étape" : 'le jour'}`}
+              </button>
+              {canAlbum && (
+                <button type="button" onClick={() => applyScope('album')}
+                  title="Toutes les photos de l'album prennent cet effet (pages verrouillées exclues)"
+                  className="rounded-lg border border-coral-300 bg-coral-50 px-2.5 py-1.5 text-xs font-semibold text-coral-700 hover:bg-coral-100">
+                  {appliedScope === 'album' ? '✓ Fait !' : "📚 l'album"}
+                </button>
+              )}
+            </div>
+          ) : <span />}
           <button onClick={onClose} className="rounded-lg bg-coral-500 px-5 py-2 text-sm font-semibold text-white">Terminé</button>
         </div>
       </div>
