@@ -1103,62 +1103,86 @@ export function DecoEditor({ title, aspect, background, initialItems, onChange, 
   const endDrag = () => { drag.current = null; };
   const selItem = sel != null ? items[sel] : null;
 
+  // Sur ordinateur (écran large) : la page reste visible à GAUCHE, tous les
+  // réglages défilent dans une colonne à DROITE — on voit chaque modification
+  // en direct, sans jamais perdre la page de vue. Sur mobile : tout empilé.
+  const desk = !useIsMobile(1024);
+
+  const canvasEl = (
+    <div
+      ref={canvasRef}
+      className="relative mx-auto select-none touch-none overflow-hidden rounded-lg border border-slate-200 bg-slate-200"
+      style={{ aspectRatio: String(aspect), width: `min(100%, calc(${desk ? '70vh' : '44vh'} * ${aspect}))`, maxWidth: '100%', containerType: 'size', WebkitTouchCallout: 'none' }}
+      onContextMenu={(e) => e.preventDefault()}
+      onPointerDown={() => setSel(null)}
+      onPointerMove={pointerMove}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+    >
+      <div className="pointer-events-none absolute inset-0">{background}</div>
+      {items.map((it, i) => (
+        <div
+          key={i}
+          onPointerDown={(e) => pointerDown(e, i)}
+          className={`absolute cursor-move touch-none ${sel === i ? 'outline outline-2 outline-coral-400 outline-offset-1' : ''}`}
+          style={{ left: `${it.xf * 100}%`, top: `${it.yf * 100}%`, transform: `translate(-50%,-50%) rotate(${it.rot}deg)` }}
+        >
+          <ObjView it={it} />
+          {sel === i && <DecoResizeHandles isText={it.type === 'text'} onStart={(e, m) => startResize(e, i, m)} />}
+        </div>
+      ))}
+    </div>
+  );
+
+  const controlsEl = selItem ? (
+    <div className="mt-3">
+      <DecoItemControls
+        item={selItem}
+        onChange={(patch) => update(sel, patch)}
+        onRemove={() => remove(sel)}
+        onResetScale={() => resetScale(sel)}
+        onResetRot={() => resetRot(sel)}
+        allowRemove={selItem.kind !== 'photo'}
+      />
+    </div>
+  ) : (
+    <p className="mt-3 text-center text-xs text-slate-500">Touche un élément (photo, emoji, texte…) pour le déplacer, le redimensionner ou le pivoter.</p>
+  );
+
+  const addEl = (
+    <div className="mt-3">
+      <DecoAddPanel onAddItem={addItem} />
+    </div>
+  );
+
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 sm:items-center sm:p-3">
-      <div className="flex max-h-[100dvh] w-full max-w-xl flex-col rounded-t-2xl bg-white shadow-2xl sm:max-h-[92vh] sm:rounded-2xl">
+      <div className={`flex max-h-[100dvh] w-full flex-col rounded-t-2xl bg-white shadow-2xl sm:max-h-[92vh] sm:rounded-2xl ${desk ? 'h-[92vh] max-w-5xl' : 'max-w-xl'}`}>
         {/* en-tête fixe */}
         <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-4 py-3">
           <h3 className="font-semibold text-slate-800">{title}</h3>
           <button onClick={onClose} className="-m-2 p-2 text-2xl leading-none text-slate-400 hover:text-slate-700">✕</button>
         </div>
 
-        {/* corps défilable */}
-        <div className="flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-4">
-          {toolbar}
-
-          <div
-            ref={canvasRef}
-            className="relative mx-auto select-none touch-none overflow-hidden rounded-lg border border-slate-200 bg-slate-200"
-            style={{ aspectRatio: String(aspect), width: `min(100%, calc(44vh * ${aspect}))`, maxWidth: '100%', containerType: 'size', WebkitTouchCallout: 'none' }}
-            onContextMenu={(e) => e.preventDefault()}
-            onPointerDown={() => setSel(null)}
-            onPointerMove={pointerMove}
-            onPointerUp={endDrag}
-            onPointerCancel={endDrag}
-          >
-            <div className="pointer-events-none absolute inset-0">{background}</div>
-            {items.map((it, i) => (
-              <div
-                key={i}
-                onPointerDown={(e) => pointerDown(e, i)}
-                className={`absolute cursor-move touch-none ${sel === i ? 'outline outline-2 outline-coral-400 outline-offset-1' : ''}`}
-                style={{ left: `${it.xf * 100}%`, top: `${it.yf * 100}%`, transform: `translate(-50%,-50%) rotate(${it.rot}deg)` }}
-              >
-                <ObjView it={it} />
-                {sel === i && <DecoResizeHandles isText={it.type === 'text'} onStart={(e, m) => startResize(e, i, m)} />}
-              </div>
-            ))}
-          </div>
-
-          {selItem ? (
-            <div className="mt-3">
-              <DecoItemControls
-                item={selItem}
-                onChange={(patch) => update(sel, patch)}
-                onRemove={() => remove(sel)}
-                onResetScale={() => resetScale(sel)}
-                onResetRot={() => resetRot(sel)}
-                allowRemove={selItem.kind !== 'photo'}
-              />
+        {desk ? (
+          /* ORDINATEUR : page à gauche (toujours visible), réglages à droite */
+          <div className="flex min-h-0 flex-1 gap-4 px-4 py-3">
+            <div className="flex min-w-0 flex-1 items-start justify-center overflow-y-auto">{canvasEl}</div>
+            <div className="w-[340px] shrink-0 overflow-y-auto overscroll-contain">
+              {toolbar}
+              {controlsEl}
+              {addEl}
             </div>
-          ) : (
-            <p className="mt-3 text-center text-xs text-slate-500">Touche un élément (photo, emoji, texte…) pour le déplacer, le redimensionner ou le pivoter.</p>
-          )}
-
-          <div className="mt-3">
-            <DecoAddPanel onAddItem={addItem} />
           </div>
-        </div>
+        ) : (
+          /* MOBILE : tout empilé dans une seule colonne défilable */
+          <div className="flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-4">
+            {toolbar}
+            {canvasEl}
+            {controlsEl}
+            {addEl}
+          </div>
+        )}
 
         {/* pied fixe */}
         <div className="flex shrink-0 justify-end border-t border-slate-100 px-4 py-3">
