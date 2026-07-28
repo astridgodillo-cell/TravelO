@@ -168,7 +168,7 @@ function partitionRows(ars, R) {
 }
 
 function buildFillLayout(photos, contentW, availH, gap) {
-  const items = photos.map((p) => ({ ar: p.w && p.h ? p.w / p.h : 4 / 3 }));
+  const items = (photos || []).map((p) => ({ ar: p.w && p.h ? p.w / p.h : 4 / 3 }));
   const n = items.length;
   if (!n) return [];
   const ars = items.map((it) => it.ar);

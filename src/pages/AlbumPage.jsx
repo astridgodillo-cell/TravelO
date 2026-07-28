@@ -2814,7 +2814,13 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
   const setPageFree = (p, boxes) => {
     const next = { ...(entry.freePages || {}) };
     if (boxes) next[p] = boxes; else delete next[p];
-    update({ freePages: next });
+    const patch = { freePages: next };
+    // Créer une disposition libre depuis le mode AUTO faisait basculer le jour
+    // en manuel SANS répartition → toutes les pages fusionnaient en une seule
+    // (et la sélection pointait vers une page disparue → écran d'erreur).
+    // On fige donc explicitement la répartition actuelle, rien ne bouge.
+    if (mode === 'auto' && boxes) { patch.layoutMode = 'manuel'; patch.split = [...splitCounts]; }
+    update(patch);
   };
   // Verrouillage d'une page : quand la mise en page est terminée, on la fige
   // pour ne plus rien déplacer par erreur. Déverrouillable à tout moment.
@@ -3044,9 +3050,12 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
   const pageStartIdx = (p) => chunks.slice(0, p).reduce((a, c) => a + c.length, 0);
   // Positions « disposition libre » d'une page, calculées depuis la grille.
   const seedFreeForPage = (p) => {
+    // `chunks[p]` peut ne plus exister si la page a disparu entre-temps
+    // (garde-fou : on renvoie alors une liste vide, jamais de plantage).
+    const list = chunks[p] || [];
     const spec = resolveBg(bg, p, pageCount);
-    const lay = pageLayout(chunks[p], format, { title: entry.title, note: entry.note, firstPage: p === 0, onPlate: spec.type !== 'none' });
-    return seedFreeBoxes(chunks[p], lay);
+    const lay = pageLayout(list, format, { title: entry.title, note: entry.note, firstPage: p === 0, onPlate: spec.type !== 'none' });
+    return seedFreeBoxes(list, lay);
   };
   // L'objet actuellement sélectionné (photo libre ou décoration), uniformisé.
   const selObj = (() => {
@@ -3101,7 +3110,9 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
     if (!Array.isArray(boxes) || boxes.length !== (chunks[sel.p]?.length || 0)) boxes = seedFreeForPage(sel.p);
     boxes = boxes.map((b, k) => (k === sel.i ? { ...b, hs } : b));
     const photos = entry.photos.map((p, i) => (i === cropFor.gIdx ? { ...p, fx, fy, fz } : p));
-    update({ photos, freePages: { ...(entry.freePages || {}), [sel.p]: boxes } });
+    const patch = { photos, freePages: { ...(entry.freePages || {}), [sel.p]: boxes } };
+    if (mode === 'auto') { patch.layoutMode = 'manuel'; patch.split = [...splitCounts]; }
+    update(patch);
     setCropFor(null);
   };
 
@@ -3738,7 +3749,12 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
           initialItems={entry.pageDeco?.[decoPage] || []}
           onChange={(items, boxes) => {
             const patch = { pageDeco: { ...(entry.pageDeco || {}), [decoPage]: items } };
-            if (boxes !== undefined) patch.freePages = { ...(entry.freePages || {}), [decoPage]: boxes };
+            if (boxes !== undefined) {
+              patch.freePages = { ...(entry.freePages || {}), [decoPage]: boxes };
+              // Même protection que setPageFree : depuis l'auto, on fige la
+              // répartition actuelle pour que les pages ne fusionnent pas.
+              if (mode === 'auto') { patch.layoutMode = 'manuel'; patch.split = [...splitCounts]; }
+            }
             update(patch);
           }}
           initialFree={entry.freePages?.[decoPage] || null}
