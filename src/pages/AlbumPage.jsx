@@ -4583,7 +4583,9 @@ export default function AlbumPage() {
 
   return (
     <div className="mx-auto max-w-5xl pb-24">
-      <div className="sticky top-0 z-20 -mx-4 mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur">
+      {/* Collée SOUS la barre de menu TravelO (61px) : avec top-0 elle
+          glissait derrière le menu et devenait invisible/incliquable. */}
+      <div className="sticky top-[61px] z-20 -mx-4 mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur">
         <Link to={`/itineraire/${id}`} className="text-sm text-brand-700 underline">
           ← Retour au voyage
         </Link>

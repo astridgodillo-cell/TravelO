@@ -620,7 +620,11 @@ export default function StandaloneAlbumPage() {
 
   return (
     <div className="mx-auto max-w-5xl pb-24">
-      <div className="sticky top-0 z-20 -mx-4 mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur">
+      {/* Barre collée SOUS la barre de menu TravelO (61px de haut) — avec
+          top-0 elle glissait derrière le menu (qui est au-dessus dans
+          l'empilement) : Enregistrer/Annuler devenaient invisibles ou
+          incliquables dès qu'on faisait défiler. */}
+      <div className="sticky top-[61px] z-20 -mx-4 mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur">
         <button type="button" onClick={goBack} className="text-sm text-brand-700 underline">← Retour</button>
         <div className="flex items-center gap-2">
           <button
