@@ -1261,7 +1261,7 @@ function themePatternStyle(theme) {
 
 // Aperçu STATIQUE d'une page (même mise en page que l'éditeur/PDF) : fond,
 // en-tête, photos (grille ou disposition libre), légendes, décorations.
-export function PagePreview({ photos, format, theme, title, note, firstPage, dayIndex, location, unit = 'jour', bg, pageIndex, pageCount, deco, free, width = '11rem', interactive = false, onFreeChange, onDecoChange, onSelect, selected = null, label = '', pageName = '' }) {
+export function PagePreview({ photos, format, theme, title, note, firstPage, dayIndex, location, unit = 'jour', bg, pageIndex, pageCount, deco, free, width = '11rem', interactive = false, onFreeChange, onDecoChange, onSelect, selected = null, label = '', pageName = '', headerPos = null, onHeaderChange = null }) {
   const spec = resolveBg(bg, pageIndex, pageCount);
   const onPlate = spec.type !== 'none';
   const lay = pageLayout(photos, format, { title, note, firstPage, onPlate });
@@ -1348,6 +1348,14 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
     decosRef.current = items;
     beginDrag(e, { kind: 'deco', i, sx: items[i].xf, sy: items[i].yf });
   };
+  // Position par défaut du bloc d'en-tête (étiquette + titre + description) :
+  // en haut à gauche, comme toujours. Déplaçable d'un seul tenant.
+  const headerHome = { xf: (lay.pad + lay.contentW / 2) / lay.pageW, yf: (lay.pad + lay.headerH / 2) / lay.pageH };
+  const startHeader = (e) => {
+    if (!interactive || !onHeaderChange) return;
+    const hp = headerPos || headerHome;
+    beginDrag(e, { kind: 'header', sx: hp.xf, sy: hp.yf });
+  };
   // Glissement d'une POIGNÉE d'un élément sélectionné : redimensionnement
   // immédiat (souris ET doigt — pas d'appui maintenu, la poignée est explicite).
   const startDecoResize = (e, k, mode) => {
@@ -1423,6 +1431,8 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
     if (d.kind === 'photo') {
       boxesRef.current[d.i] = { ...boxesRef.current[d.i], xf: nxf, yf: nyf };
       onFreeChange?.(boxesRef.current.map((b) => ({ ...b })));
+    } else if (d.kind === 'header') {
+      onHeaderChange?.({ xf: nxf, yf: nyf });
     } else {
       decosRef.current[d.i] = { ...decosRef.current[d.i], xf: nxf, yf: nyf };
       onDecoChange?.(decosRef.current.map((x) => ({ ...x })));
@@ -1474,8 +1484,15 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
           {spec.toned !== false && <div className="absolute inset-0" style={{ backgroundColor: 'rgba(251,248,243,0.80)' }} />}
         </>
       )}
-      {/* en-tête */}
-      <div className="absolute overflow-hidden" style={{ left: pct(lay.pad, lay.pageW), top: pct(lay.pad, lay.pageH), width: pct(lay.contentW, lay.pageW), height: pct(lay.headerH, lay.pageH) }}>
+      {/* en-tête : bloc déplaçable d'un seul tenant (étiquette + titre +
+          description). Sa position personnalisée est mémorisée par page. */}
+      <div
+        className={`absolute overflow-hidden ${interactive && onHeaderChange ? 'cursor-grab active:cursor-grabbing hover:ring-2 hover:ring-coral-300' : ''}`}
+        onPointerDown={interactive && onHeaderChange ? startHeader : undefined}
+        style={headerPos
+          ? { left: `${headerPos.xf * 100}%`, top: `${headerPos.yf * 100}%`, transform: 'translate(-50%,-50%)', width: pct(lay.contentW, lay.pageW), height: pct(lay.headerH, lay.pageH) }
+          : { left: pct(lay.pad, lay.pageW), top: pct(lay.pad, lay.pageH), width: pct(lay.contentW, lay.pageW), height: pct(lay.headerH, lay.pageH) }}
+      >
         <div style={{ display: 'inline-block', maxWidth: '100%', ...(onPlate ? { backgroundColor: 'rgba(251,248,243,0.85)', borderRadius: '4px', padding: '1.5% 2.2%' } : {}) }}>
           <div style={{ color: accent, fontSize: '1.45cqmin', fontWeight: 700, letterSpacing: '0.14em', textTransform: 'uppercase' }}>
             {(label || '').trim() || `${unitLabel(unit)} ${dayIndex + 1}`}{location ? ` · ${location}` : ''}{!firstPage ? ` · ${(pageName || '').trim() || 'suite'}` : ''}
@@ -1542,7 +1559,7 @@ export function PagePreview({ photos, format, theme, title, note, firstPage, day
 export function PageDecorateModal({
   photos, format, onFormatChange, theme, title, note, firstPage,
   dayIndex, location, bg, pageIndex, pageCount, unit = 'jour',
-  initialItems, onChange, initialFree, onChangeFree, onClose, label = '', pageName = '',
+  initialItems, onChange, initialFree, onChangeFree, onClose, label = '', pageName = '', headerPos = null,
 }) {
   // Pas de useBackClose ici : le DecoEditor rendu à l'intérieur s'en charge déjà
   // (deux inscriptions pour la même fenêtre créaient un retour « à vide »).
@@ -1592,8 +1609,11 @@ export function PageDecorateModal({
   const background = (
     <div className="absolute inset-0" style={baseStyle}>
       {bgPhoto}
-      {/* en-tête (même boîte que le PDF, hauteur fixe) */}
-      <div className="absolute overflow-hidden" style={{ left: pct(lay.pad, lay.pageW), top: pct(lay.pad, lay.pageH), width: pct(lay.contentW, lay.pageW), height: pct(lay.headerH, lay.pageH) }}>
+      {/* en-tête (même boîte que le PDF, hauteur fixe ; suit la position
+          personnalisée si le bloc a été déplacé dans l'aperçu) */}
+      <div className="absolute overflow-hidden" style={headerPos
+        ? { left: `${headerPos.xf * 100}%`, top: `${headerPos.yf * 100}%`, transform: 'translate(-50%,-50%)', width: pct(lay.contentW, lay.pageW), height: pct(lay.headerH, lay.pageH) }
+        : { left: pct(lay.pad, lay.pageW), top: pct(lay.pad, lay.pageH), width: pct(lay.contentW, lay.pageW), height: pct(lay.headerH, lay.pageH) }}>
         {headerInner}
       </div>
       {/* photos en grille (en disposition libre, elles deviennent des objets
@@ -2640,6 +2660,7 @@ export function FlipViewer({ days, format = 'carre', theme = null, unit = 'jour'
               free={cur.e.freePages?.[cur.p]}
               label={cur.e.label}
               pageName={cur.e.pageNames?.[cur.p]}
+              headerPos={cur.e.headerPos?.[cur.p] || null}
               width="100%"
             />
           </div>
@@ -2866,6 +2887,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
       pageDeco: remapObj(entry.pageDeco),
       lockedPages: remapObj(entry.lockedPages),
       pageNames: remapObj(entry.pageNames),
+      headerPos: remapObj(entry.headerPos),
       bg: { ...bg, pages },
     };
   };
@@ -2928,6 +2950,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
       pageDeco: remapObj(entry.pageDeco),
       lockedPages: remapObj(entry.lockedPages),
       pageNames: remapObj(entry.pageNames),
+      headerPos: remapObj(entry.headerPos),
       bg: { ...bg, pages },
     };
   };
@@ -3567,6 +3590,8 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
               onSelect={editable ? (kind, i) => setSel(i == null ? null : { p, kind, i }) : undefined}
               onFreeChange={editable ? (boxes) => setPageFree(p, boxes) : undefined}
               onDecoChange={editable ? (items) => update({ pageDeco: { ...(entry.pageDeco || {}), [p]: items } }) : undefined}
+              headerPos={entry.headerPos?.[p] || null}
+              onHeaderChange={editable ? (pos) => update({ headerPos: { ...(entry.headerPos || {}), [p]: pos } }) : undefined}
             />
           );
         };
@@ -3718,6 +3743,7 @@ export function DayCard({ day, index, entry, onChange, onAddPhotos, onPickBgPhot
           }}
           initialFree={entry.freePages?.[decoPage] || null}
           onChangeFree={(boxes) => setPageFree(decoPage, boxes)}
+          headerPos={entry.headerPos?.[decoPage] || null}
           onClose={() => setDecoPage(null)}
         />
       )}

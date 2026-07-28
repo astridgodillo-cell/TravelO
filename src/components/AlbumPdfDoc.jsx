@@ -555,7 +555,14 @@ export default function AlbumPdfDoc({ album, days = [], format = 'carre', summar
         <Page key={`${e.i}-${p}`} size={[pageW, pageH]} style={st.dayPage}>
           {spec.type === 'none' && <PagePattern theme={theme} pageW={pageW} pageH={pageH} />}
           <PageBackground spec={spec} pageW={pageW} pageH={pageH} st={st} />
-          <View style={{ position: 'absolute', left: lay.pad, top: lay.pad, width: lay.contentW, height: lay.headerH, overflow: 'hidden' }}>
+          <View style={(() => {
+            // Bloc d'en-tête déplaçable : suit la position personnalisée
+            // (centre en fractions de page) choisie dans l'aperçu.
+            const hp = e.headerPos?.[p];
+            return hp
+              ? { position: 'absolute', left: hp.xf * pageW - lay.contentW / 2, top: hp.yf * pageH - lay.headerH / 2, width: lay.contentW, height: lay.headerH, overflow: 'hidden' }
+              : { position: 'absolute', left: lay.pad, top: lay.pad, width: lay.contentW, height: lay.headerH, overflow: 'hidden' };
+          })()}>
             <View style={onPlate ? st.headerPlate : st.header}>
               <Text style={st.dayKicker}>
                 {(e.label || '').trim() || `${unitLabel(unit)} ${e.i + 1}`}{e.location ? ` · ${e.location}` : ''}
